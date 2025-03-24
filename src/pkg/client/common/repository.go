@@ -2,6 +2,9 @@ package common
 
 // Repository represents a container repository in a registry
 type Repository interface {
+	// GetRepositoryName returns the name of the repository
+	GetRepositoryName() string
+
 	// ListTags returns all tags for the repository
 	ListTags() ([]string, error)
 	

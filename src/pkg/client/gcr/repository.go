@@ -17,6 +17,11 @@ type Repository struct {
 	repository name.Repository
 }
 
+// GetRepositoryName returns the repository name
+func (r *Repository) GetRepositoryName() string {
+	return r.name
+}
+
 // ListTags returns all tags for the repository
 func (r *Repository) ListTags() ([]string, error) {
 	ctx := context.Background()

@@ -27,6 +27,10 @@ var (
 
 	// Global flags
 	logLevel string
+	
+	// Checkpoint management flags
+	checkpointDir string
+	checkpointID string
 
 	// Tree replication flags
 	treeReplicateWorkers     int
@@ -35,10 +39,28 @@ var (
 	treeReplicateIncludeTags []string
 	treeReplicateDryRun      bool
 	treeReplicateForce       bool
+	treeReplicateCheckpoint  bool
+	treeReplicateCheckpointDir string
+	treeReplicateResumeID    string
+	treeReplicateSkipCompleted bool
+	treeReplicateRetryFailed bool
 	ecrRegion                string
 	ecrAccountID             string
 	gcrProject               string
 	gcrLocation              string
+	
+	// Security flags
+	signImages               bool
+	verifySignatures         bool
+	signKeyPath              string
+	signKeyID                string
+	signatureStorePath       string
+	strictVerification       bool
+	useEncryption            bool
+	useCustomerManagedKeys   bool
+	awsKmsKeyID              string
+	gcpKmsKeyID              string
+	envelopeEncryption       bool
 )
 
 func init() {
@@ -48,6 +70,25 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&ecrAccountID, "ecr-account", "", "AWS account ID for ECR (empty uses default from credentials)")
 	rootCmd.PersistentFlags().StringVar(&gcrProject, "gcr-project", "", "GCP project for GCR")
 	rootCmd.PersistentFlags().StringVar(&gcrLocation, "gcr-location", "us", "GCR location (us, eu, asia)")
+	
+	// Add security-related global flags
+	rootCmd.PersistentFlags().BoolVar(&signImages, "sign", false, "Enable image signing")
+	rootCmd.PersistentFlags().BoolVar(&verifySignatures, "verify", false, "Verify image signatures")
+	rootCmd.PersistentFlags().StringVar(&signKeyPath, "sign-key", "", "Path to the signing key file")
+	rootCmd.PersistentFlags().StringVar(&signKeyID, "sign-key-id", "", "ID of the signing key")
+	rootCmd.PersistentFlags().StringVar(&signatureStorePath, "signature-store", "/tmp/freightliner-signatures", "Path to store image signatures")
+	rootCmd.PersistentFlags().BoolVar(&strictVerification, "strict-verify", false, "Fail if signature verification isn't possible")
+	
+	// Add encryption-related global flags
+	rootCmd.PersistentFlags().BoolVar(&useEncryption, "encrypt", false, "Enable image encryption")
+	rootCmd.PersistentFlags().BoolVar(&useCustomerManagedKeys, "customer-key", false, "Use customer-managed encryption keys")
+	rootCmd.PersistentFlags().StringVar(&awsKmsKeyID, "aws-kms-key", "", "AWS KMS key ID for encryption")
+	rootCmd.PersistentFlags().StringVar(&gcpKmsKeyID, "gcp-kms-key", "", "GCP KMS key ID for encryption")
+	rootCmd.PersistentFlags().BoolVar(&envelopeEncryption, "envelope-encryption", true, "Use envelope encryption")
+	
+	// Add checkpoint management flags
+	checkpointCmd.PersistentFlags().StringVar(&checkpointDir, "checkpoint-dir", "/tmp/freightliner-checkpoints", "Directory for checkpoint files")
+	checkpointCmd.Flags().StringVar(&checkpointID, "id", "", "Checkpoint ID for operations")
 
 	// Add tree replication flags
 	replicateTreeCmd.Flags().IntVar(&treeReplicateWorkers, "workers", 5, "Number of concurrent worker threads")
@@ -56,11 +97,17 @@ func init() {
 	replicateTreeCmd.Flags().StringSliceVar(&treeReplicateIncludeTags, "include-tag", []string{}, "Tag patterns to include (e.g. 'v*')")
 	replicateTreeCmd.Flags().BoolVar(&treeReplicateDryRun, "dry-run", false, "Perform a dry run without actually copying images")
 	replicateTreeCmd.Flags().BoolVar(&treeReplicateForce, "force", false, "Force overwrite of existing images")
+	replicateTreeCmd.Flags().BoolVar(&treeReplicateCheckpoint, "checkpoint", false, "Enable checkpointing for interrupted replications")
+	replicateTreeCmd.Flags().StringVar(&treeReplicateCheckpointDir, "checkpoint-dir", "/tmp/freightliner-checkpoints", "Directory for storing checkpoint files")
+	replicateTreeCmd.Flags().StringVar(&treeReplicateResumeID, "resume", "", "Resume replication from a checkpoint ID")
+	replicateTreeCmd.Flags().BoolVar(&treeReplicateSkipCompleted, "skip-completed", true, "Skip completed repositories when resuming")
+	replicateTreeCmd.Flags().BoolVar(&treeReplicateRetryFailed, "retry-failed", true, "Retry failed repositories when resuming")
 
 	// Add commands
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(replicateCmd)
 	rootCmd.AddCommand(replicateTreeCmd)
+	rootCmd.AddCommand(checkpointCmd)
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -96,6 +143,8 @@ var replicateCmd = &cobra.Command{
 		logger.Info("Starting replication", map[string]interface{}{
 			"source":      fmt.Sprintf("%s/%s", sourceRegistry, sourceRepo),
 			"destination": fmt.Sprintf("%s/%s", destRegistry, destRepo),
+			"signing":     signImages,
+			"encryption":  useEncryption,
 		})
 
 		// Create the registry clients
@@ -134,6 +183,113 @@ var replicateCmd = &cobra.Command{
 
 		// Create the copier
 		copier := copy.NewCopier(logger)
+		
+		// Set up security managers if enabled
+		if signImages {
+			if signKeyPath == "" {
+				logger.Fatal("Signing key path is required when signing is enabled", nil, nil)
+			}
+			
+			// Create signing manager
+			signOpts := signing.SignManagerOptions{
+				DefaultProvider:     "cosign",
+				SignImages:          signImages,
+				VerifyImages:        verifySignatures,
+				StrictVerification:  strictVerification,
+				SignatureStorePath:  signatureStorePath,
+				KeyPath:             signKeyPath,
+				KeyID:               signKeyID,
+			}
+			
+			signManager := signing.NewManager(signOpts)
+			
+			// Create and register a Cosign signer
+			signer, err := signing.NewCosignSigner(signing.SignOptions{
+				KeyPath: signKeyPath,
+				KeyID:   signKeyID,
+			})
+			if err != nil {
+				logger.Fatal("Failed to create Cosign signer", err, nil)
+			}
+			
+			signManager.RegisterSigner("cosign", signer)
+			copier.WithSigningManager(signManager)
+			
+			logger.Info("Image signing enabled", map[string]interface{}{
+				"provider": "cosign",
+				"key_id":   signKeyID,
+			})
+		}
+		
+		// Set up encryption if enabled
+		if useEncryption {
+			ctx := context.Background()
+			
+			// Create encryption providers map
+			encProviders := make(map[string]encryption.Provider)
+			
+			// Create encryption config
+			encConfig := encryption.EncryptionConfig{
+				EnvelopeEncryption: envelopeEncryption,
+				CustomerManagedKey: useCustomerManagedKeys,
+				DataKeyLength:      32, // 256-bit keys
+			}
+			
+			// Check which KMS provider to use based on provided key IDs and destination registry
+			if awsKmsKeyID != "" || destRegistry == "ecr" {
+				// Configure for AWS KMS
+				encConfig.Provider = "aws-kms"
+				encConfig.KeyID = awsKmsKeyID
+				encConfig.Region = ecrRegion
+				
+				// Create AWS KMS provider
+				awsKms, err := encryption.NewAWSKMS(ctx, encryption.AWSOpts{
+					Region: ecrRegion,
+					KeyID:  awsKmsKeyID,
+				})
+				if err != nil {
+					logger.Fatal("Failed to create AWS KMS provider", err, nil)
+				}
+				
+				encProviders["aws-kms"] = awsKms
+				
+				logger.Info("AWS KMS encryption enabled", map[string]interface{}{
+					"region": ecrRegion,
+					"key_id": awsKmsKeyID,
+					"cmk":    useCustomerManagedKeys,
+				})
+			} else if gcpKmsKeyID != "" || destRegistry == "gcr" {
+				// Configure for GCP KMS
+				encConfig.Provider = "gcp-kms"
+				encConfig.KeyID = gcpKmsKeyID
+				encConfig.Region = gcrLocation
+				
+				// Create GCP KMS provider
+				gcpKms, err := encryption.NewGCPKMS(ctx, encryption.GCPOpts{
+					Project:  gcrProject,
+					Location: gcrLocation,
+					KeyRing:  "freightliner",
+					Key:      "image-encryption",
+				})
+				if err != nil {
+					logger.Fatal("Failed to create GCP KMS provider", err, nil)
+				}
+				
+				encProviders["gcp-kms"] = gcpKms
+				
+				logger.Info("GCP KMS encryption enabled", map[string]interface{}{
+					"project":  gcrProject,
+					"location": gcrLocation,
+					"cmk":      useCustomerManagedKeys,
+				})
+			}
+			
+			// Create encryption manager if we have providers
+			if len(encProviders) > 0 {
+				encManager := encryption.NewManager(encProviders, encConfig)
+				copier.WithEncryptionManager(encManager)
+			}
+		}
 
 		// Create the reconciler
 		reconciler := replication.NewReconciler(logger, copier, workerPool)
@@ -264,32 +420,210 @@ Example usage:
 			ExcludeTags:         treeReplicateExcludeTags,
 			IncludeTags:         treeReplicateIncludeTags,
 			DryRun:              treeReplicateDryRun,
+			EnableCheckpoints:   treeReplicateCheckpoint,
+			CheckpointDir:       treeReplicateCheckpointDir,
 		})
 
-		// Run the replication
+		// Create context
 		ctx := context.Background()
-		result, err := replicator.ReplicateTree(
-			ctx,
-			sourceClient,
-			destClient,
-			sourcePrefix,
-			destPrefix,
-			treeReplicateForce,
-		)
+
+		var result *tree.ReplicationResult
+		var err error
+
+		// Check if we're resuming a previous replication
+		if treeReplicateResumeID != "" {
+			logger.Info("Resuming replication from checkpoint", map[string]interface{}{
+				"checkpoint_id": treeReplicateResumeID,
+			})
+
+			// Resume the replication
+			result, err = replicator.ResumeTreeReplication(
+				ctx,
+				sourceClient,
+				destClient,
+				tree.ResumeOptions{
+					CheckpointID:    treeReplicateResumeID,
+					SkipCompleted:   treeReplicateSkipCompleted,
+					RetryFailed:     treeReplicateRetryFailed,
+					ForceOverwrite:  treeReplicateForce,
+				},
+			)
+		} else {
+			// Run a new replication
+			result, err = replicator.ReplicateTree(
+				ctx,
+				sourceClient,
+				destClient,
+				sourcePrefix,
+				destPrefix,
+				treeReplicateForce,
+			)
+		}
 
 		if err != nil {
 			logger.Fatal("Tree replication failed", err, nil)
 		}
 
 		// Print summary
-		logger.Info("Tree replication completed successfully", map[string]interface{}{
+		var status string
+		if result.Interrupted {
+			status = "interrupted"
+		} else if result.Resumed {
+			status = "resumed and completed"
+		} else {
+			status = "completed successfully"
+		}
+
+		summaryInfo := map[string]interface{}{
 			"repositories":      result.Repositories,
 			"images_replicated": result.ImagesReplicated,
 			"images_skipped":    result.ImagesSkipped,
 			"images_failed":     result.ImagesFailed,
 			"duration_sec":      result.Duration.Seconds(),
-		})
+			"progress":          fmt.Sprintf("%.1f%%", result.Progress),
+		}
+
+		if treeReplicateCheckpoint && result.CheckpointID != "" {
+			summaryInfo["checkpoint_id"] = result.CheckpointID
+		}
+
+		logger.Info("Tree replication "+status, summaryInfo)
 	},
+}
+
+var checkpointCmd = &cobra.Command{
+	Use:   "checkpoint",
+	Short: "Manage replication checkpoints",
+	Long:  `Manage replication checkpoints for interrupted replications.
+
+This command provides subcommands to list, show, and delete replication checkpoints.`,
+}
+
+var checkpointListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List available checkpoints",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize logger
+		logger := createLogger(logLevel)
+		
+		// Initialize checkpoint store
+		store, err := tree.InitCheckpointStore(checkpointDir)
+		if err != nil {
+			logger.Fatal("Failed to initialize checkpoint store", err, map[string]interface{}{
+				"checkpoint_dir": checkpointDir,
+			})
+		}
+		
+		// Get resumable checkpoints
+		checkpoints, err := tree.ListResumableCheckpoints(store)
+		if err != nil {
+			logger.Fatal("Failed to list checkpoints", err, nil)
+		}
+		
+		if len(checkpoints) == 0 {
+			fmt.Println("No checkpoints found.")
+			return
+		}
+		
+		// Print checkpoints
+		fmt.Printf("Found %d checkpoint(s):\n\n", len(checkpoints))
+		fmt.Printf("%-36s %-15s %-15s %-10s %-25s\n", "ID", "SOURCE", "PROGRESS", "STATUS", "LAST UPDATED")
+		fmt.Println(strings.Repeat("-", 100))
+		
+		for _, cp := range checkpoints {
+			fmt.Printf("%-36s %-15s %-15s %-10s %-25s\n",
+				cp.ID,
+				fmt.Sprintf("%s/%s", cp.SourceRegistry, cp.SourcePrefix),
+				fmt.Sprintf("%.1f%%", cp.Progress),
+				cp.Status,
+				cp.LastUpdated.Format(time.RFC3339),
+			)
+		}
+	},
+}
+
+var checkpointShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show details of a specific checkpoint",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize logger
+		logger := createLogger(logLevel)
+		
+		if checkpointID == "" {
+			logger.Fatal("Checkpoint ID is required", nil, nil)
+		}
+		
+		// Initialize checkpoint store
+		store, err := tree.InitCheckpointStore(checkpointDir)
+		if err != nil {
+			logger.Fatal("Failed to initialize checkpoint store", err, map[string]interface{}{
+				"checkpoint_dir": checkpointDir,
+			})
+		}
+		
+		// Get checkpoint
+		checkpoint, err := store.LoadCheckpoint(checkpointID)
+		if err != nil {
+			logger.Fatal("Failed to load checkpoint", err, map[string]interface{}{
+				"id": checkpointID,
+			})
+		}
+		
+		// Print checkpoint details
+		fmt.Println("Checkpoint Details:")
+		fmt.Printf("  ID:               %s\n", checkpoint.ID)
+		fmt.Printf("  Source Registry:  %s\n", checkpoint.SourceRegistry)
+		fmt.Printf("  Source Prefix:    %s\n", checkpoint.SourcePrefix)
+		fmt.Printf("  Destination:      %s/%s\n", checkpoint.DestRegistry, checkpoint.DestPrefix)
+		fmt.Printf("  Status:           %s\n", checkpoint.Status)
+		fmt.Printf("  Progress:         %.1f%%\n", checkpoint.Progress)
+		fmt.Printf("  Start Time:       %s\n", checkpoint.StartTime.Format(time.RFC3339))
+		fmt.Printf("  Last Updated:     %s\n", checkpoint.LastUpdated.Format(time.RFC3339))
+		fmt.Printf("  Duration:         %s\n", checkpoint.LastUpdated.Sub(checkpoint.StartTime))
+		fmt.Printf("  Repositories:     %d total, %d completed\n", len(checkpoint.Repositories), len(checkpoint.CompletedRepositories))
+		
+		if checkpoint.LastError != "" {
+			fmt.Printf("  Last Error:       %s\n", checkpoint.LastError)
+		}
+	},
+}
+
+var checkpointDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Delete a checkpoint",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize logger
+		logger := createLogger(logLevel)
+		
+		if checkpointID == "" {
+			logger.Fatal("Checkpoint ID is required", nil, nil)
+		}
+		
+		// Initialize checkpoint store
+		store, err := tree.InitCheckpointStore(checkpointDir)
+		if err != nil {
+			logger.Fatal("Failed to initialize checkpoint store", err, map[string]interface{}{
+				"checkpoint_dir": checkpointDir,
+			})
+		}
+		
+		// Delete checkpoint
+		err = store.DeleteCheckpoint(checkpointID)
+		if err != nil {
+			logger.Fatal("Failed to delete checkpoint", err, map[string]interface{}{
+				"id": checkpointID,
+			})
+		}
+		
+		fmt.Printf("Checkpoint %s deleted successfully.\n", checkpointID)
+	},
+}
+
+func init() {
+	// Add checkpoint subcommands
+	checkpointCmd.AddCommand(checkpointListCmd)
+	checkpointCmd.AddCommand(checkpointShowCmd)
+	checkpointCmd.AddCommand(checkpointDeleteCmd)
 }
 
 var serveCmd = &cobra.Command{

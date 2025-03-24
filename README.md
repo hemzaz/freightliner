@@ -17,6 +17,10 @@ Freightliner is a container registry replication tool that supports cross-regist
 - Parallel replication with configurable worker counts
 - Metrics collection for monitoring
 - Dry-run capability for validation
+- Image signing and verification using Cosign
+- Customer-managed encryption keys (AWS KMS and GCP KMS)
+- Network bandwidth optimization with compression and delta updates
+- Checkpointing for resumable replication
 
 ## Installation
 
@@ -50,6 +54,22 @@ freightliner replicate ecr/my-repository gcr/my-repository
 freightliner replicate ecr/my-repository gcr/my-repository --ecr-region=us-east-1 --gcr-project=my-project
 ```
 
+### Security Features
+
+```bash
+# Replicate with image signing and verification
+freightliner replicate ecr/my-repository gcr/my-repository \
+  --sign --sign-key=/path/to/cosign.key --sign-key-id=my-key-id
+
+# Replicate with AWS KMS customer-managed encryption key
+freightliner replicate ecr/my-repository gcr/my-repository \
+  --encrypt --customer-key --aws-kms-key=alias/my-key
+
+# Replicate with GCP KMS customer-managed encryption key
+freightliner replicate ecr/my-repository gcr/my-repository \
+  --encrypt --customer-key --gcp-kms-key=projects/my-project/locations/global/keyRings/freightliner/cryptoKeys/my-key
+```
+
 ### Tree Replication
 
 ```bash
@@ -61,6 +81,14 @@ freightliner replicate-tree ecr/staging gcr/staging-mirror \
   --exclude-repo="internal-*" \
   --include-tag="v*" \
   --workers=10
+
+# Resumable replication with checkpointing
+freightliner replicate-tree ecr/prod gcr/prod-mirror \
+  --checkpoint --checkpoint-dir=/path/to/checkpoints
+
+# Resume an interrupted replication
+freightliner replicate-tree ecr/prod gcr/prod-mirror \
+  --resume=<checkpoint-id> --skip-completed
 ```
 
 ### Server Mode

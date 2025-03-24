@@ -13,13 +13,20 @@ import (
 	"github.com/hemzaz/freightliner/src/internal/util"
 	"github.com/hemzaz/freightliner/src/pkg/client/common"
 	"github.com/hemzaz/freightliner/src/pkg/metrics"
+	"github.com/hemzaz/freightliner/src/pkg/network"
+	"github.com/hemzaz/freightliner/src/pkg/security/encryption"
+	"github.com/hemzaz/freightliner/src/pkg/security/signing"
 )
 
 // Copier handles copying images between registries
 type Copier struct {
-	logger     *log.Logger
-	workerPool int
-	metrics    metrics.Metrics
+	logger         *log.Logger
+	workerPool     int
+	metrics        metrics.Metrics
+	transferMgr    *network.TransferManager
+	enableOptimize bool
+	signManager    *signing.Manager
+	encryptManager *encryption.Manager
 }
 
 // CopyOptions contains options for copying images
@@ -32,15 +39,51 @@ type CopyOptions struct {
 
 	// ForceOverwrite forces overwriting existing tags
 	ForceOverwrite bool
+	
+	// EnableNetworkOptimization enables network optimization features
+	EnableNetworkOptimization bool
+	
+	// TransferOptions configures network transfer optimizations
+	TransferOptions network.TransferOptions
+	
+	// SigningOptions configures image signing
+	SigningOptions *signing.SignManagerOptions
+	
+	// EncryptionOptions configures image encryption
+	EncryptionOptions *encryption.EncryptionConfig
+	
+	// VerifySignatures determines if signatures should be verified during copy
+	VerifySignatures bool
+	
+	// UseCustomerManagedKeys enables use of customer-managed keys for encryption
+	UseCustomerManagedKeys bool
 }
 
 // NewCopier creates a new image copier
 func NewCopier(logger *log.Logger) *Copier {
+	// Create default transfer manager
+	transferOpts := network.DefaultTransferOptions()
+	transferMgr := network.NewTransferManager(logger, transferOpts)
+	
 	return &Copier{
-		logger:     logger,
-		workerPool: 4, // Default to 4 concurrent workers for layer operations
-		metrics:    &metrics.NoopMetrics{}, // Default to no-op metrics
+		logger:         logger,
+		workerPool:     4, // Default to 4 concurrent workers for layer operations
+		metrics:        &metrics.NoopMetrics{}, // Default to no-op metrics
+		transferMgr:    transferMgr,
+		enableOptimize: true, // Enable optimization by default
 	}
+}
+
+// WithNetworkOptimization enables or disables network optimization
+func (c *Copier) WithNetworkOptimization(enable bool) *Copier {
+	c.enableOptimize = enable
+	return c
+}
+
+// WithTransferOptions configures the transfer options
+func (c *Copier) WithTransferOptions(options network.TransferOptions) *Copier {
+	c.transferMgr = network.NewTransferManager(c.logger, options)
+	return c
 }
 
 // WithMetrics sets the metrics collector
@@ -54,6 +97,18 @@ func (c *Copier) WithWorkerPool(workers int) *Copier {
 	if workers > 0 {
 		c.workerPool = workers
 	}
+	return c
+}
+
+// WithSigningManager sets the signing manager for image signing
+func (c *Copier) WithSigningManager(manager *signing.Manager) *Copier {
+	c.signManager = manager
+	return c
+}
+
+// WithEncryptionManager sets the encryption manager for image encryption
+func (c *Copier) WithEncryptionManager(manager *encryption.Manager) *Copier {
+	c.encryptManager = manager
 	return c
 }
 
@@ -87,10 +142,22 @@ func (c *Copier) CopyImage(ctx context.Context,
 		c.metrics.ReplicationFailed()
 		return fmt.Errorf("failed to get source manifest: %w", err)
 	}
+	
+	// If signature verification is enabled, verify the image signature
+	if c.signManager != nil && options.VerifySignatures {
+		if err := c.verifyImageSignature(ctx, sourceRepo, sourceTag, manifest); err != nil {
+			c.metrics.ReplicationFailed()
+			return fmt.Errorf("image signature verification failed: %w", err)
+		}
+		c.logger.Debug("Image signature verification succeeded", map[string]interface{}{
+			"repository": sourceRepo.GetRepositoryName(),
+			"tag":        sourceTag,
+		})
+	}
 
 	// Check if we need to handle a manifest list (multi-arch image)
 	if isManifestList(mediaType) {
-		return c.copyManifestList(ctx, sourceRepo, destRepo, sourceTag, destTag, manifest, mediaType, options.ForceOverwrite)
+		return c.copyManifestList(ctx, sourceRepo, destRepo, sourceTag, destTag, manifest, mediaType, options)
 	}
 
 	// If not a manifest list, handle as a single image manifest
@@ -118,7 +185,7 @@ func (c *Copier) CopyImage(ctx context.Context,
 
 	// Step 2: Handle the manifest
 	// We first need to copy all the layers referenced in the manifest
-	blobs, err := c.copyLayers(ctx, sourceRepo, destRepo, manifest, mediaType)
+	blobs, err := c.copyLayers(ctx, sourceRepo, destRepo, manifest, mediaType, options)
 	if err != nil {
 		// Record metrics for the failed replication
 		c.metrics.ReplicationFailed()
@@ -135,6 +202,20 @@ func (c *Copier) CopyImage(ctx context.Context,
 		// Record metrics for the failed replication
 		c.metrics.ReplicationFailed()
 		return fmt.Errorf("failed to put manifest: %w", err)
+	}
+	
+	// If signing is enabled, sign the destination image
+	if c.signManager != nil && c.signManager.IsSigningEnabled() {
+		if err := c.signImage(ctx, destRepo, destTag, manifest); err != nil {
+			c.logger.Warn("Failed to sign image, but copy was successful", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			c.logger.Debug("Image signed successfully", map[string]interface{}{
+				"repository": destRepo.GetRepositoryName(),
+				"tag":        destTag,
+			})
+		}
 	}
 
 	duration := time.Since(start)
@@ -160,6 +241,73 @@ func (c *Copier) CopyImage(ctx context.Context,
 	return nil
 }
 
+// signImage signs an image and stores the signature
+func (c *Copier) signImage(ctx context.Context, repo common.Repository, tag string, manifest []byte) error {
+	// Skip if signing manager is not configured
+	if c.signManager == nil {
+		return nil
+	}
+	
+	// Calculate the manifest digest
+	manifestDigest, err := util.CalculateDigest(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to calculate manifest digest: %w", err)
+	}
+	
+	// Create the signature payload
+	payload := &signing.SignaturePayload{
+		ManifestDigest: manifestDigest,
+		Repository:     repo.GetRepositoryName(),
+		Tag:            tag,
+		AdditionalData: map[string]string{
+			"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
+		},
+	}
+	
+	// Sign the image
+	_, err = c.signManager.SignImage(ctx, payload)
+	return err
+}
+
+// verifyImageSignature verifies an image's signature
+func (c *Copier) verifyImageSignature(ctx context.Context, repo common.Repository, tag string, manifest []byte) error {
+	// Skip if signing manager is not configured
+	if c.signManager == nil {
+		return nil
+	}
+	
+	// Calculate the manifest digest
+	manifestDigest, err := util.CalculateDigest(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to calculate manifest digest: %w", err)
+	}
+	
+	// Create the signature payload
+	payload := &signing.SignaturePayload{
+		ManifestDigest: manifestDigest,
+		Repository:     repo.GetRepositoryName(),
+		Tag:            tag,
+	}
+	
+	// Try to get the signature from storage
+	signature, err := c.signManager.GetSignatureFromStorage(ctx, repo.GetRepositoryName(), tag)
+	if err != nil {
+		return fmt.Errorf("failed to get signature: %w", err)
+	}
+	
+	// Verify the signature
+	valid, err := c.signManager.VerifyImageSignature(ctx, payload, signature)
+	if err != nil {
+		return fmt.Errorf("signature verification error: %w", err)
+	}
+	
+	if !valid {
+		return fmt.Errorf("invalid signature for image %s:%s", repo.GetRepositoryName(), tag)
+	}
+	
+	return nil
+}
+
 // isManifestList checks if the media type is a manifest list
 func isManifestList(mediaType string) bool {
 	return mediaType == string(types.OCIImageIndex) || mediaType == string(types.DockerManifestList)
@@ -174,7 +322,7 @@ func (c *Copier) copyManifestList(
 	destTag string,
 	manifestList []byte,
 	mediaType string,
-	forceOverwrite bool,
+	options CopyOptions,
 ) error {
 	start := time.Now()
 	c.logger.Info("Copying manifest list (multi-arch image)", map[string]interface{}{
@@ -236,7 +384,7 @@ func (c *Copier) copyManifestList(
 			}
 			
 			// Copy the layers for this platform's manifest
-			_, err = c.copyLayers(ctx, sourceRepo, destRepo, manifestBytes, manifestMediaType)
+			_, err = c.copyLayers(ctx, sourceRepo, destRepo, manifestBytes, manifestMediaType, options)
 			if err != nil {
 				errors <- fmt.Errorf("failed to copy layers for platform %s: %w", platform, err)
 				return
@@ -267,6 +415,15 @@ func (c *Copier) copyManifestList(
 		c.metrics.ReplicationFailed()
 		return fmt.Errorf("failed to put manifest list: %w", err)
 	}
+	
+	// If signing is enabled, sign the multi-arch image
+	if c.signManager != nil && c.signManager.IsSigningEnabled() {
+		if err := c.signImage(ctx, destRepo, destTag, manifestList); err != nil {
+			c.logger.Warn("Failed to sign multi-arch image, but copy was successful", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}
 
 	// Record metrics for successful multi-arch image copy
 	duration := time.Since(start)
@@ -296,6 +453,7 @@ func (c *Copier) copyLayers(
 	destRepo common.Repository,
 	manifest []byte,
 	mediaType string,
+	options CopyOptions,
 ) ([]string, error) {
 	// Parse the manifest to extract layer info
 	type layerInfo struct {
@@ -360,6 +518,29 @@ func (c *Copier) copyLayers(
 	var wg sync.WaitGroup
 	errors := make(chan error, len(allBlobs))
 	copiedBlobs := make(chan string, len(allBlobs))
+	networkStats := make(chan *network.TransferResult, len(allBlobs))
+
+	// Total transfer statistics
+	var totalOriginalSize int64
+	var totalTransferSize int64
+	var totalSavingsBytes int64
+
+	// Determine if we should use encryption for blobs
+	useEncryption := c.encryptManager != nil && options.EncryptionOptions != nil
+	
+	// Check for customer-managed keys if specified
+	if useEncryption && options.UseCustomerManagedKeys {
+		isCMK, err := c.encryptManager.IsCustomerManagedKeyEnabled(ctx)
+		if err != nil {
+			c.logger.Warn("Failed to check if customer-managed key is enabled", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else if !isCMK {
+			c.logger.Warn("Customer-managed key was requested but is not enabled", nil)
+		} else {
+			c.logger.Info("Using customer-managed encryption key", nil)
+		}
+	}
 
 	for _, blob := range allBlobs {
 		wg.Add(1)
@@ -373,13 +554,28 @@ func (c *Copier) copyLayers(
 			sem <- struct{}{} // Acquire token
 			defer func() { <-sem }() // Release token
 			
-			// Create a pseudo-tag from the digest
-			digestTag := "@" + digest
-			
 			c.logger.Debug("Copying blob", map[string]interface{}{
 				"digest":     digest,
 				"media_type": mediaType,
 			})
+			
+			// Check if network optimization is enabled
+			if c.enableOptimize && options.EnableNetworkOptimization {
+				// Use the transfer manager to optimize the transfer
+				result, err := c.transferMgr.TransferBlob(ctx, sourceRepo, destRepo, digest, mediaType)
+				if err != nil {
+					errors <- err
+					return
+				}
+				
+				networkStats <- result
+				copiedBlobs <- digest
+				return
+			}
+			
+			// If network optimization is disabled, use the original approach
+			// Create a pseudo-tag from the digest
+			digestTag := "@" + digest
 			
 			// Apply retry logic for blob transfers
 			err := util.RetryWithBackoff(ctx, 3, time.Second, 10*time.Second, func() error {
@@ -387,6 +583,15 @@ func (c *Copier) copyLayers(
 				blobData, _, err := sourceRepo.GetManifest(digestTag)
 				if err != nil {
 					return fmt.Errorf("failed to get blob %s: %w", digest, err)
+				}
+				
+				// If encryption is enabled, encrypt the blob
+				if useEncryption {
+					encryptedData, err := c.encryptManager.Encrypt(ctx, blobData)
+					if err != nil {
+						return fmt.Errorf("failed to encrypt blob %s: %w", digest, err)
+					}
+					blobData = encryptedData
 				}
 				
 				// Put the blob in the destination
@@ -411,6 +616,7 @@ func (c *Copier) copyLayers(
 	wg.Wait()
 	close(errors)
 	close(copiedBlobs)
+	close(networkStats)
 
 	// Check for errors
 	var errs []error
@@ -420,6 +626,38 @@ func (c *Copier) copyLayers(
 
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("failed to copy one or more blobs: %v", errs)
+	}
+
+	// Process network statistics if optimization was enabled
+	if c.enableOptimize && options.EnableNetworkOptimization {
+		for stat := range networkStats {
+			totalOriginalSize += int64(stat.Size)
+			totalTransferSize += int64(stat.TransferSize)
+			
+			// Log detailed stats for each blob
+			c.logger.Debug("Blob transfer statistics", map[string]interface{}{
+				"digest":            stat.Digest,
+				"original_size":     stat.Size,
+				"transfer_size":     stat.TransferSize,
+				"compression_used":  stat.UsedCompression,
+				"delta_used":        stat.UsedDelta,
+				"total_savings_pct": stat.TotalSavings,
+			})
+		}
+		
+		// Calculate overall savings
+		if totalOriginalSize > 0 {
+			totalSavingsBytes = totalOriginalSize - totalTransferSize
+			savingsPercent := 100 * (float64(totalSavingsBytes) / float64(totalOriginalSize))
+			
+			c.logger.Info("Network optimization summary", map[string]interface{}{
+				"total_original_size":  totalOriginalSize,
+				"total_transfer_size":  totalTransferSize,
+				"total_savings_bytes":  totalSavingsBytes,
+				"total_savings_percent": savingsPercent,
+				"blob_count":           len(allBlobs),
+			})
+		}
 	}
 
 	// Collect all the copied blob digests
