@@ -126,6 +126,12 @@ freightliner replicate-tree ecr/prod gcr/prod-mirror --dry-run
 
 # Use 10 concurrent worker threads
 freightliner replicate-tree ecr/prod gcr/prod-mirror --workers=10
+
+# Enable checkpointing for interrupted replications
+freightliner replicate-tree ecr/prod gcr/prod-mirror --checkpoint
+
+# Resume an interrupted replication
+freightliner replicate-tree ecr/prod gcr/prod-mirror --resume=<checkpoint-id>
 ```
 
 Available options for tree replication:
@@ -138,6 +144,45 @@ Available options for tree replication:
 | `--include-tag` | Tag patterns to include (e.g. 'v*') |
 | `--dry-run` | Perform a dry run without actually copying images |
 | `--force` | Force overwrite of existing images |
+| `--checkpoint` | Enable checkpointing for interrupted replications |
+| `--checkpoint-dir` | Directory to store checkpoint files |
+| `--resume` | Resume replication from a checkpoint ID |
+| `--skip-completed` | Skip completed repositories when resuming (default: true) |
+| `--retry-failed` | Retry failed repositories when resuming (default: true) |
+
+### Network Optimization
+
+Freightliner optimizes network transfers when replicating images:
+
+1. **Compression**: Data is compressed during transfer to reduce bandwidth usage
+2. **Delta Updates**: Only transfers the differences between image versions
+
+The network optimization is enabled by default and helps:
+
+- Reduce bandwidth usage by up to 90% for similar images
+- Speed up replication of large images
+- Improve performance over slow or high-latency connections
+
+### Checkpoint Management
+
+Freightliner provides commands to manage checkpoints:
+
+```bash
+# List available checkpoints
+freightliner checkpoint list
+
+# Show details of a specific checkpoint
+freightliner checkpoint show --id=<checkpoint-id>
+
+# Delete a checkpoint
+freightliner checkpoint delete --id=<checkpoint-id>
+```
+
+Checkpoints allow you to:
+
+- Resume interrupted replications
+- Track progress of long-running operations
+- Recover from failures without starting over
 
 ### Bidirectional Replication
 

@@ -3,28 +3,36 @@ package tree
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
+	"crypto/rand"
+	"encoding/hex"
 
 	"github.com/hemzaz/freightliner/src/internal/log"
 	"github.com/hemzaz/freightliner/src/internal/util"
 	"github.com/hemzaz/freightliner/src/pkg/client/common"
 	"github.com/hemzaz/freightliner/src/pkg/copy"
 	"github.com/hemzaz/freightliner/src/pkg/metrics"
+	"github.com/hemzaz/freightliner/src/pkg/tree/checkpoint"
 )
 
 // TreeReplicator handles replicating entire repository trees between registries
 type TreeReplicator struct {
-	logger       *log.Logger
-	copier       *copy.Copier
-	workerPool   int
-	metrics      metrics.Metrics
-	excludeRepos []string
-	excludeTags  []string
-	includeTags  []string
-	dryRun       bool
+	logger            *log.Logger
+	copier            *copy.Copier
+	workerPool        int
+	metrics           metrics.Metrics
+	excludeRepos      []string
+	excludeTags       []string
+	includeTags       []string
+	dryRun            bool
+	checkpointStore   checkpoint.CheckpointStore
+	enableCheckpoints bool
+	checkpointDir     string
+	checkpointInterval time.Duration
 }
 
 // TreeReplicatorOptions configures the tree replicator
@@ -43,6 +51,18 @@ type TreeReplicatorOptions struct {
 	
 	// DryRun performs a dry run without actually copying images
 	DryRun bool
+	
+	// EnableCheckpoints enables checkpointing for interrupted replications
+	EnableCheckpoints bool
+	
+	// CheckpointDir is the directory to store checkpoint files
+	CheckpointDir string
+	
+	// CheckpointInterval is how often to save checkpoint files during replication
+	CheckpointInterval time.Duration
+	
+	// ResumeID is the ID of a checkpoint to resume from
+	ResumeID string
 }
 
 // ReplicationResult contains the results of a tree replication
@@ -61,6 +81,18 @@ type ReplicationResult struct {
 	
 	// Duration is the total duration of the replication
 	Duration time.Duration
+	
+	// CheckpointID is the ID of the checkpoint if checkpointing was enabled
+	CheckpointID string
+	
+	// Resumed indicates if this was a resumed replication
+	Resumed bool
+	
+	// Interrupted indicates if the replication was interrupted before completion
+	Interrupted bool
+	
+	// Progress is the overall progress percentage (0-100)
+	Progress float64
 }
 
 // NewTreeReplicator creates a new tree replicator
@@ -70,16 +102,48 @@ func NewTreeReplicator(logger *log.Logger, copier *copy.Copier, opts TreeReplica
 		workerCount = 5 // Default to 5 concurrent replications
 	}
 	
-	return &TreeReplicator{
-		logger:       logger,
-		copier:       copier,
-		workerPool:   workerCount,
-		metrics:      &metrics.NoopMetrics{}, // Default to no-op metrics
-		excludeRepos: opts.ExcludeRepositories,
-		excludeTags:  opts.ExcludeTags,
-		includeTags:  opts.IncludeTags,
-		dryRun:       opts.DryRun,
+	// Set default checkpoint interval if not specified
+	checkpointInterval := opts.CheckpointInterval
+	if checkpointInterval == 0 {
+		checkpointInterval = 5 * time.Minute // Default to 5 minutes
 	}
+	
+	// Set default checkpoint directory if not specified
+	checkpointDir := opts.CheckpointDir
+	if checkpointDir == "" {
+		checkpointDir = "/tmp/freightliner-checkpoints"
+	}
+	
+	replicator := &TreeReplicator{
+		logger:            logger,
+		copier:            copier,
+		workerPool:        workerCount,
+		metrics:           &metrics.NoopMetrics{}, // Default to no-op metrics
+		excludeRepos:      opts.ExcludeRepositories,
+		excludeTags:       opts.ExcludeTags,
+		includeTags:       opts.IncludeTags,
+		dryRun:            opts.DryRun,
+		enableCheckpoints: opts.EnableCheckpoints,
+		checkpointDir:     checkpointDir,
+		checkpointInterval: checkpointInterval,
+	}
+	
+	// Initialize checkpoint store if enabled
+	if replicator.enableCheckpoints {
+		store, err := checkpoint.NewFileStore(checkpointDir)
+		if err != nil {
+			logger.Warn("Failed to initialize checkpoint store", map[string]interface{}{
+				"error": err.Error(),
+				"dir":   checkpointDir,
+			})
+			// Disable checkpointing if store initialization fails
+			replicator.enableCheckpoints = false
+		} else {
+			replicator.checkpointStore = store
+		}
+	}
+	
+	return replicator
 }
 
 // WithMetrics sets the metrics collector
@@ -87,6 +151,18 @@ func (t *TreeReplicator) WithMetrics(m metrics.Metrics) *TreeReplicator {
 	t.metrics = m
 	t.copier.WithMetrics(m) // Propagate metrics to the copier
 	return t
+}
+
+// generateCheckpointID generates a unique ID for a checkpoint
+func generateCheckpointID() (string, error) {
+	// Generate 16 random bytes
+	randBytes := make([]byte, 16)
+	if _, err := rand.Read(randBytes); err != nil {
+		return "", err
+	}
+	
+	// Convert to a hex string
+	return hex.EncodeToString(randBytes), nil
 }
 
 // ReplicateTree replicates an entire tree of repositories from source to destination
@@ -100,6 +176,55 @@ func (t *TreeReplicator) ReplicateTree(
 ) (*ReplicationResult, error) {
 	start := time.Now()
 	
+	// Create a result with default values
+	result := &ReplicationResult{
+		Progress: 0,
+		Resumed:  false,
+	}
+	
+	// Set up checkpoint if enabled
+	var treeCheckpoint *checkpoint.TreeCheckpoint
+	
+	if t.enableCheckpoints && t.checkpointStore != nil {
+		// Generate a unique ID for this checkpoint
+		checkpointID, err := generateCheckpointID()
+		if err != nil {
+			t.logger.Warn("Failed to generate checkpoint ID", map[string]interface{}{
+				"error": err.Error(),
+			})
+			// Continue without checkpointing
+		} else {
+			result.CheckpointID = checkpointID
+			
+			// Create a new checkpoint
+			treeCheckpoint = &checkpoint.TreeCheckpoint{
+				ID:           checkpointID,
+				StartTime:    start,
+				LastUpdated:  start,
+				SourceRegistry: fmt.Sprintf("%T", sourceClient),
+				SourcePrefix: sourcePrefix,
+				DestRegistry: fmt.Sprintf("%T", destClient),
+				DestPrefix:   destPrefix,
+				Status:       checkpoint.StatusInProgress,
+				Progress:     0,
+			}
+			
+			// Save the initial checkpoint
+			if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+				t.logger.Warn("Failed to save initial checkpoint", map[string]interface{}{
+					"error": err.Error(),
+					"id":    checkpointID,
+				})
+				// Continue without checkpointing
+				treeCheckpoint = nil
+			} else {
+				t.logger.Info("Created checkpoint for replication", map[string]interface{}{
+					"id": checkpointID,
+				})
+			}
+		}
+	}
+	
 	// Get all repositories from the source registry
 	t.logger.Info("Listing repositories in source registry", map[string]interface{}{
 		"source_prefix": sourcePrefix,
@@ -107,6 +232,11 @@ func (t *TreeReplicator) ReplicateTree(
 	
 	sourceRepos, err := sourceClient.ListRepositories()
 	if err != nil {
+		if treeCheckpoint != nil {
+			treeCheckpoint.Status = checkpoint.StatusFailed
+			treeCheckpoint.LastError = err.Error()
+			t.checkpointStore.SaveCheckpoint(treeCheckpoint)
+		}
 		return nil, fmt.Errorf("failed to list source repositories: %w", err)
 	}
 	
@@ -140,6 +270,67 @@ func (t *TreeReplicator) ReplicateTree(
 		"count": len(filteredRepos),
 	})
 	
+	// Update checkpoint with repositories to replicate
+	if treeCheckpoint != nil {
+		treeCheckpoint.Repositories = filteredRepos
+		treeCheckpoint.RepoTasks = make([]checkpoint.RepoTask, len(filteredRepos))
+		for i, repo := range filteredRepos {
+			// Calculate destination repo name
+			destRepo := repo
+			if sourcePrefix != "" && destPrefix != "" {
+				destRepo = path.Join(destPrefix, strings.TrimPrefix(repo, sourcePrefix))
+			} else if destPrefix != "" {
+				destRepo = path.Join(destPrefix, repo)
+			}
+			
+			treeCheckpoint.RepoTasks[i] = checkpoint.RepoTask{
+				SourceRegistry:   fmt.Sprintf("%T", sourceClient),
+				SourceRepository: repo,
+				DestRegistry:     fmt.Sprintf("%T", destClient),
+				DestRepository:   destRepo,
+				Status:           checkpoint.StatusPending,
+				LastUpdated:      time.Now(),
+			}
+		}
+		
+		// Save the updated checkpoint
+		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+			t.logger.Warn("Failed to save checkpoint", map[string]interface{}{
+				"error": err.Error(),
+				"id":    treeCheckpoint.ID,
+			})
+		}
+	}
+	
+	// Set up checkpoint timer for periodic updates
+	var checkpointTicker *time.Ticker
+	var checkpointDone chan bool
+	
+	if treeCheckpoint != nil {
+		checkpointTicker = time.NewTicker(t.checkpointInterval)
+		checkpointDone = make(chan bool)
+		
+		// Run checkpoint updater in a goroutine
+		go func() {
+			for {
+				select {
+				case <-checkpointTicker.C:
+					// Update and save the checkpoint
+					treeCheckpoint.LastUpdated = time.Now()
+					if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+						t.logger.Warn("Failed to save periodic checkpoint", map[string]interface{}{
+							"error": err.Error(),
+							"id":    treeCheckpoint.ID,
+						})
+					}
+				case <-checkpointDone:
+					checkpointTicker.Stop()
+					return
+				}
+			}
+		}()
+	}
+	
 	// Set up a worker pool for repository replication
 	sem := make(chan struct{}, t.workerPool)
 	var wg sync.WaitGroup
@@ -153,12 +344,21 @@ func (t *TreeReplicator) ReplicateTree(
 		err            error
 	}, len(filteredRepos))
 	
+	// Set up context with cancellation for handling interruptions
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	
+	// Handle OS signals for graceful interruption
+	interruptChan := make(chan os.Signal, 1)
+	interrupted := false
+	
 	// Process each repository
-	for _, repo := range filteredRepos {
+	for i, repo := range filteredRepos {
 		wg.Add(1)
 		
 		// Create a copy of the loop variable for the goroutine
 		repoName := repo
+		repoIndex := i
 		
 		go func() {
 			defer wg.Done()
@@ -175,10 +375,34 @@ func (t *TreeReplicator) ReplicateTree(
 				destRepo = path.Join(destPrefix, repoName)
 			}
 			
+			// Update checkpoint for this repository
+			if treeCheckpoint != nil {
+				treeCheckpoint.RepoTasks[repoIndex].Status = checkpoint.StatusInProgress
+				treeCheckpoint.RepoTasks[repoIndex].LastUpdated = time.Now()
+			}
+			
 			// Replicate the repository
 			imagesReplicated, imagesSkipped, imagesFailed, err := t.replicateRepository(
 				ctx, sourceClient, destClient, repoName, destRepo, forceOverwrite,
 			)
+			
+			// Update checkpoint for this repository with results
+			if treeCheckpoint != nil {
+				if err != nil {
+					treeCheckpoint.RepoTasks[repoIndex].Status = checkpoint.StatusFailed
+					treeCheckpoint.RepoTasks[repoIndex].Error = err.Error()
+				} else {
+					treeCheckpoint.RepoTasks[repoIndex].Status = checkpoint.StatusCompleted
+					treeCheckpoint.CompletedRepositories = append(treeCheckpoint.CompletedRepositories, repoName)
+				}
+				treeCheckpoint.RepoTasks[repoIndex].LastUpdated = time.Now()
+				
+				// Calculate progress
+				completed := len(treeCheckpoint.CompletedRepositories)
+				total := len(treeCheckpoint.Repositories)
+				treeCheckpoint.Progress = float64(completed) / float64(total) * 100
+				result.Progress = treeCheckpoint.Progress
+			}
 			
 			// Send results back
 			results <- struct {
@@ -197,14 +421,13 @@ func (t *TreeReplicator) ReplicateTree(
 		}()
 	}
 	
-	// Wait for all replications to complete
+	// Wait for all replications to complete or interruption
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 	
 	// Collect results
-	result := &ReplicationResult{}
 	var errors []error
 	
 	for res := range results {
@@ -216,16 +439,70 @@ func (t *TreeReplicator) ReplicateTree(
 		if res.err != nil {
 			errors = append(errors, fmt.Errorf("failed to replicate repository %s: %w", res.repo, res.err))
 		}
+		
+		// Check if we've been interrupted
+		select {
+		case <-interruptChan:
+			interrupted = true
+			cancel() // Cancel ongoing operations
+			break
+		default:
+			// Continue processing
+		}
 	}
 	
 	result.Duration = time.Since(start)
+	result.Interrupted = interrupted
 	
-	t.logger.Info("Tree replication completed", map[string]interface{}{
+	// Stop the checkpoint ticker if it's running
+	if checkpointTicker != nil {
+		checkpointDone <- true
+	}
+	
+	// Update final checkpoint status
+	if treeCheckpoint != nil {
+		if interrupted {
+			treeCheckpoint.Status = checkpoint.StatusInterrupted
+			result.Interrupted = true
+		} else if len(errors) > 0 {
+			treeCheckpoint.Status = checkpoint.StatusFailed
+			treeCheckpoint.LastError = errors[0].Error()
+		} else {
+			treeCheckpoint.Status = checkpoint.StatusCompleted
+		}
+		
+		treeCheckpoint.LastUpdated = time.Now()
+		treeCheckpoint.Progress = result.Progress
+		
+		// Save final checkpoint
+		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+			t.logger.Warn("Failed to save final checkpoint", map[string]interface{}{
+				"error": err.Error(),
+				"id":    treeCheckpoint.ID,
+			})
+		} else {
+			t.logger.Info("Saved final checkpoint", map[string]interface{}{
+				"id":      treeCheckpoint.ID,
+				"status":  treeCheckpoint.Status,
+				"progress": treeCheckpoint.Progress,
+			})
+		}
+	}
+	
+	// Log completion
+	status := "completed"
+	if interrupted {
+		status = "interrupted"
+	}
+	
+	t.logger.Info("Tree replication "+status, map[string]interface{}{
 		"repositories":      result.Repositories,
 		"images_replicated": result.ImagesReplicated,
 		"images_skipped":    result.ImagesSkipped,
 		"images_failed":     result.ImagesFailed,
 		"duration_ms":       result.Duration.Milliseconds(),
+		"progress":          result.Progress,
+		"interrupted":       result.Interrupted,
 	})
 	
 	var finalErr error
