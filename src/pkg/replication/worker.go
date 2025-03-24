@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 	
-	"github.com/elad/freightliner/internal/log"
+	"github.com/hemzaz/freightliner/internal/log"
 )
 
 // Task represents a task to be executed by a worker

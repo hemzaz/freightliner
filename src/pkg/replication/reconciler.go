@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 	
-	"github.com/elad/freightliner/internal/log"
-	"github.com/elad/freightliner/pkg/client/common"
-	"github.com/elad/freightliner/pkg/copy"
+	"github.com/hemzaz/freightliner/internal/log"
+	"github.com/hemzaz/freightliner/pkg/client/common"
+	"github.com/hemzaz/freightliner/pkg/copy"
 )
 
 // Reconciler handles reconciling repositories between registries

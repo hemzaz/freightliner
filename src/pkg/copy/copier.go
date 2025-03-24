@@ -3,8 +3,8 @@ package copy
 import (
 	"context"
 	
-	"github.com/elad/freightliner/pkg/client/common"
-	"github.com/elad/freightliner/internal/log"
+	"github.com/hemzaz/freightliner/pkg/client/common"
+	"github.com/hemzaz/freightliner/internal/log"
 )
 
 // Copier handles copying images between registries

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 	
-	"github.com/elad/freightliner/internal/log"
+	"github.com/hemzaz/freightliner/internal/log"
 )
 
 // Job represents a scheduled replication job

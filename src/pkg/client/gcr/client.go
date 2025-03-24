@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 	
-	"github.com/elad/freightliner/internal/log"
-	"github.com/elad/freightliner/pkg/client/common"
+	"github.com/hemzaz/freightliner/internal/log"
+	"github.com/hemzaz/freightliner/pkg/client/common"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/google"
