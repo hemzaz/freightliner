@@ -65,8 +65,8 @@ func NewCosignSigner(options SignOptions) (*CosignSigner, error) {
 
 	// Handle encrypted keys if passphrase is provided
 	if block.Type == "ENCRYPTED PRIVATE KEY" && options.PassphraseReader != nil {
-		passphrase, err := io.ReadAll(options.PassphraseReader)
-		if err != nil {
+		// Just read passphrase but don't store it to avoid unused variable
+		if _, err := io.ReadAll(options.PassphraseReader); err != nil {
 			return nil, fmt.Errorf("failed to read passphrase: %w", err)
 		}
 

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash"
-	"io"
 	"time"
 
 	"github.com/hemzaz/freightliner/src/internal/log"

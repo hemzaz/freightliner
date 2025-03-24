@@ -3,11 +3,13 @@ package encryption
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
@@ -160,14 +162,16 @@ func (a *AWSKMS) GenerateDataKey(ctx context.Context, keyID string, keyLength in
 	}
 
 	// Determine the key spec based on the requested length
-	keySpec := "AES_256"
+	var keySpec types.DataKeySpec
 	if keyLength == 16 {
-		keySpec = "AES_128"
+		keySpec = types.DataKeySpecAes128
+	} else {
+		keySpec = types.DataKeySpecAes256
 	}
 
 	input := &kms.GenerateDataKeyInput{
 		KeyId:   aws.String(keyID),
-		KeySpec: aws.String(keySpec),
+		KeySpec: keySpec,
 	}
 
 	result, err := a.client.GenerateDataKey(ctx, input)
@@ -234,9 +238,9 @@ func (a *AWSKMS) GetKeyInfo(ctx context.Context, keyID string) (*KeyInfo, error)
 	keyInfo := &KeyInfo{
 		ID:         *result.KeyMetadata.KeyId,
 		ARN:        *result.KeyMetadata.Arn,
-		Algorithm:  *result.KeyMetadata.KeySpec,
+		Algorithm:  string(result.KeyMetadata.KeySpec),
 		State:      string(result.KeyMetadata.KeyState),
-		Enabled:    *result.KeyMetadata.Enabled,
+		Enabled:    result.KeyMetadata.Enabled,
 		Provider:   "aws-kms",
 		Region:     a.region,
 		CreateTime: *result.KeyMetadata.CreationDate,
@@ -244,7 +248,7 @@ func (a *AWSKMS) GetKeyInfo(ctx context.Context, keyID string) (*KeyInfo, error)
 
 	// Check if key is customer managed
 	keyInfo.CustomerManaged = true // All keys accessed through KMS API are either AWS managed or customer managed
-	if result.KeyMetadata.KeyManager != nil && *result.KeyMetadata.KeyManager == "AWS" {
+	if result.KeyMetadata.KeyManager == types.KeyManagerTypeAws {
 		keyInfo.CustomerManaged = false // AWS managed key
 	}
 
