@@ -14,6 +14,7 @@ import (
 	"github.com/hemzaz/freightliner/src/pkg/client/gcr"
 	"github.com/hemzaz/freightliner/src/pkg/copy"
 	"github.com/hemzaz/freightliner/src/pkg/replication"
+	"github.com/hemzaz/freightliner/src/pkg/tree"
 	"github.com/spf13/cobra"
 )
 
@@ -24,16 +25,42 @@ var (
 		Long:  `Freightliner is a tool for replicating container images between different container registries.`,
 	}
 
+	// Global flags
 	logLevel string
+
+	// Tree replication flags
+	treeReplicateWorkers     int
+	treeReplicateExcludeRepos []string
+	treeReplicateExcludeTags []string
+	treeReplicateIncludeTags []string
+	treeReplicateDryRun      bool
+	treeReplicateForce       bool
+	ecrRegion                string
+	ecrAccountID             string
+	gcrProject               string
+	gcrLocation              string
 )
 
 func init() {
 	// Add global flags
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error, fatal)")
+	rootCmd.PersistentFlags().StringVar(&ecrRegion, "ecr-region", "us-west-2", "AWS region for ECR")
+	rootCmd.PersistentFlags().StringVar(&ecrAccountID, "ecr-account", "", "AWS account ID for ECR (empty uses default from credentials)")
+	rootCmd.PersistentFlags().StringVar(&gcrProject, "gcr-project", "", "GCP project for GCR")
+	rootCmd.PersistentFlags().StringVar(&gcrLocation, "gcr-location", "us", "GCR location (us, eu, asia)")
+
+	// Add tree replication flags
+	replicateTreeCmd.Flags().IntVar(&treeReplicateWorkers, "workers", 5, "Number of concurrent worker threads")
+	replicateTreeCmd.Flags().StringSliceVar(&treeReplicateExcludeRepos, "exclude-repo", []string{}, "Repository patterns to exclude (e.g. 'internal-*')")
+	replicateTreeCmd.Flags().StringSliceVar(&treeReplicateExcludeTags, "exclude-tag", []string{}, "Tag patterns to exclude (e.g. 'dev-*')")
+	replicateTreeCmd.Flags().StringSliceVar(&treeReplicateIncludeTags, "include-tag", []string{}, "Tag patterns to include (e.g. 'v*')")
+	replicateTreeCmd.Flags().BoolVar(&treeReplicateDryRun, "dry-run", false, "Perform a dry run without actually copying images")
+	replicateTreeCmd.Flags().BoolVar(&treeReplicateForce, "force", false, "Force overwrite of existing images")
 
 	// Add commands
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(replicateCmd)
+	rootCmd.AddCommand(replicateTreeCmd)
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -78,8 +105,8 @@ var replicateCmd = &cobra.Command{
 		if sourceRegistry == "ecr" || destRegistry == "ecr" {
 			// Create ECR client
 			ecrClient, err := ecr.NewClient(ecr.ClientOptions{
-				Region:    "us-west-2", // TODO: Make configurable
-				AccountID: "",          // Uses the default account from AWS credentials
+				Region:    ecrRegion,
+				AccountID: ecrAccountID,
 				Logger:    logger,
 			})
 			if err != nil {
@@ -91,8 +118,8 @@ var replicateCmd = &cobra.Command{
 		if sourceRegistry == "gcr" || destRegistry == "gcr" {
 			// Create GCR client
 			gcrClient, err := gcr.NewClient(gcr.ClientOptions{
-				Project:  "my-project", // TODO: Make configurable
-				Location: "us",
+				Project:  gcrProject,
+				Location: gcrLocation,
 				Logger:   logger,
 			})
 			if err != nil {
@@ -146,6 +173,125 @@ var replicateCmd = &cobra.Command{
 	},
 }
 
+var replicateTreeCmd = &cobra.Command{
+	Use:   "replicate-tree [source-registry]/[source-prefix] [destination-registry]/[destination-prefix]",
+	Short: "Replicate a repository tree from one registry to another",
+	Long:  `Replicates an entire tree of repositories from a source registry to a destination registry.
+	
+This command allows you to replicate multiple repositories at once based on a prefix.
+You can filter which repositories and tags to include or exclude using pattern matching.
+
+Example usage:
+  freightliner replicate-tree ecr/prod gcr/prod-mirror
+  freightliner replicate-tree ecr/staging gcr/staging-mirror --exclude-repo="internal-*" --include-tag="v*"`,
+	Args: cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize logger
+		logger := createLogger(logLevel)
+
+		// Parse source and destination
+		sourceParts := strings.SplitN(args[0], "/", 2)
+		destParts := strings.SplitN(args[1], "/", 2)
+
+		if len(sourceParts) != 2 || len(destParts) != 2 {
+			logger.Fatal("Invalid format. Use [registry]/[prefix]", nil, nil)
+		}
+
+		sourceRegistry := sourceParts[0]
+		sourcePrefix := sourceParts[1]
+		destRegistry := destParts[0]
+		destPrefix := destParts[1]
+
+		logger.Info("Starting tree replication", map[string]interface{}{
+			"source":      fmt.Sprintf("%s/%s", sourceRegistry, sourcePrefix),
+			"destination": fmt.Sprintf("%s/%s", destRegistry, destPrefix),
+			"workers":     treeReplicateWorkers,
+			"dry_run":     treeReplicateDryRun,
+		})
+
+		// Create the registry clients
+		registryClients := make(map[string]common.RegistryClient)
+
+		// Create clients based on the source and destination registries
+		if sourceRegistry == "ecr" || destRegistry == "ecr" {
+			// Create ECR client
+			ecrClient, err := ecr.NewClient(ecr.ClientOptions{
+				Region:    ecrRegion,
+				AccountID: ecrAccountID, // Empty uses the default from AWS credentials
+				Logger:    logger,
+			})
+			if err != nil {
+				logger.Fatal("Failed to create ECR client", err, nil)
+			}
+			registryClients["ecr"] = ecrClient
+		}
+
+		if sourceRegistry == "gcr" || destRegistry == "gcr" {
+			// Create GCR client
+			gcrClient, err := gcr.NewClient(gcr.ClientOptions{
+				Project:  gcrProject,
+				Location: gcrLocation,
+				Logger:   logger,
+			})
+			if err != nil {
+				logger.Fatal("Failed to create GCR client", err, nil)
+			}
+			registryClients["gcr"] = gcrClient
+		}
+
+		// Get the source and destination clients
+		sourceClient, ok := registryClients[sourceRegistry]
+		if !ok {
+			logger.Fatal("Unsupported source registry", nil, map[string]interface{}{
+				"registry": sourceRegistry,
+			})
+		}
+
+		destClient, ok := registryClients[destRegistry]
+		if !ok {
+			logger.Fatal("Unsupported destination registry", nil, map[string]interface{}{
+				"registry": destRegistry,
+			})
+		}
+
+		// Create the copier
+		copier := copy.NewCopier(logger)
+
+		// Create the tree replicator
+		replicator := tree.NewTreeReplicator(logger, copier, tree.TreeReplicatorOptions{
+			WorkerCount:         treeReplicateWorkers,
+			ExcludeRepositories: treeReplicateExcludeRepos,
+			ExcludeTags:         treeReplicateExcludeTags,
+			IncludeTags:         treeReplicateIncludeTags,
+			DryRun:              treeReplicateDryRun,
+		})
+
+		// Run the replication
+		ctx := context.Background()
+		result, err := replicator.ReplicateTree(
+			ctx,
+			sourceClient,
+			destClient,
+			sourcePrefix,
+			destPrefix,
+			treeReplicateForce,
+		)
+
+		if err != nil {
+			logger.Fatal("Tree replication failed", err, nil)
+		}
+
+		// Print summary
+		logger.Info("Tree replication completed successfully", map[string]interface{}{
+			"repositories":      result.Repositories,
+			"images_replicated": result.ImagesReplicated,
+			"images_skipped":    result.ImagesSkipped,
+			"images_failed":     result.ImagesFailed,
+			"duration_sec":      result.Duration.Seconds(),
+		})
+	},
+}
+
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the replication server",
@@ -172,8 +318,8 @@ var serveCmd = &cobra.Command{
 
 		// Create ECR client
 		ecrClient, err := ecr.NewClient(ecr.ClientOptions{
-			Region:    "us-west-2",
-			AccountID: "", // Uses the default account from AWS credentials
+			Region:    ecrRegion,
+			AccountID: ecrAccountID,
 			Logger:    logger,
 		})
 		if err != nil {
@@ -183,8 +329,8 @@ var serveCmd = &cobra.Command{
 
 		// Create GCR client
 		gcrClient, err := gcr.NewClient(gcr.ClientOptions{
-			Project:  "my-project",
-			Location: "us",
+			Project:  gcrProject,
+			Location: gcrLocation,
 			Logger:   logger,
 		})
 		if err != nil {

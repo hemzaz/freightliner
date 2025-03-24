@@ -41,18 +41,37 @@ freightliner serve --config config.yaml
 
 ## Configuration
 
-Freightliner can be configured using a YAML configuration file:
+### Command-line Options
+
+Freightliner supports the following global command-line options:
+
+| Option | Description |
+|--------|-------------|
+| `--log-level` | Log level (debug, info, warn, error, fatal) |
+| `--ecr-region` | AWS region for ECR (default: us-west-2) |
+| `--ecr-account` | AWS account ID for ECR (empty uses default from credentials) |
+| `--gcr-project` | GCP project for GCR |
+| `--gcr-location` | GCR location (us, eu, asia) (default: us) |
+
+Example:
+```bash
+freightliner replicate ecr/my-repo gcr/my-repo --ecr-region=us-east-1 --gcr-project=my-gcp-project
+```
+
+### YAML Configuration
+
+Freightliner can be configured using a YAML configuration file for the server mode:
 
 ```yaml
 registries:
   ecr:
     type: ecr
     region: us-west-2
-    # Additional AWS-specific settings
+    account_id: "123456789012"  # Optional, uses AWS credentials if empty
   gcr:
     type: gcr
     project: my-project
-    # Additional GCP-specific settings
+    location: us  # Optional, defaults to "us"
 
 rules:
   - source_registry: ecr
@@ -65,6 +84,7 @@ rules:
 settings:
   max_concurrent_replications: 5
   retry_count: 3
+  metrics_port: 9090
 ```
 
 ## Authentication
@@ -86,6 +106,38 @@ Freightliner uses the standard Google Cloud authentication methods. You can conf
 - GKE Workload Identity (when running on GKE)
 
 ## Advanced Features
+
+### Tree Replication
+
+Tree replication allows you to replicate entire repository trees from one registry to another, matching a specific prefix pattern:
+
+```bash
+# Replicate all repositories with prefix "prod/" from ECR to GCR
+freightliner replicate-tree ecr/prod gcr/prod-mirror
+
+# Replicate all repositories with prefix "staging/" excluding internal ones
+freightliner replicate-tree ecr/staging gcr/staging-mirror --exclude-repo="internal-*"
+
+# Only replicate versioned tags
+freightliner replicate-tree ecr/prod gcr/prod-mirror --include-tag="v*"
+
+# Perform a dry run without actually copying images
+freightliner replicate-tree ecr/prod gcr/prod-mirror --dry-run
+
+# Use 10 concurrent worker threads
+freightliner replicate-tree ecr/prod gcr/prod-mirror --workers=10
+```
+
+Available options for tree replication:
+
+| Option | Description |
+|--------|-------------|
+| `--workers` | Number of concurrent worker threads (default: 5) |
+| `--exclude-repo` | Repository patterns to exclude (e.g. 'internal-*') |
+| `--exclude-tag` | Tag patterns to exclude (e.g. 'dev-*') |
+| `--include-tag` | Tag patterns to include (e.g. 'v*') |
+| `--dry-run` | Perform a dry run without actually copying images |
+| `--force` | Force overwrite of existing images |
 
 ### Bidirectional Replication
 
