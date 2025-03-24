@@ -49,8 +49,8 @@ snapcraft:
 
 dockers:
   - image_templates:
-      - "ghcr.io/elad/freightliner:{{ .Version }}"
-      - "ghcr.io/elad/freightliner:latest"
+      - "ghcr.io/hemzaz/freightliner:{{ .Version }}"
+      - "ghcr.io/hemzaz/freightliner:latest"
     build_flag_templates:
       - "--label=org.opencontainers.image.created={{.Date}}"
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
@@ -60,18 +60,18 @@ dockers:
 brews:
   - name: freightliner
     tap:
-      owner: elad
+      owner: hemzaz
       name: homebrew-tools
     folder: Formula
-    homepage: https://github.com/elad/freightliner
+    homepage: https://github.com/hemzaz/freightliner
     description: Container registry replication tool
     license: MIT
 
 nfpms:
   - file_name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Arch }}'
-    homepage: https://github.com/elad/freightliner
+    homepage: https://github.com/hemzaz/freightliner
     description: Container registry replication tool
-    maintainer: Elad <noreply@example.com>
+    maintainer: hemzaz <noreply@example.com>
     license: MIT
     formats:
       - deb
@@ -79,9 +79,9 @@ nfpms:
 
 scoops:
   - bucket:
-      owner: elad
+      owner: hemzaz
       name: scoop-bucket
-    homepage: https://github.com/elad/freightliner
+    homepage: https://github.com/hemzaz/freightliner
     description: Container registry replication tool
     license: MIT
 
