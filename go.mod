@@ -1,4 +1,4 @@
-module github.com/elad/freightliner
+module github.com/hemzaz/freightliner
 
 go 1.19
 
