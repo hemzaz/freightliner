@@ -5,26 +5,26 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	
-	"github.com/hemzaz/freightliner/internal/log"
-	"github.com/hemzaz/freightliner/pkg/client/common"
+
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"google.golang.org/api/iterator"
+	"github.com/hemzaz/freightliner/src/internal/log"
+	"github.com/hemzaz/freightliner/src/pkg/client/common"
 	artifactregistry "google.golang.org/api/artifactregistry/v1"
+	"google.golang.org/api/iterator"
 )
 
 // Client implements the registry client interface for Google GCR
 type Client struct {
-	project       string
-	location      string
-	keychain      authn.Keychain
-	transportOpt  remote.Option
-	logger        *log.Logger
-	arClient      *artifactregistry.Service // Artifact Registry client for listing repositories
+	project      string
+	location     string
+	keychain     authn.Keychain
+	transportOpt remote.Option
+	logger       *log.Logger
+	arClient     *artifactregistry.Service // Artifact Registry client for listing repositories
 }
 
 // ClientOptions contains options for the GCR client
@@ -37,28 +37,28 @@ type ClientOptions struct {
 // NewClient creates a new GCR client
 func NewClient(opts ClientOptions) (*Client, error) {
 	ctx := context.Background()
-	
+
 	// Default location to "us" if not provided
 	location := opts.Location
 	if location == "" {
 		location = "us"
 	}
-	
+
 	// Create keychain for GCR authentication
 	keychain, err := NewGCRKeychain()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCR keychain: %w", err)
 	}
-	
+
 	// Create transport option for remote.* operations
 	transportOpt := remote.WithAuthFromKeychain(keychain)
-	
+
 	// Create Artifact Registry client for listing repositories
 	arClient, err := artifactregistry.NewService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Artifact Registry client: %w", err)
 	}
-	
+
 	return &Client{
 		project:      opts.Project,
 		location:     location,
@@ -76,9 +76,9 @@ func (c *Client) GetRepository(name string) (common.Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repository name: %w", err)
 	}
-	
+
 	// Unlike ECR, GCR/AR doesn't need explicit creation - repositories are created on first push
-	
+
 	return &Repository{
 		client:     c,
 		name:       name,
@@ -90,18 +90,18 @@ func (c *Client) GetRepository(name string) (common.Repository, error) {
 func (c *Client) ListRepositories() ([]string, error) {
 	ctx := context.Background()
 	var repositories []string
-	
+
 	// First try using the Google Container Registry approach
 	repos, err := google.List(fmt.Sprintf("gcr.io/%s", c.project), c.transportOpt)
 	if err != nil {
 		c.logger.Warn("Failed to list GCR repositories, trying Artifact Registry", map[string]interface{}{
 			"error": err.Error(),
 		})
-		
+
 		// Fall back to Artifact Registry API
 		parent := fmt.Sprintf("projects/%s/locations/%s", c.project, c.location)
 		it := c.arClient.Projects.Locations.Repositories.List(parent).Context(ctx)
-		
+
 		for {
 			repo, err := it.Next()
 			if err == iterator.Done {
@@ -110,7 +110,7 @@ func (c *Client) ListRepositories() ([]string, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to list repositories: %w", err)
 			}
-			
+
 			// Extract repository name from full path
 			// Format: projects/PROJECT/locations/LOCATION/repositories/REPO
 			parts := strings.Split(repo.Name, "/")
@@ -128,7 +128,7 @@ func (c *Client) ListRepositories() ([]string, error) {
 			}
 		}
 	}
-	
+
 	return repositories, nil
 }
 
@@ -139,13 +139,13 @@ func (c *Client) GetTransport(repo string) (http.RoundTripper, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repository name: %w", err)
 	}
-	
+
 	// Get authenticator for this repository
 	auth, err := c.keychain.Resolve(repository)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get authenticator: %w", err)
 	}
-	
+
 	// Create transport
 	return transport.NewWithContext(
 		context.Background(),
