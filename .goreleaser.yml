@@ -1,0 +1,89 @@
+# GoReleaser configuration
+
+project_name: freightliner
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/freightliner/main.go
+    id: freightliner
+    binary: freightliner
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapcraft:
+  name: freightliner
+  summary: Container registry replication tool
+  description: |
+    Freightliner is a tool for replicating container images 
+    between different container registries including 
+    AWS ECR and Google GCR.
+  grade: stable
+  confinement: strict
+
+dockers:
+  - image_templates:
+      - "ghcr.io/elad/freightliner:{{ .Version }}"
+      - "ghcr.io/elad/freightliner:latest"
+    build_flag_templates:
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+
+brews:
+  - name: freightliner
+    tap:
+      owner: elad
+      name: homebrew-tools
+    folder: Formula
+    homepage: https://github.com/elad/freightliner
+    description: Container registry replication tool
+    license: MIT
+
+nfpms:
+  - file_name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Arch }}'
+    homepage: https://github.com/elad/freightliner
+    description: Container registry replication tool
+    maintainer: Elad <noreply@example.com>
+    license: MIT
+    formats:
+      - deb
+      - rpm
+
+scoops:
+  - bucket:
+      owner: elad
+      name: scoop-bucket
+    homepage: https://github.com/elad/freightliner
+    description: Container registry replication tool
+    license: MIT
+
+announce:
+  skip: true
