@@ -3,19 +3,18 @@ package copy
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/hemzaz/freightliner/src/internal/log"
-	"github.com/hemzaz/freightliner/src/internal/util"
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
-	"github.com/hemzaz/freightliner/src/pkg/metrics"
-	"github.com/hemzaz/freightliner/src/pkg/network"
-	"github.com/hemzaz/freightliner/src/pkg/security/encryption"
-	"github.com/hemzaz/freightliner/src/pkg/security/signing"
+	"src/internal/log"
+	"src/internal/util"
+	"src/pkg/client/common"
+	"src/pkg/metrics"
+	"src/pkg/network"
+	"src/pkg/security/encryption"
+	"src/pkg/security/signing"
 )
 
 // Copier handles copying images between registries
@@ -39,22 +38,22 @@ type CopyOptions struct {
 
 	// ForceOverwrite forces overwriting existing tags
 	ForceOverwrite bool
-	
+
 	// EnableNetworkOptimization enables network optimization features
 	EnableNetworkOptimization bool
-	
+
 	// TransferOptions configures network transfer optimizations
 	TransferOptions network.TransferOptions
-	
+
 	// SigningOptions configures image signing
 	SigningOptions *signing.SignManagerOptions
-	
+
 	// EncryptionOptions configures image encryption
 	EncryptionOptions *encryption.EncryptionConfig
-	
+
 	// VerifySignatures determines if signatures should be verified during copy
 	VerifySignatures bool
-	
+
 	// UseCustomerManagedKeys enables use of customer-managed keys for encryption
 	UseCustomerManagedKeys bool
 }
@@ -64,10 +63,10 @@ func NewCopier(logger *log.Logger) *Copier {
 	// Create default transfer manager
 	transferOpts := network.DefaultTransferOptions()
 	transferMgr := network.NewTransferManager(logger, transferOpts)
-	
+
 	return &Copier{
 		logger:         logger,
-		workerPool:     4, // Default to 4 concurrent workers for layer operations
+		workerPool:     4,                      // Default to 4 concurrent workers for layer operations
 		metrics:        &metrics.NoopMetrics{}, // Default to no-op metrics
 		transferMgr:    transferMgr,
 		enableOptimize: true, // Enable optimization by default
@@ -118,7 +117,7 @@ func (c *Copier) CopyImage(ctx context.Context,
 	sourceRepo common.Repository,
 	destRepo common.Repository,
 	options CopyOptions) error {
-	
+
 	// Resolve tags
 	sourceTag := options.SourceTag
 	destTag := options.DestinationTag
@@ -131,7 +130,7 @@ func (c *Copier) CopyImage(ctx context.Context,
 		"source_tag":      sourceTag,
 		"destination_tag": destTag,
 	})
-	
+
 	// Record metrics for the start of the replication
 	c.metrics.ReplicationStarted(sourceTag, destTag)
 
@@ -142,7 +141,7 @@ func (c *Copier) CopyImage(ctx context.Context,
 		c.metrics.ReplicationFailed()
 		return fmt.Errorf("failed to get source manifest: %w", err)
 	}
-	
+
 	// If signature verification is enabled, verify the image signature
 	if c.signManager != nil && options.VerifySignatures {
 		if err := c.verifyImageSignature(ctx, sourceRepo, sourceTag, manifest); err != nil {
@@ -203,7 +202,7 @@ func (c *Copier) CopyImage(ctx context.Context,
 		c.metrics.ReplicationFailed()
 		return fmt.Errorf("failed to put manifest: %w", err)
 	}
-	
+
 	// If signing is enabled, sign the destination image
 	if c.signManager != nil && c.signManager.IsSigningEnabled() {
 		if err := c.signImage(ctx, destRepo, destTag, manifest); err != nil {
@@ -219,18 +218,16 @@ func (c *Copier) CopyImage(ctx context.Context,
 	}
 
 	duration := time.Since(start)
-	
+
 	// Calculate total bytes copied (approximate)
 	var totalBytes int64
-	for _, blob := range blobs {
-		// This is just for metrics - we're not tracking actual size in this implementation
-		// In a real implementation, we would track the actual size of each blob
-		totalBytes += 1024 * 1024 // Assume 1MB per blob for metrics
-	}
-	
+	// This is just for metrics - we're not tracking actual size in this implementation
+	// In a real implementation, we would track the actual size of each blob
+	totalBytes = int64(len(blobs)) * 1024 * 1024 // Assume 1MB per blob for metrics
+
 	// Record metrics for the completion of the replication
 	c.metrics.ReplicationCompleted(duration, len(blobs), totalBytes)
-	
+
 	c.logger.Info("Image copy completed", map[string]interface{}{
 		"source_tag":      sourceTag,
 		"destination_tag": destTag,
@@ -247,13 +244,13 @@ func (c *Copier) signImage(ctx context.Context, repo common.Repository, tag stri
 	if c.signManager == nil {
 		return nil
 	}
-	
+
 	// Calculate the manifest digest
 	manifestDigest, err := util.CalculateDigest(manifest)
 	if err != nil {
 		return fmt.Errorf("failed to calculate manifest digest: %w", err)
 	}
-	
+
 	// Create the signature payload
 	payload := &signing.SignaturePayload{
 		ManifestDigest: manifestDigest,
@@ -263,7 +260,7 @@ func (c *Copier) signImage(ctx context.Context, repo common.Repository, tag stri
 			"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
 		},
 	}
-	
+
 	// Sign the image
 	_, err = c.signManager.SignImage(ctx, payload)
 	return err
@@ -275,36 +272,36 @@ func (c *Copier) verifyImageSignature(ctx context.Context, repo common.Repositor
 	if c.signManager == nil {
 		return nil
 	}
-	
+
 	// Calculate the manifest digest
 	manifestDigest, err := util.CalculateDigest(manifest)
 	if err != nil {
 		return fmt.Errorf("failed to calculate manifest digest: %w", err)
 	}
-	
+
 	// Create the signature payload
 	payload := &signing.SignaturePayload{
 		ManifestDigest: manifestDigest,
 		Repository:     repo.GetRepositoryName(),
 		Tag:            tag,
 	}
-	
+
 	// Try to get the signature from storage
 	signature, err := c.signManager.GetSignatureFromStorage(ctx, repo.GetRepositoryName(), tag)
 	if err != nil {
 		return fmt.Errorf("failed to get signature: %w", err)
 	}
-	
+
 	// Verify the signature
 	valid, err := c.signManager.VerifyImageSignature(ctx, payload, signature)
 	if err != nil {
 		return fmt.Errorf("signature verification error: %w", err)
 	}
-	
+
 	if !valid {
 		return fmt.Errorf("invalid signature for image %s:%s", repo.GetRepositoryName(), tag)
 	}
-	
+
 	return nil
 }
 
@@ -354,27 +351,27 @@ func (c *Copier) copyManifestList(
 
 	for _, manifest := range index.Manifests {
 		wg.Add(1)
-		
+
 		// Create a copy of the loop variables to use in the goroutine
 		digest := manifest.Digest
 		platform := fmt.Sprintf("%s/%s", manifest.Platform.OS, manifest.Platform.Architecture)
 		if manifest.Platform.Variant != "" {
 			platform += "/" + manifest.Platform.Variant
 		}
-		
+
 		go func() {
 			defer wg.Done()
-			
+
 			// Each platform-specific manifest will be referenced by digest, not tag
 			c.logger.Debug("Copying platform-specific manifest", map[string]interface{}{
 				"digest":   digest,
 				"platform": platform,
 			})
-			
+
 			// We don't have a direct way to get a manifest by digest via our interface,
 			// but we can create a pseudo-tag based on the digest to copy
 			digestTag := "@" + digest // This is a pseudo-tag, not a real tag
-			
+
 			// The destination will receive this as part of the overall index,
 			// so we just need to ensure the blobs are copied
 			manifestBytes, manifestMediaType, err := sourceRepo.GetManifest(digestTag)
@@ -382,7 +379,7 @@ func (c *Copier) copyManifestList(
 				errors <- fmt.Errorf("failed to get manifest for platform %s: %w", platform, err)
 				return
 			}
-			
+
 			// Copy the layers for this platform's manifest
 			_, err = c.copyLayers(ctx, sourceRepo, destRepo, manifestBytes, manifestMediaType, options)
 			if err != nil {
@@ -415,7 +412,7 @@ func (c *Copier) copyManifestList(
 		c.metrics.ReplicationFailed()
 		return fmt.Errorf("failed to put manifest list: %w", err)
 	}
-	
+
 	// If signing is enabled, sign the multi-arch image
 	if c.signManager != nil && c.signManager.IsSigningEnabled() {
 		if err := c.signImage(ctx, destRepo, destTag, manifestList); err != nil {
@@ -427,15 +424,15 @@ func (c *Copier) copyManifestList(
 
 	// Record metrics for successful multi-arch image copy
 	duration := time.Since(start)
-	
+
 	// For multi-arch images, calculate approximate layers and bytes
 	// We're counting each platform manifest as one layer for simplicity
 	totalLayers := len(index.Manifests)
 	// Rough estimate - 50MB per platform image
 	totalBytes := int64(totalLayers) * 50 * 1024 * 1024
-	
+
 	c.metrics.ReplicationCompleted(duration, totalLayers, totalBytes)
-	
+
 	c.logger.Info("Manifest list copy completed", map[string]interface{}{
 		"source_tag":      sourceTag,
 		"destination_tag": destTag,
@@ -467,8 +464,8 @@ func (c *Copier) copyLayers(
 	var configInfo layerInfo
 
 	// First, handle different manifest schema versions
-	if mediaType == string(types.DockerManifestSchema1) || 
-	   mediaType == string(types.DockerManifestSchema1Signed) {
+	if mediaType == string(types.DockerManifestSchema1) ||
+		mediaType == string(types.DockerManifestSchema1Signed) {
 		// Schema 1 manifests have a different structure (legacy format)
 		var schema1 struct {
 			FSLayers []struct {
@@ -479,11 +476,11 @@ func (c *Copier) copyLayers(
 			} `json:"history"`
 			SchemaVersion int `json:"schemaVersion"`
 		}
-		
+
 		if err := json.Unmarshal(manifest, &schema1); err != nil {
 			return nil, fmt.Errorf("failed to parse schema 1 manifest: %w", err)
 		}
-		
+
 		// Convert to a common format for our processing
 		for _, layer := range schema1.FSLayers {
 			layers = append(layers, layerInfo{
@@ -497,11 +494,11 @@ func (c *Copier) copyLayers(
 			Config layerInfo   `json:"config"`
 			Layers []layerInfo `json:"layers"`
 		}
-		
+
 		if err := json.Unmarshal(manifest, &schema2); err != nil {
 			return nil, fmt.Errorf("failed to parse manifest: %w", err)
 		}
-		
+
 		layers = schema2.Layers
 		configInfo = schema2.Config
 	}
@@ -527,7 +524,7 @@ func (c *Copier) copyLayers(
 
 	// Determine if we should use encryption for blobs
 	useEncryption := c.encryptManager != nil && options.EncryptionOptions != nil
-	
+
 	// Check for customer-managed keys if specified
 	if useEncryption && options.UseCustomerManagedKeys {
 		isCMK, err := c.encryptManager.IsCustomerManagedKeyEnabled(ctx)
@@ -544,21 +541,21 @@ func (c *Copier) copyLayers(
 
 	for _, blob := range allBlobs {
 		wg.Add(1)
-		
+
 		// Create a copy of the loop variables to use in the goroutine
 		digest := blob.Digest
 		mediaType := blob.MediaType
-		
+
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{} // Acquire token
+			sem <- struct{}{}        // Acquire token
 			defer func() { <-sem }() // Release token
-			
+
 			c.logger.Debug("Copying blob", map[string]interface{}{
 				"digest":     digest,
 				"media_type": mediaType,
 			})
-			
+
 			// Check if network optimization is enabled
 			if c.enableOptimize && options.EnableNetworkOptimization {
 				// Use the transfer manager to optimize the transfer
@@ -567,16 +564,16 @@ func (c *Copier) copyLayers(
 					errors <- err
 					return
 				}
-				
+
 				networkStats <- result
 				copiedBlobs <- digest
 				return
 			}
-			
+
 			// If network optimization is disabled, use the original approach
 			// Create a pseudo-tag from the digest
 			digestTag := "@" + digest
-			
+
 			// Apply retry logic for blob transfers
 			err := util.RetryWithBackoff(ctx, 3, time.Second, 10*time.Second, func() error {
 				// Get the blob from the source
@@ -584,7 +581,7 @@ func (c *Copier) copyLayers(
 				if err != nil {
 					return fmt.Errorf("failed to get blob %s: %w", digest, err)
 				}
-				
+
 				// If encryption is enabled, encrypt the blob
 				if useEncryption {
 					encryptedData, err := c.encryptManager.Encrypt(ctx, blobData)
@@ -593,21 +590,21 @@ func (c *Copier) copyLayers(
 					}
 					blobData = encryptedData
 				}
-				
+
 				// Put the blob in the destination
 				err = destRepo.PutManifest(digestTag, blobData, mediaType)
 				if err != nil {
 					return fmt.Errorf("failed to put blob %s: %w", digest, err)
 				}
-				
+
 				return nil
 			})
-			
+
 			if err != nil {
 				errors <- err
 				return
 			}
-			
+
 			copiedBlobs <- digest
 		}()
 	}
@@ -633,7 +630,7 @@ func (c *Copier) copyLayers(
 		for stat := range networkStats {
 			totalOriginalSize += int64(stat.Size)
 			totalTransferSize += int64(stat.TransferSize)
-			
+
 			// Log detailed stats for each blob
 			c.logger.Debug("Blob transfer statistics", map[string]interface{}{
 				"digest":            stat.Digest,
@@ -644,18 +641,18 @@ func (c *Copier) copyLayers(
 				"total_savings_pct": stat.TotalSavings,
 			})
 		}
-		
+
 		// Calculate overall savings
 		if totalOriginalSize > 0 {
 			totalSavingsBytes = totalOriginalSize - totalTransferSize
 			savingsPercent := 100 * (float64(totalSavingsBytes) / float64(totalOriginalSize))
-			
+
 			c.logger.Info("Network optimization summary", map[string]interface{}{
-				"total_original_size":  totalOriginalSize,
-				"total_transfer_size":  totalTransferSize,
-				"total_savings_bytes":  totalSavingsBytes,
+				"total_original_size":   totalOriginalSize,
+				"total_transfer_size":   totalTransferSize,
+				"total_savings_bytes":   totalSavingsBytes,
 				"total_savings_percent": savingsPercent,
-				"blob_count":           len(allBlobs),
+				"blob_count":            len(allBlobs),
 			})
 		}
 	}

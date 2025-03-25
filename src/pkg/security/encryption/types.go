@@ -19,10 +19,10 @@ type Provider interface {
 
 	// GenerateDataKey generates a data key that can be used for envelope encryption
 	GenerateDataKey(ctx context.Context, keyID string, keyLength int) (*DataKey, error)
-	
+
 	// ReEncrypt re-encrypts data that was encrypted with one key using another key
 	ReEncrypt(ctx context.Context, ciphertext []byte, sourceKeyID, destinationKeyID string) ([]byte, error)
-	
+
 	// GetKeyInfo retrieves information about a KMS key
 	GetKeyInfo(ctx context.Context, keyID string) (*KeyInfo, error)
 }
@@ -40,28 +40,28 @@ type DataKey struct {
 type KeyInfo struct {
 	// ID is the key ID
 	ID string
-	
+
 	// ARN is the AWS ARN or full resource path for GCP
 	ARN string
-	
+
 	// Algorithm is the cryptographic algorithm of the key
 	Algorithm string
-	
+
 	// State is the current state of the key (e.g., enabled, disabled)
 	State string
-	
+
 	// Enabled indicates whether the key is enabled for use
 	Enabled bool
-	
+
 	// CustomerManaged indicates whether this is a customer-managed key (vs. service-managed)
 	CustomerManaged bool
-	
+
 	// Provider is the KMS provider name (aws-kms, gcp-kms)
 	Provider string
-	
+
 	// Region is the region or location where the key is stored
 	Region string
-	
+
 	// CreateTime is when the key was created
 	CreateTime time.Time
 }
@@ -73,7 +73,7 @@ type ProviderOptions struct {
 
 	// KeyID is the default KMS key ID to use if none is specified
 	KeyID string
-	
+
 	// CustomerManagedKey indicates whether to use a customer-managed key
 	CustomerManagedKey bool
 }
@@ -82,20 +82,20 @@ type ProviderOptions struct {
 type EncryptionConfig struct {
 	// Provider is the name of the encryption provider (aws-kms, gcp-kms)
 	Provider string
-	
+
 	// KeyID is the ID of the key to use for encryption
 	KeyID string
-	
+
 	// Region is the region where the key is located
 	Region string
-	
+
 	// CustomerManagedKey indicates whether to use a customer-managed key
 	CustomerManagedKey bool
-	
+
 	// EnvelopeEncryption indicates whether to use envelope encryption
 	// (encrypt content with a data key, then encrypt the data key with KMS)
 	EnvelopeEncryption bool
-	
+
 	// DataKeyLength is the length of data keys for envelope encryption (in bytes)
 	DataKeyLength int
 }

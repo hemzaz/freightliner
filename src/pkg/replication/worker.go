@@ -2,9 +2,8 @@ package replication
 
 import (
 	"context"
+	"src/internal/log"
 	"sync"
-
-	"github.com/hemzaz/freightliner/src/internal/log"
 )
 
 // Task represents a task to be executed by a worker

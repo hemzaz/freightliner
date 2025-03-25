@@ -7,9 +7,9 @@ import (
 
 func TestCompression(t *testing.T) {
 	testCases := []struct {
-		name     string
-		data     []byte
-		opts     CompressionOptions
+		name           string
+		data           []byte
+		opts           CompressionOptions
 		shouldCompress bool
 	}{
 		{

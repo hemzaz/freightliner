@@ -45,7 +45,7 @@ func (m *MockProvider) GenerateDataKey(ctx context.Context, keyID string, keyLen
 
 func TestProviderInterface(t *testing.T) {
 	mockProvider := new(MockProvider)
-	
+
 	// Setup expectations
 	mockProvider.On("Name").Return("mock-provider")
 	mockProvider.On("Encrypt", mock.Anything, []byte("test-data"), "test-key").Return([]byte("encrypted-data"), nil)
@@ -89,7 +89,8 @@ func TestAWSKMSConstructor(t *testing.T) {
 		t.Skip("Skipping AWS KMS tests, set AWS_TEST_KMS=true to run")
 	}
 
-	_, err := NewAWSKMS(AWSOpts{
+	ctx := context.Background()
+	_, err := NewAWSKMS(ctx, AWSOpts{
 		Region: "us-west-2",
 		KeyID:  "alias/test-key",
 	})

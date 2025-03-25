@@ -11,14 +11,14 @@ func MatchPattern(pattern, str string) bool {
 	if !strings.Contains(pattern, "*") {
 		return pattern == str
 	}
-	
+
 	// Use filepath.Match for wildcard matching
 	matched, err := filepath.Match(pattern, str)
 	if err != nil {
 		// Invalid pattern
 		return false
 	}
-	
+
 	return matched
 }
 
@@ -28,12 +28,12 @@ func ShouldReplicate(rule ReplicationRule, repository, tag string) bool {
 	if !MatchPattern(rule.SourceRepository, repository) {
 		return false
 	}
-	
+
 	// Check if the tag matches the tag filter
 	if rule.TagFilter != "" && !MatchPattern(rule.TagFilter, tag) {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -44,34 +44,34 @@ func GetDestinationRepository(rule ReplicationRule, sourceRepository string) str
 	if rule.SourceRepository == rule.DestinationRepository {
 		return sourceRepository
 	}
-	
+
 	// If the source repository pattern has a wildcard and the destination doesn't,
 	// this is a many-to-one mapping, use the destination as is
-	if strings.Contains(rule.SourceRepository, "*") && 
-	   !strings.Contains(rule.DestinationRepository, "*") {
+	if strings.Contains(rule.SourceRepository, "*") &&
+		!strings.Contains(rule.DestinationRepository, "*") {
 		return rule.DestinationRepository
 	}
-	
+
 	// If both patterns have wildcards, try to substitute
-	if strings.Contains(rule.SourceRepository, "*") && 
-	   strings.Contains(rule.DestinationRepository, "*") {
+	if strings.Contains(rule.SourceRepository, "*") &&
+		strings.Contains(rule.DestinationRepository, "*") {
 		// Find what matched the wildcard in the source
 		parts := strings.Split(rule.SourceRepository, "*")
 		if len(parts) == 2 {
 			prefix := parts[0]
 			suffix := parts[1]
-			
-			if strings.HasPrefix(sourceRepository, prefix) && 
-			   strings.HasSuffix(sourceRepository, suffix) {
+
+			if strings.HasPrefix(sourceRepository, prefix) &&
+				strings.HasSuffix(sourceRepository, suffix) {
 				// Extract the middle part that matched the wildcard
-				middle := sourceRepository[len(prefix):len(sourceRepository)-len(suffix)]
-				
+				middle := sourceRepository[len(prefix) : len(sourceRepository)-len(suffix)]
+
 				// Replace the wildcard in the destination pattern
 				return strings.Replace(rule.DestinationRepository, "*", middle, 1)
 			}
 		}
 	}
-	
+
 	// If no special case applies, just use the destination as is
 	return rule.DestinationRepository
 }

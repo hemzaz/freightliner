@@ -3,11 +3,10 @@ package replication
 import (
 	"context"
 	"fmt"
+	"src/internal/log"
+	"src/pkg/client/common"
+	"src/pkg/copy"
 	"sync"
-
-	"github.com/hemzaz/freightliner/src/internal/log"
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
-	"github.com/hemzaz/freightliner/src/pkg/copy"
 )
 
 // Reconciler handles reconciling repositories between registries

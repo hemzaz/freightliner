@@ -8,10 +8,10 @@ import (
 var (
 	// ErrNotFound indicates a resource was not found
 	ErrNotFound = errors.New("resource not found")
-	
+
 	// ErrUnauthorized indicates an authentication failure
 	ErrUnauthorized = errors.New("unauthorized")
-	
+
 	// ErrRateLimit indicates a rate limit was hit
 	ErrRateLimit = errors.New("rate limit exceeded")
 )

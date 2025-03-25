@@ -13,7 +13,7 @@
    - ✅ Integration with Google Cloud IAM
    - ✅ Ability to use temporary credentials and token-based authentication
    - ✅ Support for cross-account access in AWS
-   - Integration with AWS Secrets Manager and Google Secret Manager for secure credential storage
+   - ✅ Integration with AWS Secrets Manager and Google Secret Manager for secure credential storage
 
 3. Image Handling
    - ✅ Support for Docker images and OCI (Open Container Initiative) artifacts

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hemzaz/freightliner/src/internal/log"
+	"src/internal/log"
 )
 
 // Job represents a scheduled replication job
@@ -141,9 +141,6 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 	s.logger.Info("Running scheduled job", map[string]interface{}{
 		"id": id,
 	})
-
-	// Create a copy of the job's rule for the worker
-	rule := job.Rule
 
 	// Submit the job to the worker pool
 	s.workerPool.Submit(func(ctx context.Context) error {

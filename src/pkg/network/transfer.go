@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hemzaz/freightliner/src/internal/log"
-	"github.com/hemzaz/freightliner/src/internal/util"
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
+	"src/internal/log"
+	"src/internal/util"
+	"src/pkg/client/common"
 )
 
 // TransferOptions configures the network optimization behavior
@@ -37,21 +37,21 @@ type TransferOptions struct {
 // DefaultTransferOptions returns sensible default transfer options
 func DefaultTransferOptions() TransferOptions {
 	return TransferOptions{
-		EnableCompression:   true,
-		CompressionOptions:  DefaultCompressionOptions(),
-		EnableDelta:         true,
-		DeltaOptions:        DefaultDeltaOptions(),
-		RetryAttempts:       3,
-		RetryInitialDelay:   time.Second,
-		RetryMaxDelay:       30 * time.Second,
+		EnableCompression:  true,
+		CompressionOptions: DefaultCompressionOptions(),
+		EnableDelta:        true,
+		DeltaOptions:       DefaultDeltaOptions(),
+		RetryAttempts:      3,
+		RetryInitialDelay:  time.Second,
+		RetryMaxDelay:      30 * time.Second,
 	}
 }
 
 // TransferManager optimizes network transfers between registries
 type TransferManager struct {
-	logger     *log.Logger
-	opts       TransferOptions
-	deltaMan   *DeltaManager
+	logger   *log.Logger
+	opts     TransferOptions
+	deltaMan *DeltaManager
 }
 
 // NewTransferManager creates a new transfer manager
@@ -105,8 +105,8 @@ func (t *TransferManager) TransferBlob(
 	digestTag := "@" + digest
 
 	result := &TransferResult{
-		Digest: digest,
-		UsedDelta: false,
+		Digest:          digest,
+		UsedDelta:       false,
 		UsedCompression: false,
 	}
 
@@ -125,7 +125,7 @@ func (t *TransferManager) TransferBlob(
 			result.DeltaSavings = deltaSummary.SavingsPercent
 			result.TotalSavings = deltaSummary.SavingsPercent
 			result.Duration = time.Since(start)
-			
+
 			// Delta transfer was successful, no need for full transfer
 			return result, nil
 		}
@@ -138,15 +138,15 @@ func (t *TransferManager) TransferBlob(
 	var transferSize int
 
 	// Get the blob from the source with retry logic
-	transferErr = util.RetryWithBackoff(ctx, t.opts.RetryAttempts, 
+	transferErr = util.RetryWithBackoff(ctx, t.opts.RetryAttempts,
 		t.opts.RetryInitialDelay, t.opts.RetryMaxDelay, func() error {
-		var err error
-		blobData, _, err = sourceRepo.GetManifest(digestTag)
-		if err != nil {
-			return fmt.Errorf("failed to get blob %s: %w", digest, err)
-		}
-		return nil
-	})
+			var err error
+			blobData, _, err = sourceRepo.GetManifest(digestTag)
+			if err != nil {
+				return fmt.Errorf("failed to get blob %s: %w", digest, err)
+			}
+			return nil
+		})
 
 	if transferErr != nil {
 		return nil, transferErr
@@ -173,21 +173,21 @@ func (t *TransferManager) TransferBlob(
 	}
 
 	// Write to destination with retry logic
-	transferErr = util.RetryWithBackoff(ctx, t.opts.RetryAttempts, 
+	transferErr = util.RetryWithBackoff(ctx, t.opts.RetryAttempts,
 		t.opts.RetryInitialDelay, t.opts.RetryMaxDelay, func() error {
-		// If we used compression, we need to decompress before writing to destination
-		dataToWrite := blobData
-		if result.UsedCompression {
-			var err error
-			dataToWrite, err = Decompress(blobData, t.opts.CompressionOptions.Type)
-			if err != nil {
-				return fmt.Errorf("failed to decompress data: %w", err)
+			// If we used compression, we need to decompress before writing to destination
+			dataToWrite := blobData
+			if result.UsedCompression {
+				var err error
+				dataToWrite, err = Decompress(blobData, t.opts.CompressionOptions.Type)
+				if err != nil {
+					return fmt.Errorf("failed to decompress data: %w", err)
+				}
 			}
-		}
-		
-		// Put the blob in the destination
-		return destRepo.PutManifest(digestTag, dataToWrite, mediaType)
-	})
+
+			// Put the blob in the destination
+			return destRepo.PutManifest(digestTag, dataToWrite, mediaType)
+		})
 
 	if transferErr != nil {
 		return nil, transferErr
@@ -200,13 +200,13 @@ func (t *TransferManager) TransferBlob(
 	result.Duration = time.Since(start)
 
 	t.logger.Debug("Blob transfer completed", map[string]interface{}{
-		"digest":         digest,
-		"size":           originalSize,
-		"transfer_size":  transferSize,
-		"total_savings":  result.TotalSavings,
-		"used_delta":     result.UsedDelta,
+		"digest":           digest,
+		"size":             originalSize,
+		"transfer_size":    transferSize,
+		"total_savings":    result.TotalSavings,
+		"used_delta":       result.UsedDelta,
 		"used_compression": result.UsedCompression,
-		"duration_ms":    result.Duration.Milliseconds(),
+		"duration_ms":      result.Duration.Milliseconds(),
 	})
 
 	return result, nil

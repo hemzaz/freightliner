@@ -5,17 +5,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hemzaz/freightliner/src/internal/log"
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
+	"src/internal/log"
 )
 
 // MockRepository is a mock implementation of the common.Repository interface
 type MockRepository struct {
-	Tags     []string
-	Manifest []byte
+	Tags      []string
+	Manifest  []byte
 	MediaType string
 	PutCalled bool
 	GetCalled bool
+	Name      string
 }
 
 func (m *MockRepository) ListTags() ([]string, error) {
@@ -36,11 +36,15 @@ func (m *MockRepository) DeleteManifest(tag string) error {
 	return nil
 }
 
+func (m *MockRepository) GetRepositoryName() string {
+	return m.Name
+}
+
 // MockMetrics is a mock implementation of the metrics.Metrics interface
 type MockMetrics struct {
-	StartCalled    bool
+	StartCalled     bool
 	CompletedCalled bool
-	FailedCalled   bool
+	FailedCalled    bool
 }
 
 func (m *MockMetrics) ReplicationStarted(source, destination string) {
@@ -67,11 +71,13 @@ func TestCopyImage(t *testing.T) {
 		Tags:      []string{"v1.0"},
 		Manifest:  []byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json","config":{"mediaType":"application/vnd.docker.container.image.v1+json","size":1472,"digest":"sha256:c8be1b8f4d60d99c281fc2db75e0f56df42a83ad2f0b091621ce19357e19d853"},"layers":[{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":2802957,"digest":"sha256:c9b1b535fdd91a9855fb7f82348177e5f019329a58c53c47272962dd60f71fc9"},{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":108,"digest":"sha256:6b0937e234ce911b75630b744fb12836fe01bda5f7db203927edbb1390bc7e21"}]}`),
 		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+		Name:      "source/repo",
 	}
 
 	// Create a destination repository
 	destRepo := &MockRepository{
 		Tags: []string{},
+		Name: "dest/repo",
 	}
 
 	// Create mock metrics
@@ -125,11 +131,13 @@ func TestCopyImage_AlreadyExists(t *testing.T) {
 		Tags:      []string{"v1.0"},
 		Manifest:  []byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json","config":{"mediaType":"application/vnd.docker.container.image.v1+json","size":1472,"digest":"sha256:c8be1b8f4d60d99c281fc2db75e0f56df42a83ad2f0b091621ce19357e19d853"},"layers":[{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":2802957,"digest":"sha256:c9b1b535fdd91a9855fb7f82348177e5f019329a58c53c47272962dd60f71fc9"},{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":108,"digest":"sha256:6b0937e234ce911b75630b744fb12836fe01bda5f7db203927edbb1390bc7e21"}]}`),
 		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+		Name:      "source/repo",
 	}
 
 	// Create a destination repository with the tag already existing
 	destRepo := &MockRepository{
 		Tags: []string{"latest"},
+		Name: "dest/repo",
 	}
 
 	// Create mock metrics
@@ -167,11 +175,13 @@ func TestCopyImage_ForceOverwrite(t *testing.T) {
 		Tags:      []string{"v1.0"},
 		Manifest:  []byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json","config":{"mediaType":"application/vnd.docker.container.image.v1+json","size":1472,"digest":"sha256:c8be1b8f4d60d99c281fc2db75e0f56df42a83ad2f0b091621ce19357e19d853"},"layers":[{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":2802957,"digest":"sha256:c9b1b535fdd91a9855fb7f82348177e5f019329a58c53c47272962dd60f71fc9"},{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":108,"digest":"sha256:6b0937e234ce911b75630b744fb12836fe01bda5f7db203927edbb1390bc7e21"}]}`),
 		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+		Name:      "source/repo",
 	}
 
 	// Create a destination repository with the tag already existing
 	destRepo := &MockRepository{
 		Tags: []string{"latest"},
+		Name: "dest/repo",
 	}
 
 	// Create mock metrics

@@ -7,14 +7,18 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
-	"github.com/hemzaz/freightliner/src/internal/log"
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
-	"github.com/hemzaz/freightliner/src/pkg/client/ecr"
-	"github.com/hemzaz/freightliner/src/pkg/client/gcr"
-	"github.com/hemzaz/freightliner/src/pkg/copy"
-	"github.com/hemzaz/freightliner/src/pkg/replication"
-	"github.com/hemzaz/freightliner/src/pkg/tree"
+	"src/internal/log"
+	"src/pkg/client/common"
+	"src/pkg/client/ecr"
+	"src/pkg/client/gcr"
+	"src/pkg/copy"
+	"src/pkg/replication"
+	"src/pkg/secrets"
+	"src/pkg/security/encryption"
+	"src/pkg/security/signing"
+	"src/pkg/tree"
 	"github.com/spf13/cobra"
 )
 
@@ -27,40 +31,50 @@ var (
 
 	// Global flags
 	logLevel string
-	
+
 	// Checkpoint management flags
 	checkpointDir string
-	checkpointID string
+	checkpointID  string
 
 	// Tree replication flags
-	treeReplicateWorkers     int
-	treeReplicateExcludeRepos []string
-	treeReplicateExcludeTags []string
-	treeReplicateIncludeTags []string
-	treeReplicateDryRun      bool
-	treeReplicateForce       bool
-	treeReplicateCheckpoint  bool
+	treeReplicateWorkers       int
+	treeReplicateExcludeRepos  []string
+	treeReplicateExcludeTags   []string
+	treeReplicateIncludeTags   []string
+	treeReplicateDryRun        bool
+	treeReplicateForce         bool
+	treeReplicateCheckpoint    bool
 	treeReplicateCheckpointDir string
-	treeReplicateResumeID    string
+	treeReplicateResumeID      string
 	treeReplicateSkipCompleted bool
-	treeReplicateRetryFailed bool
-	ecrRegion                string
-	ecrAccountID             string
-	gcrProject               string
-	gcrLocation              string
-	
+	treeReplicateRetryFailed   bool
+	ecrRegion                  string
+	ecrAccountID               string
+	gcrProject                 string
+	gcrLocation                string
+
 	// Security flags
-	signImages               bool
-	verifySignatures         bool
-	signKeyPath              string
-	signKeyID                string
-	signatureStorePath       string
-	strictVerification       bool
-	useEncryption            bool
-	useCustomerManagedKeys   bool
-	awsKmsKeyID              string
-	gcpKmsKeyID              string
-	envelopeEncryption       bool
+	signImages             bool
+	verifySignatures       bool
+	signKeyPath            string
+	signKeyID              string
+	signatureStorePath     string
+	strictVerification     bool
+	useEncryption          bool
+	useCustomerManagedKeys bool
+	awsKmsKeyID            string
+	gcpKmsKeyID            string
+	envelopeEncryption     bool
+
+	// Secrets Manager flags
+	useSecretsManager    bool
+	secretsManagerType   string
+	awsSecretRegion      string
+	gcpSecretProject     string
+	gcpCredentialsFile   string
+	registryCredsSecret  string
+	encryptionKeysSecret string
+	signingKeysSecret    string
 )
 
 func init() {
@@ -70,7 +84,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&ecrAccountID, "ecr-account", "", "AWS account ID for ECR (empty uses default from credentials)")
 	rootCmd.PersistentFlags().StringVar(&gcrProject, "gcr-project", "", "GCP project for GCR")
 	rootCmd.PersistentFlags().StringVar(&gcrLocation, "gcr-location", "us", "GCR location (us, eu, asia)")
-	
+
 	// Add security-related global flags
 	rootCmd.PersistentFlags().BoolVar(&signImages, "sign", false, "Enable image signing")
 	rootCmd.PersistentFlags().BoolVar(&verifySignatures, "verify", false, "Verify image signatures")
@@ -78,14 +92,24 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&signKeyID, "sign-key-id", "", "ID of the signing key")
 	rootCmd.PersistentFlags().StringVar(&signatureStorePath, "signature-store", "/tmp/freightliner-signatures", "Path to store image signatures")
 	rootCmd.PersistentFlags().BoolVar(&strictVerification, "strict-verify", false, "Fail if signature verification isn't possible")
-	
+
 	// Add encryption-related global flags
 	rootCmd.PersistentFlags().BoolVar(&useEncryption, "encrypt", false, "Enable image encryption")
 	rootCmd.PersistentFlags().BoolVar(&useCustomerManagedKeys, "customer-key", false, "Use customer-managed encryption keys")
 	rootCmd.PersistentFlags().StringVar(&awsKmsKeyID, "aws-kms-key", "", "AWS KMS key ID for encryption")
 	rootCmd.PersistentFlags().StringVar(&gcpKmsKeyID, "gcp-kms-key", "", "GCP KMS key ID for encryption")
 	rootCmd.PersistentFlags().BoolVar(&envelopeEncryption, "envelope-encryption", true, "Use envelope encryption")
-	
+
+	// Add secrets manager related flags
+	rootCmd.PersistentFlags().BoolVar(&useSecretsManager, "use-secrets-manager", false, "Use cloud provider secrets manager for credentials")
+	rootCmd.PersistentFlags().StringVar(&secretsManagerType, "secrets-manager-type", "aws", "Type of secrets manager to use (aws, gcp)")
+	rootCmd.PersistentFlags().StringVar(&awsSecretRegion, "aws-secret-region", "", "AWS region for Secrets Manager (defaults to --ecr-region if not specified)")
+	rootCmd.PersistentFlags().StringVar(&gcpSecretProject, "gcp-secret-project", "", "GCP project for Secret Manager (defaults to --gcr-project if not specified)")
+	rootCmd.PersistentFlags().StringVar(&gcpCredentialsFile, "gcp-credentials-file", "", "GCP credentials file path for Secret Manager")
+	rootCmd.PersistentFlags().StringVar(&registryCredsSecret, "registry-creds-secret", "freightliner-registry-credentials", "Secret name for registry credentials")
+	rootCmd.PersistentFlags().StringVar(&encryptionKeysSecret, "encryption-keys-secret", "freightliner-encryption-keys", "Secret name for encryption keys")
+	rootCmd.PersistentFlags().StringVar(&signingKeysSecret, "signing-keys-secret", "freightliner-signing-keys", "Secret name for signing keys")
+
 	// Add checkpoint management flags
 	checkpointCmd.PersistentFlags().StringVar(&checkpointDir, "checkpoint-dir", "/tmp/freightliner-checkpoints", "Directory for checkpoint files")
 	checkpointCmd.Flags().StringVar(&checkpointID, "id", "", "Checkpoint ID for operations")
@@ -115,7 +139,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version of freightliner",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Freightliner v0.1.0") // TODO: Use build version from goreleaser
+		cmd.Println("Freightliner v0.1.0") // TODO: Use build version from goreleaser
 	},
 }
 
@@ -126,6 +150,46 @@ var replicateCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize logger
 		logger := createLogger(logLevel)
+
+		// Create a context for operations
+		ctx := context.Background()
+
+		// Load credentials from secrets manager if enabled
+		if useSecretsManager {
+			logger.Info("Using secrets manager for credentials", map[string]interface{}{
+				"provider": secretsManagerType,
+			})
+
+			secretsProvider, err := initializeSecretsManager(ctx, logger)
+			if err != nil {
+				logger.Fatal("Failed to initialize secrets manager", err, nil)
+			}
+
+			// Load and apply registry credentials
+			creds, err := loadRegistryCredentials(ctx, secretsProvider)
+			if err != nil {
+				logger.Fatal("Failed to load registry credentials", err, nil)
+			}
+			applyRegistryCredentials(creds)
+
+			// Load and apply encryption keys if encryption is enabled
+			if useEncryption {
+				keys, err := loadEncryptionKeys(ctx, secretsProvider)
+				if err != nil {
+					logger.Fatal("Failed to load encryption keys", err, nil)
+				}
+				applyEncryptionKeys(keys)
+			}
+
+			// Load and apply signing keys if signing is enabled
+			if signImages {
+				keys, err := loadSigningKeys(ctx, secretsProvider)
+				if err != nil {
+					logger.Fatal("Failed to load signing keys", err, nil)
+				}
+				applySigningKeys(keys)
+			}
+		}
 
 		// Parse source and destination
 		sourceParts := strings.SplitN(args[0], "/", 2)
@@ -183,26 +247,26 @@ var replicateCmd = &cobra.Command{
 
 		// Create the copier
 		copier := copy.NewCopier(logger)
-		
+
 		// Set up security managers if enabled
 		if signImages {
 			if signKeyPath == "" {
 				logger.Fatal("Signing key path is required when signing is enabled", nil, nil)
 			}
-			
+
 			// Create signing manager
 			signOpts := signing.SignManagerOptions{
-				DefaultProvider:     "cosign",
-				SignImages:          signImages,
-				VerifyImages:        verifySignatures,
-				StrictVerification:  strictVerification,
-				SignatureStorePath:  signatureStorePath,
-				KeyPath:             signKeyPath,
-				KeyID:               signKeyID,
+				DefaultProvider:    "cosign",
+				SignImages:         signImages,
+				VerifyImages:       verifySignatures,
+				StrictVerification: strictVerification,
+				SignatureStorePath: signatureStorePath,
+				KeyPath:            signKeyPath,
+				KeyID:              signKeyID,
 			}
-			
+
 			signManager := signing.NewManager(signOpts)
-			
+
 			// Create and register a Cosign signer
 			signer, err := signing.NewCosignSigner(signing.SignOptions{
 				KeyPath: signKeyPath,
@@ -211,37 +275,37 @@ var replicateCmd = &cobra.Command{
 			if err != nil {
 				logger.Fatal("Failed to create Cosign signer", err, nil)
 			}
-			
+
 			signManager.RegisterSigner("cosign", signer)
 			copier.WithSigningManager(signManager)
-			
+
 			logger.Info("Image signing enabled", map[string]interface{}{
 				"provider": "cosign",
 				"key_id":   signKeyID,
 			})
 		}
-		
+
 		// Set up encryption if enabled
 		if useEncryption {
 			ctx := context.Background()
-			
+
 			// Create encryption providers map
 			encProviders := make(map[string]encryption.Provider)
-			
+
 			// Create encryption config
 			encConfig := encryption.EncryptionConfig{
 				EnvelopeEncryption: envelopeEncryption,
 				CustomerManagedKey: useCustomerManagedKeys,
 				DataKeyLength:      32, // 256-bit keys
 			}
-			
+
 			// Check which KMS provider to use based on provided key IDs and destination registry
 			if awsKmsKeyID != "" || destRegistry == "ecr" {
 				// Configure for AWS KMS
 				encConfig.Provider = "aws-kms"
 				encConfig.KeyID = awsKmsKeyID
 				encConfig.Region = ecrRegion
-				
+
 				// Create AWS KMS provider
 				awsKms, err := encryption.NewAWSKMS(ctx, encryption.AWSOpts{
 					Region: ecrRegion,
@@ -250,9 +314,9 @@ var replicateCmd = &cobra.Command{
 				if err != nil {
 					logger.Fatal("Failed to create AWS KMS provider", err, nil)
 				}
-				
+
 				encProviders["aws-kms"] = awsKms
-				
+
 				logger.Info("AWS KMS encryption enabled", map[string]interface{}{
 					"region": ecrRegion,
 					"key_id": awsKmsKeyID,
@@ -263,7 +327,7 @@ var replicateCmd = &cobra.Command{
 				encConfig.Provider = "gcp-kms"
 				encConfig.KeyID = gcpKmsKeyID
 				encConfig.Region = gcrLocation
-				
+
 				// Create GCP KMS provider
 				gcpKms, err := encryption.NewGCPKMS(ctx, encryption.GCPOpts{
 					Project:  gcrProject,
@@ -274,16 +338,16 @@ var replicateCmd = &cobra.Command{
 				if err != nil {
 					logger.Fatal("Failed to create GCP KMS provider", err, nil)
 				}
-				
+
 				encProviders["gcp-kms"] = gcpKms
-				
+
 				logger.Info("GCP KMS encryption enabled", map[string]interface{}{
 					"project":  gcrProject,
 					"location": gcrLocation,
 					"cmk":      useCustomerManagedKeys,
 				})
 			}
-			
+
 			// Create encryption manager if we have providers
 			if len(encProviders) > 0 {
 				encManager := encryption.NewManager(encProviders, encConfig)
@@ -332,7 +396,7 @@ var replicateCmd = &cobra.Command{
 var replicateTreeCmd = &cobra.Command{
 	Use:   "replicate-tree [source-registry]/[source-prefix] [destination-registry]/[destination-prefix]",
 	Short: "Replicate a repository tree from one registry to another",
-	Long:  `Replicates an entire tree of repositories from a source registry to a destination registry.
+	Long: `Replicates an entire tree of repositories from a source registry to a destination registry.
 	
 This command allows you to replicate multiple repositories at once based on a prefix.
 You can filter which repositories and tags to include or exclude using pattern matching.
@@ -344,6 +408,46 @@ Example usage:
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize logger
 		logger := createLogger(logLevel)
+
+		// Create a context for operations
+		ctx := context.Background()
+
+		// Load credentials from secrets manager if enabled
+		if useSecretsManager {
+			logger.Info("Using secrets manager for credentials", map[string]interface{}{
+				"provider": secretsManagerType,
+			})
+
+			secretsProvider, err := initializeSecretsManager(ctx, logger)
+			if err != nil {
+				logger.Fatal("Failed to initialize secrets manager", err, nil)
+			}
+
+			// Load and apply registry credentials
+			creds, err := loadRegistryCredentials(ctx, secretsProvider)
+			if err != nil {
+				logger.Fatal("Failed to load registry credentials", err, nil)
+			}
+			applyRegistryCredentials(creds)
+
+			// Load and apply encryption keys if encryption is enabled
+			if useEncryption {
+				keys, err := loadEncryptionKeys(ctx, secretsProvider)
+				if err != nil {
+					logger.Fatal("Failed to load encryption keys", err, nil)
+				}
+				applyEncryptionKeys(keys)
+			}
+
+			// Load and apply signing keys if signing is enabled
+			if signImages {
+				keys, err := loadSigningKeys(ctx, secretsProvider)
+				if err != nil {
+					logger.Fatal("Failed to load signing keys", err, nil)
+				}
+				applySigningKeys(keys)
+			}
+		}
 
 		// Parse source and destination
 		sourceParts := strings.SplitN(args[0], "/", 2)
@@ -442,10 +546,10 @@ Example usage:
 				sourceClient,
 				destClient,
 				tree.ResumeOptions{
-					CheckpointID:    treeReplicateResumeID,
-					SkipCompleted:   treeReplicateSkipCompleted,
-					RetryFailed:     treeReplicateRetryFailed,
-					ForceOverwrite:  treeReplicateForce,
+					CheckpointID:   treeReplicateResumeID,
+					SkipCompleted:  treeReplicateSkipCompleted,
+					RetryFailed:    treeReplicateRetryFailed,
+					ForceOverwrite: treeReplicateForce,
 				},
 			)
 		} else {
@@ -494,7 +598,7 @@ Example usage:
 var checkpointCmd = &cobra.Command{
 	Use:   "checkpoint",
 	Short: "Manage replication checkpoints",
-	Long:  `Manage replication checkpoints for interrupted replications.
+	Long: `Manage replication checkpoints for interrupted replications.
 
 This command provides subcommands to list, show, and delete replication checkpoints.`,
 }
@@ -505,7 +609,7 @@ var checkpointListCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize logger
 		logger := createLogger(logLevel)
-		
+
 		// Initialize checkpoint store
 		store, err := tree.InitCheckpointStore(checkpointDir)
 		if err != nil {
@@ -513,23 +617,23 @@ var checkpointListCmd = &cobra.Command{
 				"checkpoint_dir": checkpointDir,
 			})
 		}
-		
+
 		// Get resumable checkpoints
 		checkpoints, err := tree.ListResumableCheckpoints(store)
 		if err != nil {
 			logger.Fatal("Failed to list checkpoints", err, nil)
 		}
-		
+
 		if len(checkpoints) == 0 {
 			fmt.Println("No checkpoints found.")
 			return
 		}
-		
+
 		// Print checkpoints
 		fmt.Printf("Found %d checkpoint(s):\n\n", len(checkpoints))
 		fmt.Printf("%-36s %-15s %-15s %-10s %-25s\n", "ID", "SOURCE", "PROGRESS", "STATUS", "LAST UPDATED")
 		fmt.Println(strings.Repeat("-", 100))
-		
+
 		for _, cp := range checkpoints {
 			fmt.Printf("%-36s %-15s %-15s %-10s %-25s\n",
 				cp.ID,
@@ -548,11 +652,11 @@ var checkpointShowCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize logger
 		logger := createLogger(logLevel)
-		
+
 		if checkpointID == "" {
 			logger.Fatal("Checkpoint ID is required", nil, nil)
 		}
-		
+
 		// Initialize checkpoint store
 		store, err := tree.InitCheckpointStore(checkpointDir)
 		if err != nil {
@@ -560,7 +664,7 @@ var checkpointShowCmd = &cobra.Command{
 				"checkpoint_dir": checkpointDir,
 			})
 		}
-		
+
 		// Get checkpoint
 		checkpoint, err := store.LoadCheckpoint(checkpointID)
 		if err != nil {
@@ -568,7 +672,7 @@ var checkpointShowCmd = &cobra.Command{
 				"id": checkpointID,
 			})
 		}
-		
+
 		// Print checkpoint details
 		fmt.Println("Checkpoint Details:")
 		fmt.Printf("  ID:               %s\n", checkpoint.ID)
@@ -581,7 +685,7 @@ var checkpointShowCmd = &cobra.Command{
 		fmt.Printf("  Last Updated:     %s\n", checkpoint.LastUpdated.Format(time.RFC3339))
 		fmt.Printf("  Duration:         %s\n", checkpoint.LastUpdated.Sub(checkpoint.StartTime))
 		fmt.Printf("  Repositories:     %d total, %d completed\n", len(checkpoint.Repositories), len(checkpoint.CompletedRepositories))
-		
+
 		if checkpoint.LastError != "" {
 			fmt.Printf("  Last Error:       %s\n", checkpoint.LastError)
 		}
@@ -594,11 +698,11 @@ var checkpointDeleteCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize logger
 		logger := createLogger(logLevel)
-		
+
 		if checkpointID == "" {
 			logger.Fatal("Checkpoint ID is required", nil, nil)
 		}
-		
+
 		// Initialize checkpoint store
 		store, err := tree.InitCheckpointStore(checkpointDir)
 		if err != nil {
@@ -606,7 +710,7 @@ var checkpointDeleteCmd = &cobra.Command{
 				"checkpoint_dir": checkpointDir,
 			})
 		}
-		
+
 		// Delete checkpoint
 		err = store.DeleteCheckpoint(checkpointID)
 		if err != nil {
@@ -614,7 +718,7 @@ var checkpointDeleteCmd = &cobra.Command{
 				"id": checkpointID,
 			})
 		}
-		
+
 		fmt.Printf("Checkpoint %s deleted successfully.\n", checkpointID)
 	},
 }
@@ -633,6 +737,46 @@ var serveCmd = &cobra.Command{
 		// Initialize logger
 		logger := createLogger(logLevel)
 
+		// Create a context for operations
+		ctx := context.Background()
+
+		// Load credentials from secrets manager if enabled
+		if useSecretsManager {
+			logger.Info("Using secrets manager for credentials", map[string]interface{}{
+				"provider": secretsManagerType,
+			})
+
+			secretsProvider, err := initializeSecretsManager(ctx, logger)
+			if err != nil {
+				logger.Fatal("Failed to initialize secrets manager", err, nil)
+			}
+
+			// Load and apply registry credentials
+			creds, err := loadRegistryCredentials(ctx, secretsProvider)
+			if err != nil {
+				logger.Fatal("Failed to load registry credentials", err, nil)
+			}
+			applyRegistryCredentials(creds)
+
+			// Load and apply encryption keys if encryption is enabled
+			if useEncryption {
+				keys, err := loadEncryptionKeys(ctx, secretsProvider)
+				if err != nil {
+					logger.Fatal("Failed to load encryption keys", err, nil)
+				}
+				applyEncryptionKeys(keys)
+			}
+
+			// Load and apply signing keys if signing is enabled
+			if signImages {
+				keys, err := loadSigningKeys(ctx, secretsProvider)
+				if err != nil {
+					logger.Fatal("Failed to load signing keys", err, nil)
+				}
+				applySigningKeys(keys)
+			}
+		}
+
 		// Create the worker pool
 		workerPool := replication.NewWorkerPool(10, logger)
 		defer workerPool.Stop()
@@ -645,7 +789,8 @@ var serveCmd = &cobra.Command{
 		defer scheduler.Stop()
 
 		// Create the reconciler
-		reconciler := replication.NewReconciler(logger, copier, workerPool)
+		// Create reconciler but ignore for now (will be used in future functionality)
+		_ = replication.NewReconciler(logger, copier, workerPool)
 
 		// Create registry clients
 		registryClients := make(map[string]common.RegistryClient)

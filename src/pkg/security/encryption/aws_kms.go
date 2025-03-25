@@ -3,7 +3,6 @@ package encryption
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -30,10 +29,10 @@ type AWSOpts struct {
 
 	// RoleARN is an optional IAM role to assume for KMS operations
 	RoleARN string
-	
+
 	// Profile is an optional AWS profile to use for credentials
 	Profile string
-	
+
 	// Endpoint is an optional custom endpoint for the KMS service
 	Endpoint string
 }
@@ -41,17 +40,17 @@ type AWSOpts struct {
 // NewAWSKMS creates a new AWS KMS encryption provider
 func NewAWSKMS(ctx context.Context, opts AWSOpts) (*AWSKMS, error) {
 	var cfgOpts []func(*config.LoadOptions) error
-	
+
 	// Configure region
 	if opts.Region != "" {
 		cfgOpts = append(cfgOpts, config.WithRegion(opts.Region))
 	}
-	
+
 	// Configure profile if specified
 	if opts.Profile != "" {
 		cfgOpts = append(cfgOpts, config.WithSharedConfigProfile(opts.Profile))
 	}
-	
+
 	// Load AWS configuration
 	cfg, err := config.LoadDefaultConfig(ctx, cfgOpts...)
 	if err != nil {
@@ -65,24 +64,24 @@ func NewAWSKMS(ctx context.Context, opts AWSOpts) (*AWSKMS, error) {
 			o.EndpointResolver = kms.EndpointResolverFromURL(opts.Endpoint)
 		})
 	}
-	
+
 	// Create the KMS client
 	var kmsClient *kms.Client
-	
+
 	// If role ARN is provided, assume that role for KMS operations
 	if opts.RoleARN != "" {
 		// Create STS client for assuming role
 		stsClient := sts.NewFromConfig(cfg)
-		
+
 		// Create the credentials provider for assuming the role
 		provider := stscreds.NewAssumeRoleProvider(stsClient, opts.RoleARN)
-		
+
 		// Create new config with the assumed role credentials
 		roleCfg := aws.Config{
 			Credentials: aws.NewCredentialsCache(provider),
 			Region:      cfg.Region,
 		}
-		
+
 		// Create KMS client with the assumed role
 		kmsClient = kms.NewFromConfig(roleCfg, kmsOpts...)
 	} else {
@@ -108,7 +107,7 @@ func (a *AWSKMS) Encrypt(ctx context.Context, plaintext []byte, keyID string) ([
 	if keyID == "" {
 		keyID = a.keyID
 	}
-	
+
 	if keyID == "" {
 		return nil, fmt.Errorf("no KMS key ID specified for encryption")
 	}
@@ -151,7 +150,7 @@ func (a *AWSKMS) GenerateDataKey(ctx context.Context, keyID string, keyLength in
 	if keyID == "" {
 		keyID = a.keyID
 	}
-	
+
 	if keyID == "" {
 		return nil, fmt.Errorf("no KMS key ID specified for data key generation")
 	}
@@ -191,7 +190,7 @@ func (a *AWSKMS) ReEncrypt(ctx context.Context, ciphertext []byte, sourceKeyID, 
 	if destinationKeyID == "" {
 		destinationKeyID = a.keyID
 	}
-	
+
 	if destinationKeyID == "" {
 		return nil, fmt.Errorf("no destination KMS key ID specified for re-encryption")
 	}
@@ -220,7 +219,7 @@ func (a *AWSKMS) GetKeyInfo(ctx context.Context, keyID string) (*KeyInfo, error)
 	if keyID == "" {
 		keyID = a.keyID
 	}
-	
+
 	if keyID == "" {
 		return nil, fmt.Errorf("no KMS key ID specified for key info")
 	}

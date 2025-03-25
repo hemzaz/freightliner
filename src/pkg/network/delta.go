@@ -8,8 +8,8 @@ import (
 	"hash"
 	"time"
 
-	"github.com/hemzaz/freightliner/src/internal/log"
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
+	"src/internal/log"
+	"src/pkg/client/common"
 )
 
 // DeltaOptions configures delta update behavior
@@ -196,12 +196,12 @@ func (d *DeltaManager) OptimizeTransfer(
 	}
 
 	d.logger.Info("Performed delta transfer", map[string]interface{}{
-		"digest":           digest,
-		"original_size":    originalSize,
-		"delta_size":       transferSize,
-		"savings_percent":  savingsPercent,
-		"chunks_modified":  len(changedChunks),
-		"total_chunks":     totalChunks,
+		"digest":            digest,
+		"original_size":     originalSize,
+		"delta_size":        transferSize,
+		"savings_percent":   savingsPercent,
+		"chunks_modified":   len(changedChunks),
+		"total_chunks":      totalChunks,
 		"delta_duration_ms": summary.Duration.Milliseconds(),
 	})
 

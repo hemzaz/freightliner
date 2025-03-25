@@ -14,19 +14,19 @@ type PrometheusMetrics struct {
 	mutex sync.Mutex
 
 	// Counters for replication operations
-	replicationCount      int64
-	replicationErrors     int64
-	layersCopied          int64
-	bytesCopied           int64
-	replicationLatencies  []time.Duration
-	sourceRepositories    map[string]int64
+	replicationCount        int64
+	replicationErrors       int64
+	layersCopied            int64
+	bytesCopied             int64
+	replicationLatencies    []time.Duration
+	sourceRepositories      map[string]int64
 	destinationRepositories map[string]int64
 }
 
 // NewPrometheusMetrics creates a new metrics collector
 func NewPrometheusMetrics() *PrometheusMetrics {
 	return &PrometheusMetrics{
-		sourceRepositories:    make(map[string]int64),
+		sourceRepositories:      make(map[string]int64),
 		destinationRepositories: make(map[string]int64),
 	}
 }
@@ -35,7 +35,7 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 func (p *PrometheusMetrics) ReplicationStarted(source, destination string) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	p.replicationCount++
 	p.sourceRepositories[source]++
 	p.destinationRepositories[destination]++
@@ -45,7 +45,7 @@ func (p *PrometheusMetrics) ReplicationStarted(source, destination string) {
 func (p *PrometheusMetrics) ReplicationCompleted(duration time.Duration, layerCount int, byteCount int64) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	p.replicationLatencies = append(p.replicationLatencies, duration)
 	p.layersCopied += int64(layerCount)
 	p.bytesCopied += byteCount
@@ -55,7 +55,7 @@ func (p *PrometheusMetrics) ReplicationCompleted(duration time.Duration, layerCo
 func (p *PrometheusMetrics) ReplicationFailed() {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	p.replicationErrors++
 }
 
@@ -63,7 +63,7 @@ func (p *PrometheusMetrics) ReplicationFailed() {
 func (p *PrometheusMetrics) GetReplicationCount() int64 {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	return p.replicationCount
 }
 
@@ -71,7 +71,7 @@ func (p *PrometheusMetrics) GetReplicationCount() int64 {
 func (p *PrometheusMetrics) GetReplicationErrors() int64 {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	return p.replicationErrors
 }
 
@@ -79,7 +79,7 @@ func (p *PrometheusMetrics) GetReplicationErrors() int64 {
 func (p *PrometheusMetrics) GetLayersCopied() int64 {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	return p.layersCopied
 }
 
@@ -87,7 +87,7 @@ func (p *PrometheusMetrics) GetLayersCopied() int64 {
 func (p *PrometheusMetrics) GetBytesCopied() int64 {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	return p.bytesCopied
 }
 
@@ -95,16 +95,16 @@ func (p *PrometheusMetrics) GetBytesCopied() int64 {
 func (p *PrometheusMetrics) GetAverageLatency() time.Duration {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	if len(p.replicationLatencies) == 0 {
 		return 0
 	}
-	
+
 	var sum time.Duration
 	for _, latency := range p.replicationLatencies {
 		sum += latency
 	}
-	
+
 	return sum / time.Duration(len(p.replicationLatencies))
 }
 
@@ -112,13 +112,13 @@ func (p *PrometheusMetrics) GetAverageLatency() time.Duration {
 func (p *PrometheusMetrics) GetTopSourceRepositories(n int) map[string]int64 {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	// Make a copy to avoid concurrent map access
 	result := make(map[string]int64, len(p.sourceRepositories))
 	for repo, count := range p.sourceRepositories {
 		result[repo] = count
 	}
-	
+
 	return result
 }
 
@@ -126,12 +126,12 @@ func (p *PrometheusMetrics) GetTopSourceRepositories(n int) map[string]int64 {
 func (p *PrometheusMetrics) GetTopDestinationRepositories(n int) map[string]int64 {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	// Make a copy to avoid concurrent map access
 	result := make(map[string]int64, len(p.destinationRepositories))
 	for repo, count := range p.destinationRepositories {
 		result[repo] = count
 	}
-	
+
 	return result
 }

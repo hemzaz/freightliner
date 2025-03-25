@@ -12,7 +12,7 @@ func CalculateDigest(data []byte) (string, error) {
 	if _, err := h.Write(data); err != nil {
 		return "", fmt.Errorf("failed to calculate digest: %w", err)
 	}
-	
+
 	digest := fmt.Sprintf("sha256:%x", h.Sum(nil))
 	return digest, nil
 }
@@ -23,6 +23,6 @@ func ValidateDigest(data []byte, expectedDigest string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	return actualDigest == expectedDigest, nil
 }

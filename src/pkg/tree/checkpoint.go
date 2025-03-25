@@ -1,9 +1,7 @@
 package tree
 
 import (
-	"fmt"
-	
-	"github.com/hemzaz/freightliner/src/pkg/tree/checkpoint"
+	"src/pkg/tree/checkpoint"
 )
 
 // InitCheckpointStore initializes a checkpoint store

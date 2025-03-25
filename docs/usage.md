@@ -58,6 +58,35 @@ Example:
 freightliner replicate ecr/my-repo gcr/my-repo --ecr-region=us-east-1 --gcr-project=my-gcp-project
 ```
 
+#### Security Options
+
+| Option | Description |
+|--------|-------------|
+| `--sign` | Enable image signing |
+| `--verify` | Verify image signatures |
+| `--sign-key` | Path to the signing key file |
+| `--sign-key-id` | ID of the signing key |
+| `--signature-store` | Path to store image signatures |
+| `--strict-verify` | Fail if signature verification isn't possible |
+| `--encrypt` | Enable image encryption |
+| `--customer-key` | Use customer-managed encryption keys |
+| `--aws-kms-key` | AWS KMS key ID for encryption |
+| `--gcp-kms-key` | GCP KMS key ID for encryption |
+| `--envelope-encryption` | Use envelope encryption (default: true) |
+
+#### Secrets Manager Options
+
+| Option | Description |
+|--------|-------------|
+| `--use-secrets-manager` | Enable using cloud provider secrets manager |
+| `--secrets-manager-type` | Type of secrets manager to use (aws, gcp) |
+| `--aws-secret-region` | AWS region for Secrets Manager |
+| `--gcp-secret-project` | GCP project for Secret Manager |
+| `--gcp-credentials-file` | GCP credentials file path |
+| `--registry-creds-secret` | Secret name for registry credentials |
+| `--encryption-keys-secret` | Secret name for encryption keys |
+| `--signing-keys-secret` | Secret name for signing keys |
+
 ### YAML Configuration
 
 Freightliner can be configured using a YAML configuration file for the server mode:
@@ -96,6 +125,7 @@ Freightliner uses the standard AWS SDK authentication methods. You can configure
 - Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
 - AWS configuration files (`~/.aws/credentials`)
 - IAM roles (when running on EC2 or ECS)
+- AWS Secrets Manager (see Secrets Manager Integration section)
 
 ### Google GCR
 
@@ -104,6 +134,95 @@ Freightliner uses the standard Google Cloud authentication methods. You can conf
 - Service account JSON key file (specified with `GOOGLE_APPLICATION_CREDENTIALS`)
 - Application Default Credentials
 - GKE Workload Identity (when running on GKE)
+- Google Secret Manager (see Secrets Manager Integration section)
+
+### Secrets Manager Integration
+
+Freightliner supports storing and retrieving credentials from cloud provider secrets managers:
+
+```bash
+# Using AWS Secrets Manager
+freightliner replicate ecr/my-repository gcr/my-repository \
+  --use-secrets-manager \
+  --secrets-manager-type=aws \
+  --aws-secret-region=us-west-2 \
+  --registry-creds-secret=freightliner-registry-credentials
+
+# Using Google Secret Manager
+freightliner replicate ecr/my-repository gcr/my-repository \
+  --use-secrets-manager \
+  --secrets-manager-type=gcp \
+  --gcp-secret-project=my-project \
+  --registry-creds-secret=freightliner-registry-credentials
+```
+
+Available options for secrets manager:
+
+| Option | Description |
+|--------|-------------|
+| `--use-secrets-manager` | Enable using cloud provider secrets manager |
+| `--secrets-manager-type` | Type of secrets manager to use (aws, gcp) |
+| `--aws-secret-region` | AWS region for Secrets Manager |
+| `--gcp-secret-project` | GCP project for Secret Manager |
+| `--gcp-credentials-file` | GCP credentials file path |
+| `--registry-creds-secret` | Secret name for registry credentials |
+| `--encryption-keys-secret` | Secret name for encryption keys |
+| `--signing-keys-secret` | Secret name for signing keys |
+
+#### Registry Credentials Format
+
+Registry credentials should be stored in the following JSON format:
+
+```json
+{
+  "ecr": {
+    "access_key": "AWS_ACCESS_KEY_ID",
+    "secret_key": "AWS_SECRET_ACCESS_KEY",
+    "account_id": "012345678901",
+    "region": "us-west-2",
+    "session_token": "OPTIONAL_SESSION_TOKEN"
+  },
+  "gcr": {
+    "project": "my-project",
+    "location": "us",
+    "credentials": "BASE64_ENCODED_SERVICE_ACCOUNT_JSON"
+  }
+}
+```
+
+#### Encryption Keys Format
+
+Encryption keys should be stored in the following JSON format:
+
+```json
+{
+  "aws": {
+    "kms_key_id": "alias/my-key-alias",
+    "region": "us-west-2"
+  },
+  "gcp": {
+    "kms_key_id": "projects/my-project/locations/global/keyRings/freightliner/cryptoKeys/image-encryption",
+    "project": "my-project",
+    "location": "global",
+    "key_ring": "freightliner",
+    "key": "image-encryption"
+  }
+}
+```
+
+#### Signing Keys Format
+
+Signing keys should be stored in the following JSON format:
+
+```json
+{
+  "key_path": "/path/to/key/file",
+  "key_id": "key-identifier",
+  "key_data": "BASE64_ENCODED_KEY_DATA"
+}
+```
+
+If `key_data` is provided, it will be decoded and written to a temporary file for use during the operation.
 
 ## Advanced Features
 

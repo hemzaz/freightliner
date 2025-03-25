@@ -34,7 +34,7 @@ type RetryableFunc func() error
 func RetryWithContext(ctx context.Context, fn RetryableFunc, opts RetryOptions) error {
 	var err error
 	wait := opts.InitialWait
-	
+
 	for attempt := 0; attempt <= opts.MaxRetries; attempt++ {
 		if attempt > 0 {
 			// Wait with exponential backoff
@@ -44,24 +44,24 @@ func RetryWithContext(ctx context.Context, fn RetryableFunc, opts RetryOptions) 
 			case <-ctx.Done():
 				return errors.New("retry aborted by context cancellation")
 			}
-			
+
 			// Increase wait time for next attempt
 			wait = time.Duration(float64(wait) * opts.Factor)
 			if wait > opts.MaxWait {
 				wait = opts.MaxWait
 			}
 		}
-		
+
 		err = fn()
 		if err == nil {
 			return nil // Success
 		}
-		
+
 		if !opts.Retryable(err) {
 			return err // Non-retryable error
 		}
 	}
-	
+
 	return err // Return the last error after all retries
 }
 
@@ -72,7 +72,7 @@ func RetryWithBackoff(ctx context.Context, maxRetries int, initialWait, maxWait 
 		MaxRetries:  maxRetries,
 		InitialWait: initialWait,
 		MaxWait:     maxWait,
-		Factor:      2.0, // Standard exponential backoff multiplier
+		Factor:      2.0,                                  // Standard exponential backoff multiplier
 		Retryable:   func(err error) bool { return true }, // Retry all errors by default
 	})
 }
@@ -85,16 +85,16 @@ type Logger interface {
 }
 
 func RetryWithBackoffAndLogger(
-	ctx context.Context, 
-	maxRetries int, 
-	initialWait, 
-	maxWait time.Duration, 
+	ctx context.Context,
+	maxRetries int,
+	initialWait,
+	maxWait time.Duration,
 	logger Logger,
 	operationName string,
 	fn RetryableFunc,
 ) error {
 	var lastErr error
-	
+
 	err := RetryWithContext(ctx, func() error {
 		err := fn()
 		if err != nil {
@@ -112,7 +112,7 @@ func RetryWithBackoffAndLogger(
 		Factor:      2.0,
 		Retryable:   func(err error) bool { return true },
 	})
-	
+
 	if err != nil && err == lastErr {
 		// Only log the final failure if we've exhausted all retries
 		logger.Warn(fmt.Sprintf("Operation '%s' failed permanently after %d retries", operationName, maxRetries), map[string]interface{}{
@@ -122,6 +122,6 @@ func RetryWithBackoffAndLogger(
 		// Log success after previous failures
 		logger.Debug(fmt.Sprintf("Operation '%s' succeeded after retries", operationName), nil)
 	}
-	
+
 	return err
 }

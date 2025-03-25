@@ -3,13 +3,11 @@ package tree
 import (
 	"context"
 	"fmt"
-	"path"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/hemzaz/freightliner/src/pkg/client/common"
-	"github.com/hemzaz/freightliner/src/pkg/tree/checkpoint"
+	"src/pkg/client/common"
+	"src/pkg/tree/checkpoint"
 )
 
 // ResumeOptions configures the replication resume process
@@ -58,8 +56,8 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	// Create a result with default values
 	result := &ReplicationResult{
-		Progress: savedCheckpoint.Progress,
-		Resumed:  true,
+		Progress:     savedCheckpoint.Progress,
+		Resumed:      true,
 		CheckpointID: savedCheckpoint.ID,
 	}
 
@@ -127,11 +125,11 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	// Create a channel for collecting results
 	results := make(chan struct {
-		repo            string
+		repo             string
 		imagesReplicated int
-		imagesSkipped   int
-		imagesFailed    int
-		err             error
+		imagesSkipped    int
+		imagesFailed     int
+		err              error
 	}, len(remainingRepos))
 
 	// Set up context with cancellation for handling interruptions
@@ -139,7 +137,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 	defer cancel()
 
 	// Process each repository
-	for i, repo := range remainingRepos {
+	for _, repo := range remainingRepos {
 		wg.Add(1)
 
 		// Create a copy of the loop variable for the goroutine
@@ -165,7 +163,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{} // Acquire token
+			sem <- struct{}{}        // Acquire token
 			defer func() { <-sem }() // Release token
 
 			// Get destination repository name from the checkpoint
@@ -198,17 +196,17 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 			// Send results back
 			results <- struct {
-				repo            string
+				repo             string
 				imagesReplicated int
-				imagesSkipped   int
-				imagesFailed    int
-				err             error
+				imagesSkipped    int
+				imagesFailed     int
+				err              error
 			}{
-				repo:            repoName,
+				repo:             repoName,
 				imagesReplicated: imagesReplicated,
-				imagesSkipped:   imagesSkipped,
-				imagesFailed:    imagesFailed,
-				err:             err,
+				imagesSkipped:    imagesSkipped,
+				imagesFailed:     imagesFailed,
+				err:              err,
 			}
 		}()
 	}

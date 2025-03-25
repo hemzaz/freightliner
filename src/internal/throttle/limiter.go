@@ -16,22 +16,22 @@ type RateLimiter struct {
 // NewRateLimiter creates a new rate limiter with the specified parameters
 func NewRateLimiter(requestLimit int, timeWindow time.Duration) *RateLimiter {
 	tokens := make(chan struct{}, requestLimit)
-	
+
 	// Fill the token bucket
 	for i := 0; i < requestLimit; i++ {
 		tokens <- struct{}{}
 	}
-	
+
 	limiter := &RateLimiter{
 		tokens:        tokens,
 		requestLimit:  requestLimit,
 		timeWindow:    timeWindow,
 		resetInterval: timeWindow / time.Duration(requestLimit),
 	}
-	
+
 	// Start token replenishment
 	go limiter.replenishTokens()
-	
+
 	return limiter
 }
 
@@ -49,7 +49,7 @@ func (r *RateLimiter) Acquire(ctx context.Context) error {
 func (r *RateLimiter) replenishTokens() {
 	ticker := time.NewTicker(r.resetInterval)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		select {
 		case r.tokens <- struct{}{}:

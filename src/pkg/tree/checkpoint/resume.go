@@ -83,18 +83,18 @@ func GetResumableCheckpoints(store CheckpointStore) ([]ResumableCheckpoint, erro
 
 			// Create a resumable checkpoint
 			resumable = append(resumable, ResumableCheckpoint{
-				ID:                   cp.ID,
-				SourceRegistry:       cp.SourceRegistry,
-				SourcePrefix:         cp.SourcePrefix,
-				DestRegistry:         cp.DestRegistry,
-				DestPrefix:           cp.DestPrefix,
-				Status:               cp.Status,
-				Progress:             cp.Progress,
-				LastUpdated:          cp.LastUpdated,
-				TotalRepositories:    len(cp.Repositories),
+				ID:                    cp.ID,
+				SourceRegistry:        cp.SourceRegistry,
+				SourcePrefix:          cp.SourcePrefix,
+				DestRegistry:          cp.DestRegistry,
+				DestPrefix:            cp.DestPrefix,
+				Status:                cp.Status,
+				Progress:              cp.Progress,
+				LastUpdated:           cp.LastUpdated,
+				TotalRepositories:     len(cp.Repositories),
 				CompletedRepositories: completed,
-				FailedRepositories:   failed,
-				Duration:             cp.LastUpdated.Sub(cp.StartTime),
+				FailedRepositories:    failed,
+				Duration:              cp.LastUpdated.Sub(cp.StartTime),
 			})
 		}
 	}

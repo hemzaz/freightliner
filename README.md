@@ -120,6 +120,39 @@ Freightliner uses the standard Google Cloud authentication methods. You can conf
 - Application Default Credentials
 - GKE Workload Identity (when running on GKE)
 
+## Recent Changes
+
+### Security Features
+
+- **Image Signing with Cosign**: 
+  - Added support for signing and verifying images using Cosign
+  - Integrates with both ECR and GCR registry types
+
+- **Customer-Managed Encryption Keys**:
+  - Implemented AWS KMS integration for ECR images
+  - Implemented GCP KMS integration for GCR images
+  - Added envelope encryption for secure data transfer
+
+- **Cloud Secrets Manager Integration**:
+  - Added support for AWS Secrets Manager and Google Secret Manager
+  - Securely store and retrieve registry credentials, encryption keys, and signing materials
+  - Command-line flag support for using cloud provider secrets in operations
+  - JSON-based structured secret format for complex configuration
+
+### Client Fixes
+
+- **ECR Client**:
+  - Fixed credential helper implementation to properly support the Authenticator interface
+  - Resolved MediaType undefined errors by properly importing the types package
+  - Added correct authorization method to the ECR credential helper
+  - Fixed client configuration handling with authentication libraries
+
+- **GCR Client**:
+  - Updated Google registry list functionality to work with the latest API
+  - Fixed transport and authentication handling for Google credentials
+  - Corrected manifest handling for different image types
+  - Improved descriptor handling for registry operations
+
 ## Development
 
 ### Running Tests
