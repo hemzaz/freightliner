@@ -13,12 +13,6 @@ import (
 )
 
 // ECRAuthenticator implements the go-containerregistry authn.Authenticator interface for ECR
-// ECRAPI defines the ECR API methods we use for authentication
-type ECRAPI interface {
-	GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
-}
-
-// ECRAuthenticator implements the go-containerregistry authn.Authenticator interface for ECR
 type ECRAuthenticator struct {
 	client   ECRAPI
 	registry string
@@ -26,7 +20,7 @@ type ECRAuthenticator struct {
 }
 
 // NewECRAuthenticator creates a new authenticator for ECR
-func NewECRAuthenticator(client *ecr.Client, region string) *ECRAuthenticator {
+func NewECRAuthenticator(client ECRAPI, region string) *ECRAuthenticator {
 	registryID := "" // Empty string means use the default registry for the credentials
 	registry := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", registryID, region)
 
@@ -117,7 +111,17 @@ func isECRRegistry(registry string) bool {
 		return false
 	}
 
-	return strings.Contains(registry, ".dkr.ecr.") && strings.Contains(registry, ".amazonaws.com")
+	// Check for standard ECR registry format
+	if strings.Contains(registry, ".dkr.ecr.") && strings.Contains(registry, ".amazonaws.com") {
+		return true
+	}
+	
+	// Check for public ECR registry format
+	if registry == "public.ecr.aws" {
+		return true
+	}
+	
+	return false
 }
 
 // CredentialHelper interface for ECR credential helpers

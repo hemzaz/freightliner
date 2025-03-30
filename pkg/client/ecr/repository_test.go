@@ -5,7 +5,6 @@ import (
 	"errors"
 	"freightliner/pkg/helper/log"
 	"testing"
-	"unsafe"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -26,27 +25,66 @@ type mockRepositoryECRAPI struct {
 
 func (m *mockRepositoryECRAPI) DescribeImages(ctx context.Context, params *ecr.DescribeImagesInput, optFns ...func(*ecr.Options)) (*ecr.DescribeImagesOutput, error) {
 	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*ecr.DescribeImagesOutput), args.Error(1)
 }
 
 func (m *mockRepositoryECRAPI) BatchGetImage(ctx context.Context, params *ecr.BatchGetImageInput, optFns ...func(*ecr.Options)) (*ecr.BatchGetImageOutput, error) {
 	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*ecr.BatchGetImageOutput), args.Error(1)
 }
 
 func (m *mockRepositoryECRAPI) PutImage(ctx context.Context, params *ecr.PutImageInput, optFns ...func(*ecr.Options)) (*ecr.PutImageOutput, error) {
 	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*ecr.PutImageOutput), args.Error(1)
 }
 
 func (m *mockRepositoryECRAPI) BatchDeleteImage(ctx context.Context, params *ecr.BatchDeleteImageInput, optFns ...func(*ecr.Options)) (*ecr.BatchDeleteImageOutput, error) {
 	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*ecr.BatchDeleteImageOutput), args.Error(1)
 }
 
 func (m *mockRepositoryECRAPI) ListImages(ctx context.Context, params *ecr.ListImagesInput, optFns ...func(*ecr.Options)) (*ecr.ListImagesOutput, error) {
 	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*ecr.ListImagesOutput), args.Error(1)
+}
+
+func (m *mockRepositoryECRAPI) DescribeRepositories(ctx context.Context, params *ecr.DescribeRepositoriesInput, optFns ...func(*ecr.Options)) (*ecr.DescribeRepositoriesOutput, error) {
+	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*ecr.DescribeRepositoriesOutput), args.Error(1)
+}
+
+func (m *mockRepositoryECRAPI) CreateRepository(ctx context.Context, params *ecr.CreateRepositoryInput, optFns ...func(*ecr.Options)) (*ecr.CreateRepositoryOutput, error) {
+	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*ecr.CreateRepositoryOutput), args.Error(1)
+}
+
+func (m *mockRepositoryECRAPI) GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error) {
+	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*ecr.GetAuthorizationTokenOutput), args.Error(1)
 }
 
 // Test setup helper
@@ -57,25 +95,17 @@ func setupTestRepository(mockECR *mockRepositoryECRAPI) *Repository {
 	// Create a logger
 	logger := log.NewLogger(log.InfoLevel)
 
-	// For testing, define a field accessor that ignores type compatibility
-	type clientWithMock struct {
-		ecr          interface{}
-		region       string
-		accountID    string
-		logger       *log.Logger
-		transportOpt remote.Option
-	}
+	// Create a transport option
+	transportOpt := remote.WithUserAgent("test-agent")
 
+	// Create a client with our mock ECR API
 	client := &Client{
-		ecr:       nil, // We'll set it directly via unsafe cast below
-		region:    "us-west-2",
-		accountID: "123456789012",
-		logger:    logger,
+		ecr:          mockECR, // Now we can directly assign the mock since it implements the ECRAPI interface
+		region:       "us-west-2",
+		accountID:    "123456789012",
+		logger:       logger,
+		transportOpt: transportOpt,
 	}
-
-	// Set mockECR directly using type conversion
-	// This is unsafe but necessary for testing
-	*(*interface{})(unsafe.Pointer(&client.ecr)) = mockECR
 
 	// Create and return the Repository
 	return &Repository{
@@ -188,13 +218,21 @@ func TestRepositoryDeleteManifest(t *testing.T) {
 			name: "Successful delete",
 			tag:  "latest",
 			mockSetup: func(mockECR *mockRepositoryECRAPI) {
-				mockECR.On("BatchDeleteImage", mock.Anything, &ecr.BatchDeleteImageInput{
-					RepositoryName: aws.String("test-repo"),
-					ImageIds: []types.ImageIdentifier{
-						{ImageTag: aws.String("latest")},
-					},
-					RegistryId: aws.String("123456789012"),
-				}, mock.Anything).
+				// First mock the BatchGetImage call
+				mockECR.On("BatchGetImage", mock.Anything, mock.Anything, mock.Anything).
+					Return(&ecr.BatchGetImageOutput{
+						Images: []types.Image{
+							{
+								ImageId: &types.ImageIdentifier{
+									ImageDigest: aws.String("sha256:1234567890"),
+									ImageTag:    aws.String("latest"),
+								},
+							},
+						},
+					}, nil)
+					
+				// Then mock the BatchDeleteImage call
+				mockECR.On("BatchDeleteImage", mock.Anything, mock.Anything, mock.Anything).
 					Return(&ecr.BatchDeleteImageOutput{
 						ImageIds: []types.ImageIdentifier{
 							{ImageTag: aws.String("latest")},
@@ -207,6 +245,20 @@ func TestRepositoryDeleteManifest(t *testing.T) {
 			name: "API error",
 			tag:  "latest",
 			mockSetup: func(mockECR *mockRepositoryECRAPI) {
+				// First mock the BatchGetImage call
+				mockECR.On("BatchGetImage", mock.Anything, mock.Anything, mock.Anything).
+					Return(&ecr.BatchGetImageOutput{
+						Images: []types.Image{
+							{
+								ImageId: &types.ImageIdentifier{
+									ImageDigest: aws.String("sha256:1234567890"),
+									ImageTag:    aws.String("latest"),
+								},
+							},
+						},
+					}, nil)
+					
+				// Then mock the error on BatchDeleteImage
 				mockECR.On("BatchDeleteImage", mock.Anything, mock.Anything, mock.Anything).
 					Return(&ecr.BatchDeleteImageOutput{}, errors.New("API error"))
 			},
