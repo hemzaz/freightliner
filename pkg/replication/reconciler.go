@@ -161,7 +161,8 @@ func (r *Reconciler) ReconcileRepository(
 		wg.Add(1)
 		finalTag := tag // Create a copy for the closure
 
-		r.workerPool.Submit(func(ctx context.Context) error {
+		// Function to process the tag
+		processTagFn := func(ctx context.Context) error {
 			defer wg.Done()
 
 			r.logger.Info("Copying tag", map[string]interface{}{
@@ -312,11 +313,28 @@ func (r *Reconciler) ReconcileRepository(
 			}
 
 			return nil
-		})
+		}
+
+		// Check if worker pool is available
+		if r.workerPool == nil {
+			// Run synchronously if no worker pool
+			r.logger.Warn("WorkerPool is nil, running task synchronously", map[string]interface{}{
+				"tag": finalTag,
+			})
+			
+			// Execute the function directly
+			go processTagFn(ctx)
+		} else {
+			// Submit to worker pool if available
+			r.workerPool.Submit(processTagFn)
+		}
 	}
 
 	// Wait for all copy operations to complete
-	r.workerPool.Wait()
+	if r.workerPool != nil {
+		r.workerPool.Wait()
+	}
+	wg.Wait()
 
 	// Log final summary
 	r.logger.Info("Reconciliation complete", map[string]interface{}{

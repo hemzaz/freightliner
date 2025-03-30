@@ -137,8 +137,6 @@ func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string,
 		return nil, ctx.Err()
 	}
 
-	var repositories []string
-
 	// In a real implementation, we would use this registry path
 	registryPath := fmt.Sprintf("gcr.io/%s", c.project)
 
@@ -149,6 +147,7 @@ func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string,
 
 	// For testing purposes, we'll just create a mock list of repositories
 	var mockRepos = []string{"repo1", "repo2", "testing/repo3", "testing/repo4"}
+	var repositories []string
 
 	// Filter by prefix if provided
 	if prefix != "" {
@@ -158,54 +157,11 @@ func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string,
 			}
 		}
 	} else {
-		repositories = append(repositories, mockRepos...)
+		repositories = mockRepos
 	}
 
 	// In a real implementation, we would call google.List, but the API has changed
 	// so for this test we're using a mock
-
-	// For testing, we'll assume this approach always works
-	err := error(nil)
-	if false { // This is just to avoid compilation errors while keeping the artifact registry fallback
-		c.logger.Warn("Failed to list GCR repositories, trying Artifact Registry", map[string]interface{}{
-			"error": "Mock error",
-		})
-
-		// If we don't have an AR client, return the error
-		if c.arClient == nil {
-			return nil, errors.Wrap(err, "failed to list repositories")
-		}
-
-		// Fall back to Artifact Registry API
-		parent := fmt.Sprintf("projects/%s/locations/%s", c.project, c.location)
-		request := c.arClient.Projects.Locations.Repositories.List(parent)
-
-		// Use iterator pattern
-		repoIter := makeRepositoryIterator(request)
-
-		for {
-			repo, err := repoIter.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to list repositories")
-			}
-
-			// Extract repository name
-			name := repo.Name
-			// The full name is in the format projects/{project}/locations/{location}/repositories/{repository}
-			// Extract just the repository name
-			parts := strings.Split(name, "/")
-			repoName := parts[len(parts)-1]
-			repositories = append(repositories, repoName)
-		}
-	} else {
-		// In a real implementation, this would process the response from google.List
-		// For testing, we'll use our mock repos
-		repositories = append(repositories, mockRepos...)
-	}
-
 	return repositories, nil
 }
 
