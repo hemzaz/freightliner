@@ -52,6 +52,8 @@ type TreeReplicationResult struct {
 	CheckpointID string
 	// Completed repository names
 	CompletedRepositories []string
+	// Whether this is a resumed replication
+	Resumed bool
 }
 
 // TreeReplicatorOptions provides configuration for tree replication
@@ -599,7 +601,7 @@ func (t *TreeReplicator) processRepository(
 func (t *TreeReplicator) handleError(err error, treeCheckpoint *checkpoint.TreeCheckpoint, message string) {
 	// Add context to the error if it's not already wrapped
 	if !strings.Contains(err.Error(), message) {
-		err = errors.Wrap(err, message)
+		err = errors.Wrap(err, "%s", message)
 	}
 
 	t.logger.Error(message, err, nil)

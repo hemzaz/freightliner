@@ -48,9 +48,9 @@ func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryCli
 
 	// Create replicator with checkpointing enabled
 	replicator := NewTreeReplicator(logger, copier, TreeReplicatorOptions{
-		WorkerCount:       2,
-		EnableCheckpoints: true,
-		CheckpointDir:     checkpointDir,
+		WorkerCount:         2,
+		EnableCheckpointing: true,
+		CheckpointDirectory: checkpointDir,
 	})
 
 	return replicator, sourceRegistry, destRegistry, checkpointDir
@@ -110,7 +110,7 @@ func TestResumeTreeReplication(t *testing.T) {
 	}
 
 	// Check that the repositories were replicated
-	destRepos, _ := destRegistry.ListRepositories()
+	destRepos, _ := destRegistry.ListRepositories(context.Background(), "")
 	expectedRepos := []string{
 		"mirror/project/repo1",
 		"mirror/project/repo2",

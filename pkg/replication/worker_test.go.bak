@@ -200,8 +200,7 @@ func TestWorkerPoolConcurrency(t *testing.T) {
 	for _, workerCount := range workerCounts {
 		t.Run("WorkerCount_"+string(rune('0'+workerCount)), func(t *testing.T) {
 			// Create a worker pool with specified number of workers
-			logger := log.NewLogger(log.InfoLevel)
-			pool := NewWorkerPool(workerCount, logger)
+			pool := NewWorkerPool(workerCount)
 
 			// Create a mutex-protected map to track concurrent execution
 			var mu sync.Mutex
@@ -265,8 +264,7 @@ func TestWorkerPoolConcurrency(t *testing.T) {
 func TestWorkerPoolContextCancellation(t *testing.T) {
 	// Create a worker pool with context that we'll cancel
 	ctx, cancel := context.WithCancel(context.Background())
-	logger := log.NewLogger(log.InfoLevel)
-	pool := NewWorkerPoolWithContext(ctx, 2, logger)
+	pool := NewWorkerPoolWithContext(ctx, 2)
 
 	// Variables to track task execution
 	var taskStarted sync.WaitGroup
@@ -307,8 +305,7 @@ func TestWorkerPoolContextCancellation(t *testing.T) {
 
 func TestWorkerPoolPanic(t *testing.T) {
 	// Create a worker pool
-	logger := log.NewLogger(log.InfoLevel)
-	pool := NewWorkerPool(2, logger)
+	pool := NewWorkerPool(2)
 
 	// Submit a task that panics
 	err := pool.Submit(func(ctx context.Context) error {

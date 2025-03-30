@@ -202,7 +202,7 @@ func TestDeltaManager(t *testing.T) {
 	}
 
 	// Apply the delta to reconstruct the target
-	reconstructed, err := ApplyDelta(sourceData, delta, manager.options.DeltaFormat)
+	reconstructed, err := ApplyDelta(sourceData, delta, manager.options.Format)
 	if err != nil {
 		t.Fatalf("ApplyDelta failed: %v", err)
 	}

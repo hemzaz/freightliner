@@ -2,7 +2,6 @@ package replication
 
 import (
 	"context"
-	"freightliner/pkg/client/common"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"sync"
@@ -169,4 +168,27 @@ func (p *WorkerPool) WithContext(ctx context.Context) *WorkerPool {
 	p.cancelFn = cancel
 
 	return p
+}
+
+// NewWorkerPoolWithContext creates a new worker pool with a custom context
+func NewWorkerPoolWithContext(ctx context.Context, workers int, logger *log.Logger) *WorkerPool {
+	if workers <= 0 {
+		workers = 1
+	}
+
+	if logger == nil {
+		logger = log.NewLogger(log.InfoLevel)
+	}
+
+	childCtx, cancel := context.WithCancel(ctx)
+
+	pool := &WorkerPool{
+		workers:  workers,
+		jobs:     make(chan Task, workers*2), // Buffer size is twice the number of workers
+		ctx:      childCtx,
+		cancelFn: cancel,
+		logger:   logger,
+	}
+
+	return pool
 }

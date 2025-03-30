@@ -52,15 +52,32 @@ type DeltaManager struct {
 	options DeltaOptions
 }
 
+// getDelta calculates a delta between source and target
+func (d *DeltaManager) getDelta(source, target []byte) ([]byte, int64, error) {
+	// Create a delta using the configured format
+	delta, err := CreateDelta(source, target, d.options.DeltaFormat)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Calculate savings in bytes
+	savings := int64(len(target)) - int64(len(delta))
+	if savings < 0 {
+		savings = 0
+	}
+
+	return delta, savings, nil
+}
+
 // NewDeltaManager creates a new delta manager
-func NewDeltaManager(logger *log.Logger, opts DeltaOptions) *DeltaManager {
+func NewDeltaManager(logger *log.Logger, opts DeltaOptions) (*DeltaManager, error) {
 	if logger == nil {
 		logger = log.NewLogger(log.InfoLevel)
 	}
 	return &DeltaManager{
 		logger:  logger,
 		options: opts,
-	}
+	}, nil
 }
 
 // DeltaSummary contains information about a delta optimization
@@ -262,6 +279,48 @@ func ParseManifest(data []byte) (*DeltaManifest, error) {
 	}
 
 	return &manifest, nil
+}
+
+// Constants for delta formats
+const (
+	BSDiffFormat      = "bsdiff"
+	SimpleDeltaFormat = "simple"
+)
+
+// CreateDelta creates a delta between source and target data using the specified format
+func CreateDelta(source, target []byte, format string) ([]byte, error) {
+	if len(source) == 0 {
+		return nil, errors.InvalidInputf("source cannot be empty")
+	}
+	if len(target) == 0 {
+		return nil, errors.InvalidInputf("target cannot be empty")
+	}
+
+	// Implement different delta formats
+	switch format {
+	case BSDiffFormat:
+		// Simplified implementation for testing
+		// In a real implementation, we'd use a library like github.com/mendsley/bsdiff
+		delta := []byte("BSDIFF40")
+		// Append a very simple delta - just store the target
+		delta = append(delta, target...)
+		return delta, nil
+
+	case SimpleDeltaFormat:
+		// Very basic delta format for testing
+		delta := []byte{1} // Version byte
+
+		// Add 4 bytes for length of result
+		size := len(target)
+		delta = append(delta, byte(size>>24), byte(size>>16), byte(size>>8), byte(size))
+
+		// For this simple implementation, just append the target data
+		delta = append(delta, target...)
+		return delta, nil
+
+	default:
+		return nil, errors.InvalidInputf("unsupported delta format: %s", format)
+	}
 }
 
 // ApplyDelta applies a delta to a source file to produce the destination file

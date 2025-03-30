@@ -2,11 +2,15 @@ package network
 
 import (
 	"context"
+	"freightliner/pkg/client/common"
 	"freightliner/pkg/helper/log"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 // TransferMockRepository for testing TransferManager
@@ -38,26 +42,38 @@ func (m *TransferMockRepository) ListTags() ([]string, error) {
 	return tags, nil
 }
 
-func (m *TransferMockRepository) GetManifest(tag string) ([]byte, string, error) {
+func (m *TransferMockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {
 	manifest, ok := m.tags[tag]
 	if !ok {
-		return nil, "", nil
+		return nil, nil
 	}
-	return manifest, "application/vnd.docker.distribution.manifest.v2+json", nil
+	return &common.Manifest{
+		Content:   manifest,
+		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+		Digest:    "sha256:" + tag,
+	}, nil
 }
 
-func (m *TransferMockRepository) PutManifest(tag string, manifest []byte, mediaType string) error {
-	m.tags[tag] = manifest
+func (m *TransferMockRepository) PutManifest(ctx context.Context, tag string, manifest *common.Manifest) error {
+	m.tags[tag] = manifest.Content
 	return nil
 }
 
-func (m *TransferMockRepository) DeleteManifest(tag string) error {
+func (m *TransferMockRepository) DeleteManifest(ctx context.Context, tag string) error {
 	delete(m.tags, tag)
 	return nil
 }
 
-func (m *TransferMockRepository) GetLayerReader(digest string) (io.ReadCloser, error) {
+func (m *TransferMockRepository) GetLayerReader(ctx context.Context, digest string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("mock layer data")), nil
+}
+
+func (m *TransferMockRepository) GetImageReference(tag string) (name.Reference, error) {
+	return name.NewTag("example.com/repo:" + tag)
+}
+
+func (m *TransferMockRepository) GetRemoteOptions() ([]remote.Option, error) {
+	return []remote.Option{}, nil
 }
 
 func TestTransferManager(t *testing.T) {
@@ -148,10 +164,14 @@ func TestTransferImage(t *testing.T) {
 
 	// Add a manifest to the source
 	manifest := []byte(`{"schemaVersion":2,"config":{"digest":"sha256:abc"},"layers":[{"digest":"layer1"},{"digest":"layer2"}]}`)
-	sourceRepo.PutManifest("latest", manifest, "application/json")
+	ctx := context.Background()
+	sourceRepo.PutManifest(ctx, "latest", &common.Manifest{
+		Content:   manifest,
+		MediaType: "application/json",
+		Digest:    "sha256:latest",
+	})
 
 	// Test transfer
-	ctx := context.Background()
 	stats, err := manager.TransferImage(ctx, sourceRepo, destRepo, "latest")
 	if err != nil {
 		t.Fatalf("TransferImage failed: %v", err)

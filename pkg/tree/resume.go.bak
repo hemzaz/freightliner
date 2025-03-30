@@ -323,7 +323,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 			// Create an error that represents all the failures
 			finalErr = errors.Internalf("failed to replicate %d repositories", len(errs))
 			// Add the first error as additional context
-			finalErr = errors.Wrap(errs[0], "%s", finalErr.Error())
+			finalErr = errors.Wrap(errs[0], finalErr.Error())
 		}
 	}
 

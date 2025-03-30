@@ -2,6 +2,17 @@ package metrics
 
 import "time"
 
+// TagCopyStatus represents the status of a tag copy operation
+type TagCopyStatus string
+
+// Copy status constants
+const (
+	TagCopySuccess   TagCopyStatus = "success"
+	TagCopySkipped   TagCopyStatus = "skipped"
+	TagCopyFailed    TagCopyStatus = "failed"
+	TagCopyDuplicate TagCopyStatus = "duplicate"
+)
+
 // MetricsCollector is an interface for collecting metrics about image replication
 type MetricsCollector interface {
 	// ReplicationStarted records the start of a replication operation
