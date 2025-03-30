@@ -2,7 +2,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/hemzaz/freightliner)](https://goreportcard.com/report/github.com/hemzaz/freightliner)
 [![GoDoc](https://godoc.org/github.com/hemzaz/freightliner?status.svg)](https://godoc.org/github.com/hemzaz/freightliner)
-[![License](https://img.shields.io/github/license/hemzaz/freightliner.svg)](https://github.com/hemzaz/freightliner/blob/master/LICENSE)
+[![License](https://img.shields.io/github/license/hemzaz/freightliner.svg)](https://blob/master/LICENSE)
 
 Freightliner is a container registry replication tool that supports cross-registry replication between AWS ECR and Google Container Registry (GCR).
 
@@ -26,7 +26,7 @@ Freightliner is a container registry replication tool that supports cross-regist
 
 ### Binary Installation
 
-Download the latest release from the [releases page](https://github.com/hemzaz/freightliner/releases).
+Download the latest release from the [releases page](https://releases).
 
 ### Docker
 
@@ -39,7 +39,7 @@ docker pull ghcr.io/hemzaz/freightliner:latest
 ```bash
 git clone https://github.com/hemzaz/freightliner.git
 cd freightliner
-go build -o bin/freightliner src/cmd/freightliner/main.go
+go build -o bin/freightliner cmd/freightliner/main.go
 ```
 
 ## Quick Start
@@ -164,7 +164,7 @@ go test ./...
 ### Building
 
 ```bash
-go build -o bin/freightliner src/cmd/freightliner/main.go
+go build -o bin/freightliner cmd/freightliner/main.go
 ```
 
 ## Contributing
