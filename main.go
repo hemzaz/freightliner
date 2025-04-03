@@ -2,18 +2,27 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"freightliner/pkg/client/common"
 	"freightliner/pkg/client/ecr"
 	"freightliner/pkg/client/gcr"
+	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/security/encryption"
+	"freightliner/pkg/tree"
 	"os"
 	"runtime"
 	"strings"
 
+	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/spf13/cobra"
+	"google.golang.org/api/option"
 )
 
 // Configuration variables
@@ -577,28 +586,274 @@ type EncryptionKeys struct {
 
 // Helper functions for secrets and credentials management
 func initializeSecretsManager(ctx context.Context, logger *log.Logger) (SecretsProvider, error) {
-	// This would be implemented to create the appropriate secrets manager client
-	// For now, return a stub that just logs
-	logger.Info("Secrets manager initialization not fully implemented", nil)
-	return nil, errors.NotImplementedf("secrets manager initialization")
+	// Validate inputs
+	if ctx == nil {
+		return nil, errors.InvalidInputf("context cannot be nil")
+	}
+
+	if logger == nil {
+		logger = log.NewLogger(log.InfoLevel)
+	}
+
+	// Determine provider type
+	var providerType string
+	switch secretsConfig.secretsManagerType {
+	case "aws":
+		// Use AWS Secrets Manager
+		awsRegion := secretsConfig.awsSecretRegion
+		if awsRegion == "" {
+			awsRegion = ecrRegion
+		}
+
+		logger.Info("Initializing AWS Secrets Manager", map[string]interface{}{
+			"region": awsRegion,
+		})
+
+		// Create AWS Secrets Manager provider
+		awsProvider, err := createAWSSecretsProvider(ctx, awsRegion)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create AWS Secrets Manager provider")
+		}
+		return awsProvider, nil
+
+	case "gcp":
+		// Use Google Secret Manager
+		gcpProject := secretsConfig.gcpSecretProject
+		if gcpProject == "" {
+			gcpProject = gcrProject
+		}
+
+		logger.Info("Initializing Google Secret Manager", map[string]interface{}{
+			"project":    gcpProject,
+			"creds_file": secretsConfig.gcpCredentialsFile,
+		})
+
+		// Create Google Secret Manager provider
+		gcpProvider, err := createGCPSecretsProvider(ctx, gcpProject, secretsConfig.gcpCredentialsFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create Google Secret Manager provider")
+		}
+		return gcpProvider, nil
+
+	default:
+		return nil, errors.InvalidInputf("unsupported secrets manager type: %s", secretsConfig.secretsManagerType)
+	}
+}
+
+// createAWSSecretsProvider creates an AWS Secrets Manager provider
+func createAWSSecretsProvider(ctx context.Context, region string) (SecretsProvider, error) {
+	// Import AWS Secrets Manager package
+	awsProvider := &awsSecretsProvider{
+		region: region,
+	}
+	return awsProvider, nil
+}
+
+// createGCPSecretsProvider creates a Google Secret Manager provider
+func createGCPSecretsProvider(ctx context.Context, project string, credentialsFile string) (SecretsProvider, error) {
+	// Import Google Secret Manager package
+	gcpProvider := &gcpSecretsProvider{
+		project:         project,
+		credentialsFile: credentialsFile,
+	}
+	return gcpProvider, nil
+}
+
+// awsSecretsProvider implements the SecretsProvider interface for AWS Secrets Manager
+type awsSecretsProvider struct {
+	region string
+}
+
+// GetSecret retrieves a secret by name from AWS Secrets Manager
+func (p *awsSecretsProvider) GetSecret(ctx context.Context, name string) (string, error) {
+	// Create AWS SDK session
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(p.region),
+	)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to load AWS config")
+	}
+
+	// Create Secrets Manager client
+	client := secretsmanager.NewFromConfig(cfg)
+
+	// Get secret value
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(name),
+	}
+
+	result, err := client.GetSecretValue(ctx, input)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get secret value")
+	}
+
+	// Return secret string
+	if result.SecretString != nil {
+		return *result.SecretString, nil
+	} else if result.SecretBinary != nil {
+		// Handle binary secret data if needed
+		decodedBinarySecretBytes := make([]byte, base64.StdEncoding.DecodedLen(len(result.SecretBinary)))
+		n, err := base64.StdEncoding.Decode(decodedBinarySecretBytes, result.SecretBinary)
+		if err != nil {
+			return "", errors.Wrap(err, "failed to decode binary secret")
+		}
+		return string(decodedBinarySecretBytes[:n]), nil
+	}
+
+	return "", errors.New("secret is empty")
+}
+
+// gcpSecretsProvider implements the SecretsProvider interface for Google Secret Manager
+type gcpSecretsProvider struct {
+	project         string
+	credentialsFile string
+}
+
+// GetSecret retrieves a secret by name from Google Secret Manager
+func (p *gcpSecretsProvider) GetSecret(ctx context.Context, name string) (string, error) {
+	// Create client options
+	var opts []option.ClientOption
+	if p.credentialsFile != "" {
+		opts = append(opts, option.WithCredentialsFile(p.credentialsFile))
+	}
+
+	// Create Secret Manager client
+	client, err := secretmanager.NewClient(ctx, opts...)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create Secret Manager client")
+	}
+	defer client.Close()
+
+	// Format resource name for 'latest' version
+	// Format: projects/{project}/secrets/{secret}/versions/latest
+	resourceName := fmt.Sprintf("projects/%s/secrets/%s/versions/latest", p.project, name)
+
+	// Access the secret version
+	result, err := client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{
+		Name: resourceName,
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "failed to access secret version")
+	}
+
+	// Return secret data
+	return string(result.Payload.Data), nil
 }
 
 func loadRegistryCredentials(ctx context.Context, provider SecretsProvider) (RegistryCredentials, error) {
-	// This would be implemented to load credentials from the secrets manager
-	return RegistryCredentials{}, errors.NotImplementedf("registry credentials loading")
+	if provider == nil {
+		return RegistryCredentials{}, errors.InvalidInputf("secrets provider cannot be nil")
+	}
+
+	// Get registry credentials secret
+	secretData, err := provider.GetSecret(ctx, secretsConfig.registryCredsSecret)
+	if err != nil {
+		return RegistryCredentials{}, errors.Wrap(err, "failed to load registry credentials")
+	}
+
+	// Parse JSON data
+	var creds RegistryCredentials
+	if err := json.Unmarshal([]byte(secretData), &creds); err != nil {
+		return RegistryCredentials{}, errors.Wrap(err, "failed to parse registry credentials JSON")
+	}
+
+	return creds, nil
 }
 
 func applyRegistryCredentials(creds RegistryCredentials) {
-	// This would be implemented to apply the loaded credentials
+	// Apply AWS credentials if provided
+	if creds.ECR.AccessKey != "" && creds.ECR.SecretKey != "" {
+		os.Setenv("AWS_ACCESS_KEY_ID", creds.ECR.AccessKey)
+		os.Setenv("AWS_SECRET_ACCESS_KEY", creds.ECR.SecretKey)
+
+		if creds.ECR.SessionToken != "" {
+			os.Setenv("AWS_SESSION_TOKEN", creds.ECR.SessionToken)
+		}
+	}
+
+	// Override CLI parameters if values are provided
+	if creds.ECR.Region != "" {
+		ecrRegion = creds.ECR.Region
+	}
+
+	if creds.ECR.AccountID != "" {
+		ecrAccountID = creds.ECR.AccountID
+	}
+
+	if creds.GCR.Project != "" {
+		gcrProject = creds.GCR.Project
+	}
+
+	if creds.GCR.Location != "" {
+		gcrLocation = creds.GCR.Location
+	}
+
+	// If GCP credentials are provided as Base64-encoded JSON
+	if creds.GCR.Credentials != "" {
+		// Create temporary file for GCP credentials
+		tmpFile, err := os.CreateTemp("", "gcp-credentials-*.json")
+		if err == nil {
+			tmpFilePath := tmpFile.Name()
+			defer func() {
+				tmpFile.Close()
+				os.Remove(tmpFilePath) // Clean up when done
+			}()
+
+			// Decode and write credentials to file
+			decoded, err := base64.StdEncoding.DecodeString(creds.GCR.Credentials)
+			if err == nil {
+				if _, err := tmpFile.Write(decoded); err == nil {
+					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFilePath)
+				}
+			}
+		}
+	}
 }
 
 func loadEncryptionKeys(ctx context.Context, provider SecretsProvider) (EncryptionKeys, error) {
-	// This would be implemented to load encryption keys from the secrets manager
-	return EncryptionKeys{}, errors.NotImplementedf("encryption keys loading")
+	if provider == nil {
+		return EncryptionKeys{}, errors.InvalidInputf("secrets provider cannot be nil")
+	}
+
+	// Get encryption keys secret
+	secretData, err := provider.GetSecret(ctx, secretsConfig.encryptionKeysSecret)
+	if err != nil {
+		return EncryptionKeys{}, errors.Wrap(err, "failed to load encryption keys")
+	}
+
+	// Parse JSON data
+	var keys EncryptionKeys
+	if err := json.Unmarshal([]byte(secretData), &keys); err != nil {
+		return EncryptionKeys{}, errors.Wrap(err, "failed to parse encryption keys JSON")
+	}
+
+	return keys, nil
 }
 
 func applyEncryptionKeys(keys EncryptionKeys) {
-	// This would be implemented to apply the loaded encryption keys
+	// Apply AWS KMS key if provided
+	if keys.AWS.KMSKeyID != "" {
+		encryptionConfig.awsKmsKeyID = keys.AWS.KMSKeyID
+	}
+
+	// Apply GCP KMS key if provided
+	if keys.GCP.KMSKeyID != "" {
+		encryptionConfig.gcpKmsKeyID = keys.GCP.KMSKeyID
+	}
+	
+	if keys.GCP.KeyRing != "" {
+		encryptionConfig.gcpKeyRing = keys.GCP.KeyRing
+	}
+	
+	if keys.GCP.Key != "" {
+		encryptionConfig.gcpKeyName = keys.GCP.Key
+	}
+	
+	// If a full GCP KMS key is provided but the individual components are not
+	if keys.GCP.KMSKeyID != "" && encryptionConfig.gcpKmsKeyID == "" {
+		// Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}
+		encryptionConfig.gcpKmsKeyID = keys.GCP.KMSKeyID
+	}
 }
 
 func initializeCredentials(ctx context.Context, logger *log.Logger) error {
@@ -716,93 +971,141 @@ func isValidRegistryType(registry string) bool {
 
 // createCopier creates a new image copier with the specified configuration
 func createCopier(ctx context.Context, source, dest common.Repository, encManager *encryption.Manager, logger *log.Logger, workers int) (Copier, error) {
-	// This would be implemented to create a new copier
-	// For now, return a stub implementation
-	return &stubCopier{
-		source:      source,
-		destination: dest,
-		logger:      logger,
-		workers:     workers,
-	}, nil
-}
-
-// stubCopier is a temporary implementation for the Copier interface
-type stubCopier struct {
-	source      common.Repository
-	destination common.Repository
-	logger      *log.Logger
-	workers     int
-}
-
-func (c *stubCopier) CopyRepository(ctx context.Context) (CopyResult, error) {
-	// This would be implemented to copy all images between repositories
-	c.logger.Info("Stub implementation of CopyRepository", map[string]interface{}{
-		"source":      c.source,
-		"destination": c.destination,
-		"workers":     c.workers,
-	})
-
-	// Return mock results
-	return CopyResult{
-		TagsCopied:       5,
-		TagsSkipped:      0,
-		Errors:           0,
-		BytesTransferred: 1024 * 1024 * 10, // 10MB
-	}, nil
-}
-
-func (c *stubCopier) CopyImage(ctx context.Context, tag string) error {
-	// This would be implemented to copy a single image
-	c.logger.Info("Stub implementation of CopyImage", map[string]interface{}{
-		"tag":         tag,
-		"source":      c.source,
-		"destination": c.destination,
-	})
-	return nil
+	// Import the real copier implementation from the copy package
+	copierOpts := copy.CopierOptions{
+		Source:           source,
+		Destination:      dest,
+		Logger:           logger,
+		Workers:          workers,
+		EncryptionMgr:    encManager,
+		ForceOverwrite:   false, // Default to false, set by the caller if needed
+		EnableCompression: true,
+		DeltaOptimization: true,
+	}
+	
+	return copy.NewCopier(copierOpts), nil
 }
 
 // createTreeReplicator creates a new tree replicator with the specified configuration
 func createTreeReplicator(ctx context.Context, source common.RegistryClient, dest common.RegistryClient, sourcePath, destPath string, logger *log.Logger, opts map[string]interface{}) (TreeReplicator, error) {
-	// This would be implemented to create a new tree replicator
-	// For now, return a stub implementation
-	return &stubTreeReplicator{
-		sourceClient: source,
-		destClient:   dest,
-		sourcePath:   sourcePath,
-		destPath:     destPath,
-		logger:       logger,
-		options:      opts,
-	}, nil
-}
-
-// stubTreeReplicator is a temporary implementation for the TreeReplicator interface
-type stubTreeReplicator struct {
-	sourceClient common.RegistryClient
-	destClient   common.RegistryClient
-	sourcePath   string
-	destPath     string
-	logger       *log.Logger
-	options      map[string]interface{}
-}
-
-func (t *stubTreeReplicator) ReplicateTree(ctx context.Context) error {
-	// This would be implemented to replicate a tree of repositories
-	t.logger.Info("Stub implementation of ReplicateTree", map[string]interface{}{
-		"source":      t.sourcePath,
-		"destination": t.destPath,
-		"options":     t.options,
+	// Extract options from the map
+	workerCount := 2 // Default value
+	if workers, ok := opts["workers"].(int); ok && workers > 0 {
+		workerCount = workers
+	}
+	
+	var excludeRepos []string
+	if excludes, ok := opts["excludeRepos"].([]string); ok {
+		excludeRepos = excludes
+	}
+	
+	var excludeTags []string
+	if excludes, ok := opts["excludeTags"].([]string); ok {
+		excludeTags = excludes
+	}
+	
+	var includeTags []string
+	if includes, ok := opts["includeTags"].([]string); ok {
+		includeTags = includes
+	}
+	
+	dryRun := false
+	if dry, ok := opts["dryRun"].(bool); ok {
+		dryRun = dry
+	}
+	
+	enableCheckpoint := false
+	if enable, ok := opts["enableCheckpoint"].(bool); ok {
+		enableCheckpoint = enable
+	}
+	
+	checkpointDir := "${HOME}/.freightliner/checkpoints"
+	if dir, ok := opts["checkpointDir"].(string); ok && dir != "" {
+		checkpointDir = dir
+	}
+	
+	// Only used for resume
+	resumeID := ""
+	if id, ok := opts["resumeID"].(string); ok {
+		resumeID = id
+	}
+	
+	skipCompleted := true
+	if skip, ok := opts["skipCompleted"].(bool); ok {
+		skipCompleted = skip
+	}
+	
+	// Create a copier for the tree replicator to use
+	encManager, err := setupEncryptionManager(ctx, logger, dest.GetRegistryName())
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to set up encryption manager for tree replicator")
+	}
+	
+	// Set up tree replicator configuration
+	treeReplicatorOpts := tree.TreeReplicatorOptions{
+		WorkerCount:         workerCount,
+		ExcludeRepositories: excludeRepos,
+		ExcludeTags:         excludeTags,
+		IncludeTags:         includeTags,
+		EnableCheckpointing: enableCheckpoint,
+		CheckpointDirectory: checkpointDir,
+		DryRun:              dryRun,
+	}
+	
+	// Create copier instance for the tree replicator
+	copier := copy.NewCopier(copy.CopierOptions{
+		Logger:             logger,
+		Workers:            workerCount,
+		EncryptionMgr:      encManager,
+		EnableCompression:  true,
+		DeltaOptimization:  true,
+		ForceOverwrite:     opts["force"] == true,
 	})
-	return nil
-}
-
-func (t *stubTreeReplicator) ReplicateRepositories(ctx context.Context, repositories []string) error {
-	// This would be implemented to replicate specific repositories
-	t.logger.Info("Stub implementation of ReplicateRepositories", map[string]interface{}{
-		"repositories": repositories,
-		"source":       t.sourcePath,
-		"destination":  t.destPath,
-	})
-	return nil
+	
+	// Create the tree replicator
+	replicator := tree.NewTreeReplicator(logger, copier, treeReplicatorOpts)
+	
+	// If resuming from a checkpoint, set up the resume operation
+	if resumeID != "" {
+		logger.Info("Setting up tree replication resume", map[string]interface{}{
+			"resumeID":       resumeID,
+			"skipCompleted":  skipCompleted,
+			"retryFailed":    opts["retryFailed"] == true,
+			"checkpointDir":  checkpointDir,
+		})
+		
+		// Initialize the checkpoint store for resume
+		store, err := tree.InitCheckpointStore(checkpointDir)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to initialize checkpoint store for resume")
+		}
+		
+		// Load the checkpoint
+		checkpoint, err := tree.GetCheckpointByID(store, resumeID)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to load checkpoint for resume")
+		}
+		
+		// Set up resume options
+		resumeOpts := tree.ResumableOptions{
+			ID:            resumeID,
+			SkipCompleted: skipCompleted,
+			RetryFailed:   opts["retryFailed"] == true,
+			Force:         opts["force"] == true,
+		}
+		
+		// Get repositories to process
+		repositories, err := tree.GetRemainingRepositories(checkpoint, resumeOpts)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get remaining repositories for resume")
+		}
+		
+		logger.Info("Resume operation set up", map[string]interface{}{
+			"repositories": len(repositories),
+		})
+	}
+	
+	return replicator, nil
 }
 
 func setupEncryptionManager(ctx context.Context, logger *log.Logger, destRegistry string) (*encryption.Manager, error) {

@@ -6,6 +6,7 @@ import (
 	"freightliner/pkg/client/common"
 	"freightliner/pkg/helper/errors"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -236,10 +237,92 @@ func (r *Repository) GetLayerReader(ctx context.Context, digest string) (io.Read
 
 // DeleteImage deletes an image by tag
 func (r *Repository) DeleteImage(ctx context.Context, tag string) error {
-	// Currently, the go-containerregistry library doesn't have a direct way to delete an image
-	// In a real implementation, this would use the GCR API directly
-	// For now, we'll return an error
-	return errors.NotImplementedf("image deletion not implemented for GCR")
+	if tag == "" {
+		return errors.InvalidInputf("tag cannot be empty")
+	}
+
+	// First, get the manifest to extract the digest
+	manifest, err := r.GetManifest(ctx, tag)
+	if err != nil {
+		return errors.Wrap(err, "failed to get manifest for deletion")
+	}
+
+	// Google Container Registry uses the Artifact Registry API for deletion operations
+	// If AR client is not available, try HTTP-based approach as fallback
+	if r.client.arClient != nil {
+		// Construct the resource name
+		// Format: projects/{project}/locations/{location}/repositories/{repository}/packages/{package}/versions/{version}
+		location := r.client.location
+		if location == "us" || location == "eu" || location == "asia" {
+			location = "us-central1" // Map legacy locations to GCP regions
+		}
+
+		digestRef := strings.TrimPrefix(manifest.Digest, "sha256:")
+		resourceName := fmt.Sprintf("projects/%s/locations/%s/repositories/%s/packages/%s/versions/%s",
+			r.client.project, location, r.name, r.name, digestRef)
+
+		// Delete the version using Artifact Registry API
+		deleteReq := r.client.arClient.Projects.Locations.Repositories.Packages.Versions.Delete(resourceName)
+		if err := deleteReq.Context(ctx).Do(); err != nil {
+			// Check specific error messages to provide better diagnostics
+			if strings.Contains(err.Error(), "404") {
+				return errors.NotFoundf("image %s:%s not found or already deleted", r.name, tag)
+			}
+			return errors.Wrap(err, "failed to delete image via Artifact Registry API")
+		}
+		
+		return nil
+	}
+	
+	// Fallback approach using gcrane or container registry HTTP API
+	// Create a reference for the image digest
+	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", r.repository.String(), manifest.Digest))
+	if err != nil {
+		return errors.Wrap(err, "failed to create digest reference")
+	}
+
+	// Use HTTP DELETE request to the GCR registry API
+	transport, err := r.client.GetTransport(r.name)
+	if err != nil {
+		return errors.Wrap(err, "failed to get authenticated transport")
+	}
+
+	// Create authenticated HTTP client
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	// GCR supports DELETE operations on manifest endpoints
+	// URL format: https://gcr.io/v2/{repository}/manifests/{digest}
+	deleteURL := fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s",
+		digestRef.Context().RegistryStr(),
+		r.client.project,
+		r.name,
+		strings.TrimPrefix(manifest.Digest, "sha256:"))
+
+	// Create a DELETE request
+	req, err := http.NewRequestWithContext(ctx, "DELETE", deleteURL, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to create delete request")
+	}
+
+	// Send the request
+	resp, err := client.Do(req)
+	if err != nil {
+		return errors.Wrap(err, "failed to send delete request")
+	}
+	defer resp.Body.Close()
+
+	// Check response
+	if resp.StatusCode == http.StatusNotFound {
+		return errors.NotFoundf("image %s:%s not found or already deleted", r.name, tag)
+	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return errors.Errorf("failed to delete image, status: %d, response: %s", 
+			resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
 }
 
 // DeleteManifest deletes the manifest for the given tag - implements common.Repository

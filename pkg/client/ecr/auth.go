@@ -7,6 +7,7 @@ import (
 	"freightliner/pkg/helper/errors"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -62,6 +63,18 @@ func (a *ECRAuthenticator) Authorization() (*authn.AuthConfig, error) {
 	}, nil
 }
 
+// NewECRClientForRegion creates a new ECR client for the given region
+func NewECRClientForRegion(region string) (ECRAPI, error) {
+	// Create AWS SDK config for the target region
+	cfg, err := LoadAWSConfig(region)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to load AWS config for region %s", region)
+	}
+	
+	// Create ECR client using the region-specific config
+	return ecr.NewFromConfig(cfg), nil
+}
+
 // RegistryAuthenticator creates an authenticator for a specific registry
 func (a *ECRAuthenticator) RegistryAuthenticator(registry string) (authn.Authenticator, error) {
 	// Check if the registry is an ECR registry
@@ -78,12 +91,31 @@ func (a *ECRAuthenticator) RegistryAuthenticator(registry string) (authn.Authent
 
 	region := registry[regionStart:regionEnd]
 	if region != a.region {
-		// Need to create a new authenticator for this region
-		return nil, errors.NotImplementedf("authentication for cross-region ECR registries not implemented")
+		// Create a new AWS SDK client for the target region
+		ecrClient, err := NewECRClientForRegion(region)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create ECR client for region %s", region)
+		}
+		
+		// Create a new authenticator for the cross-region registry
+		crossRegionAuth := NewECRAuthenticator(ecrClient, region)
+		return crossRegionAuth, nil
 	}
 
 	// For the same region, we can use this authenticator
 	return a, nil
+}
+
+// LoadAWSConfig loads AWS SDK configuration for the specified region
+func LoadAWSConfig(region string) (config.Config, error) {
+	// Load the AWS SDK config with the specified region
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return config.Config{}, errors.Wrap(err, "failed to load AWS config")
+	}
+	
+	return cfg, nil
 }
 
 // GetECRRegistry returns the ECR registry URL for the given account and region

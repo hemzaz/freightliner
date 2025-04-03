@@ -136,32 +136,128 @@ func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string,
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	
+	// Check if we have an AR client (preferred approach)
+	if c.arClient != nil {
+		return c.listRepositoriesViaAR(ctx, prefix)
+	}
+	
+	// Fallback to direct GCR API
+	return c.listRepositoriesViaGCR(ctx, prefix)
+}
 
-	// In a real implementation, we would use this registry path
-	registryPath := fmt.Sprintf("gcr.io/%s", c.project)
+// listRepositoriesViaAR uses the Artifact Registry API to list repositories
+func (c *Client) listRepositoriesViaAR(ctx context.Context, prefix string) ([]string, error) {
+	// Determine the location parameter
+	location := c.location
+	if location == "us" || location == "eu" || location == "asia" {
+		location = "us-central1" // Map legacy locations to GCP regions
+	}
+	
+	// Create the parent parameter for the API call
+	// Format: projects/{project}/locations/{location}
+	parent := fmt.Sprintf("projects/%s/locations/%s", c.project, location)
+	
+	// List repositories in the project/location
+	c.logger.Debug("Listing repositories via Artifact Registry API", map[string]interface{}{
+		"project":  c.project,
+		"location": location,
+		"prefix":   prefix,
+	})
+	
+	// Create request with filter if needed
+	req := c.arClient.Projects.Locations.Repositories.List(parent)
+	if prefix != "" {
+		// Filter format: name:*{prefix}*
+		req = req.Filter(fmt.Sprintf("name:*%s*", prefix))
+	}
+	
+	// Use iterator pattern to list all repositories
+	it := makeRepositoryIterator(req)
+	var repositories []string
+	
+	for {
+		repo, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list repositories")
+		}
+		
+		// Extract repository name from the full path
+		// Format: projects/{project}/locations/{location}/repositories/{repository}
+		parts := strings.Split(repo.Name, "/")
+		if len(parts) > 0 {
+			repoName := parts[len(parts)-1]
+			
+			// Apply prefix filtering manually in case AR API filter doesn't work as expected
+			if prefix == "" || strings.HasPrefix(repoName, prefix) {
+				repositories = append(repositories, repoName)
+			}
+		}
+	}
+	
+	return repositories, nil
+}
 
-	c.logger.Debug("Listing repositories", map[string]interface{}{
+// listRepositoriesViaGCR uses the direct GCR API to list repositories
+func (c *Client) listRepositoriesViaGCR(ctx context.Context, prefix string) ([]string, error) {
+	// Determine registry path based on location
+	var registryPath string
+	if c.location == "us" {
+		registryPath = fmt.Sprintf("gcr.io/%s", c.project)
+	} else if c.location == "eu" {
+		registryPath = fmt.Sprintf("eu.gcr.io/%s", c.project)
+	} else if c.location == "asia" {
+		registryPath = fmt.Sprintf("asia.gcr.io/%s", c.project)
+	} else {
+		registryPath = fmt.Sprintf("%s-docker.pkg.dev/%s", c.location, c.project)
+	}
+	
+	c.logger.Debug("Listing repositories via GCR API", map[string]interface{}{
 		"registry": registryPath,
 		"prefix":   prefix,
 	})
-
-	// For testing purposes, we'll just create a mock list of repositories
-	var mockRepos = []string{"repo1", "repo2", "testing/repo3", "testing/repo4"}
-	var repositories []string
-
-	// Filter by prefix if provided
-	if prefix != "" {
-		for _, repo := range mockRepos {
-			if strings.HasPrefix(repo, prefix) {
-				repositories = append(repositories, repo)
+	
+	// Create a repository reference for the registry
+	registry, err := name.NewRepository(registryPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create registry reference")
+	}
+	
+	// Use the google.List function to list repositories
+	tags, err := google.List(registry, c.googleAuthOpts...)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "404") {
+			// Registry might be empty or not exist yet
+			return []string{}, nil
+		}
+		return nil, errors.Wrap(err, "failed to list repositories")
+	}
+	
+	// Extract repository names from the registry catalog
+	repoMap := make(map[string]bool) // Use map to deduplicate
+	for repoName := range tags.Manifests {
+		// Get repository part from full image name
+		parts := strings.Split(repoName, "/")
+		if len(parts) > 1 {
+			// Skip the registry part and join the rest
+			repo := strings.Join(parts[1:], "/")
+			
+			// Apply prefix filtering
+			if prefix == "" || strings.HasPrefix(repo, prefix) {
+				repoMap[repo] = true
 			}
 		}
-	} else {
-		repositories = mockRepos
 	}
-
-	// In a real implementation, we would call google.List, but the API has changed
-	// so for this test we're using a mock
+	
+	// Convert map to slice
+	var repositories []string
+	for repo := range repoMap {
+		repositories = append(repositories, repo)
+	}
+	
 	return repositories, nil
 }
 

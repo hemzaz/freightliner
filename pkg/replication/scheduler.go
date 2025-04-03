@@ -3,10 +3,15 @@ package replication
 import (
 	"context"
 	"fmt"
+	"freightliner/pkg/client/common"
+	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/security/encryption"
 	"sync"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 // Job represents a scheduled replication job
@@ -21,31 +26,74 @@ type Job struct {
 	Running bool
 }
 
+// ReplicationService handles the actual replication operations
+type ReplicationService interface {
+	// ReplicateRepository replicates a repository according to the given rule
+	ReplicateRepository(ctx context.Context, rule ReplicationRule) error
+}
+
 // Scheduler manages scheduled replication jobs
 type Scheduler struct {
-	jobs       map[string]*Job
-	mutex      sync.RWMutex
-	ctx        context.Context
-	cancelFn   context.CancelFunc
-	logger     *log.Logger
-	workerPool *WorkerPool
+	jobs              map[string]*Job
+	mutex             sync.RWMutex
+	ctx               context.Context
+	cancelFn          context.CancelFunc
+	logger            *log.Logger
+	workerPool        *WorkerPool
+	replicationSvc    ReplicationService
+	registryProviders map[string]common.RegistryProvider
+	cronParser        cron.Parser
+	encryptionMgr     *encryption.Manager
+}
+
+// SchedulerOptions provides configuration for the scheduler
+type SchedulerOptions struct {
+	// Logger is the logger to use
+	Logger *log.Logger
+	
+	// WorkerPool is the worker pool for executing jobs
+	WorkerPool *WorkerPool
+	
+	// RegistryProviders is a map of registry providers by type (e.g., "ecr", "gcr")
+	RegistryProviders map[string]common.RegistryProvider
+	
+	// ReplicationService is the service that handles actual replication
+	ReplicationService ReplicationService
+	
+	// EncryptionManager is the manager for encryption operations (optional)
+	EncryptionManager *encryption.Manager
 }
 
 // NewScheduler creates a new replication scheduler
-func NewScheduler(logger *log.Logger, workerPool *WorkerPool) *Scheduler {
+func NewScheduler(opts SchedulerOptions) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
-
-	scheduler := &Scheduler{
-		jobs:       make(map[string]*Job),
-		ctx:        ctx,
-		cancelFn:   cancel,
-		logger:     logger,
-		workerPool: workerPool,
+	
+	// Create default logger if not provided
+	logger := opts.Logger
+	if logger == nil {
+		logger = log.NewLogger(log.InfoLevel)
 	}
-
+	
+	// Configure cron parser with seconds field
+	cronParser := cron.NewParser(
+		cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)
+	
+	scheduler := &Scheduler{
+		jobs:              make(map[string]*Job),
+		ctx:               ctx,
+		cancelFn:          cancel,
+		logger:            logger,
+		workerPool:        opts.WorkerPool,
+		replicationSvc:    opts.ReplicationService,
+		registryProviders: opts.RegistryProviders,
+		cronParser:        cronParser,
+		encryptionMgr:     opts.EncryptionManager,
+	}
+	
 	// Start the scheduler loop
 	go scheduler.run()
-
+	
 	return scheduler
 }
 
@@ -82,9 +130,21 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		return nil
 	}
 
-	// TODO: Parse the schedule as a cron expression
-	// For now, just schedule it to run in 5 minutes
-	nextRun := time.Now().Add(5 * time.Minute)
+	// Parse the schedule as a cron expression
+	var nextRun time.Time
+	
+	if rule.Schedule == "@now" {
+		// Special case for immediate execution
+		nextRun = time.Now()
+	} else {
+		schedule, err := s.cronParser.Parse(rule.Schedule)
+		if err != nil {
+			return errors.Wrap(err, "invalid cron expression: %s", rule.Schedule)
+		}
+		
+		// Calculate the next run time based on the schedule
+		nextRun = schedule.Next(time.Now())
+	}
 
 	// Check if job already exists
 	if _, exists := s.jobs[id]; exists {
@@ -160,9 +220,30 @@ func (s *Scheduler) checkJobs() {
 			// Mark the job as running
 			job.Running = true
 
-			// TODO: Calculate the next run time based on the cron expression
-			// For now, just schedule it to run again in 1 hour
-			job.NextRun = now.Add(1 * time.Hour)
+			// Calculate the next run time based on the cron expression
+			if job.Rule.Schedule != "@once" && job.Rule.Schedule != "@now" {
+				schedule, err := s.cronParser.Parse(job.Rule.Schedule)
+				if err != nil {
+					s.logger.Warn("Invalid cron expression, using default schedule", map[string]interface{}{
+						"id":        id,
+						"schedule":  job.Rule.Schedule,
+						"error":     err.Error(),
+						"next_run":  now.Add(1 * time.Hour),
+					})
+					job.NextRun = now.Add(1 * time.Hour)
+				} else {
+					job.NextRun = schedule.Next(now)
+					s.logger.Debug("Scheduled next run", map[string]interface{}{
+						"id":       id,
+						"next_run": job.NextRun,
+					})
+				}
+			} else {
+				// For @once and @now schedules, don't reschedule
+				s.logger.Debug("One-time job, not rescheduling", map[string]interface{}{
+					"id": id,
+				})
+			}
 
 			// Submit the job to the worker pool
 			s.submitJob(id, job)
@@ -209,11 +290,42 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 			return errors.Wrap(ctx.Err(), "job context canceled")
 		}
 
-		// TODO: Implement the actual replication logic
-		// This would call into a ReplicationService or similar
-
-		s.logger.Info("Completed scheduled job", map[string]interface{}{
-			"id": id,
+		// Check if we have a replication service
+		if s.replicationSvc == nil {
+			return errors.InvalidInputf("replication service not configured")
+		}
+		
+		// Log job start
+		s.logger.Info("Starting replication job", map[string]interface{}{
+			"id":                 id,
+			"source_registry":    job.Rule.SourceRegistry,
+			"source_repository":  job.Rule.SourceRepository, 
+			"dest_registry":      job.Rule.DestinationRegistry,
+			"dest_repository":    job.Rule.DestinationRepository,
+			"include_tags":       job.Rule.IncludeTags,
+			"exclude_tags":       job.Rule.ExcludeTags,
+			"force_overwrite":    job.Rule.ForceOverwrite,
+		})
+		
+		// Execute the replication using the service
+		startTime := time.Now()
+		err := s.replicationSvc.ReplicateRepository(ctx, job.Rule)
+		duration := time.Since(startTime)
+		
+		if err != nil {
+			replicationErr := errors.Wrap(err, "replication failed")
+			s.logger.Error("Replication job failed", replicationErr, map[string]interface{}{
+				"id":       id,
+				"duration": duration.String(),
+				"error":    err.Error(),
+			})
+			return replicationErr
+		}
+		
+		// Log job completion
+		s.logger.Info("Completed replication job", map[string]interface{}{
+			"id":       id,
+			"duration": duration.String(),
 		})
 
 		return nil
