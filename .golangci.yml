@@ -1,0 +1,120 @@
+# golangci-lint configuration for the Freightliner project
+# See https://golangci-lint.run/usage/configuration/ for details
+
+run:
+  # Timeout for running linters, default is 1m
+  timeout: 3m
+  # Include test files in analysis
+  tests: true
+  # Don't use cache to get more accurate results
+  skip-dirs:
+    - vendor
+    - test/mocks
+
+# Output configuration options
+output:
+  # Make output more readable
+  format: colored-line-number
+  # Show line number in output
+  print-issued-lines: true
+  # Show the file paths relative to the root of the project
+  print-linter-name: true
+
+# Configuration of specific linters
+linters-settings:
+  errcheck:
+    # Report about not checking error in type assertions: `a := b.(MyStruct)`
+    check-type-assertions: true
+    # Report about assignment of errors to blank identifier: `num, _ := strconv.Atoi(numStr)`
+    check-blank: true
+  gofmt:
+    # Apply automatic fixes where possible
+    simplify: true
+  goimports:
+    # Put local imports after 3rd-party packages
+    local-prefixes: freightliner
+  golint:
+    # Minimal confidence for issues, default is 0.8
+    min-confidence: 0.8
+  govet:
+    # Enable all analyzers
+    enable-all: true
+    # Disable specific analyzers
+    disable:
+      - shadow
+  revive:
+    # Max reports per package
+    max-open-files: 2048
+    # Minimal confidence for issues
+    confidence: 0.8
+  staticcheck:
+    # Filter out issues
+    checks: ["all"]
+  stylecheck:
+    # All checks enabled
+    checks: ["all"]
+  unused:
+    # Treat code as a program (not a library)
+    check-exported: false
+  whitespace:
+    # Enforce newlines (or comments) after end of block
+    multi-func: true
+
+# Enabled linters
+linters:
+  # Disable all linters, then enable specific ones
+  disable-all: true
+  enable:
+    - bodyclose     # Checks whether HTTP response bodies are closed
+    - deadcode      # Finds unused code
+    - dupl          # Code clone detection
+    - errcheck      # Checks for unchecked errors
+    - gocyclo       # Computes and checks cyclomatic complexity
+    - gofmt         # Checks if code is properly formatted
+    - goimports     # Checks import statements are formatted and imports are grouped
+    - golint        # Golint is a linter for Go source code
+    - gosec         # Inspects source code for security problems
+    - gosimple      # Simplifies code
+    - govet         # Reports suspicious constructs
+    - ineffassign   # Detects ineffectual assignments
+    - megacheck     # 3 static analysis tools in one: unused, gosimple and staticcheck
+    - misspell      # Finds commonly misspelled English words
+    - nakedret      # Finds naked returns
+    - prealloc      # Finds slice declarations that could potentially be preallocated
+    - revive        # Replacement for golint
+    - staticcheck   # Advanced static analysis
+    - structcheck   # Finds unused struct fields
+    - typecheck     # Standard Go type checking
+    - unconvert     # Removes unnecessary conversions
+    - unparam       # Reports unused function parameters
+    - unused        # Checks for unused constants, variables, functions and types
+    - varcheck      # Finds unused global variables and constants
+
+# Linter issues configuration
+issues:
+  # Don't hide multiple similar issues
+  max-same-issues: 0
+  
+  # Exclude issues that match the specified patterns
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - dupl
+        - gocyclo
+        - gosec
+        
+    # Skip "missing comments" issues in test files
+    - path: _test\.go
+      text: "comment on exported"
+      linters:
+        - golint
+        - revive
+    
+    # Skip issues in auto-generated files
+    - path: \.gen\.go
+      linters:
+        - all
+    - path: _generated\.go
+      linters:
+        - all

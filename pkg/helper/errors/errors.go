@@ -14,7 +14,7 @@ var (
 	ErrInvalidInput  = errors.New("invalid input")
 	ErrUnauthorized  = errors.New("unauthorized")
 	ErrForbidden     = errors.New("forbidden")
-	ErrInternal      = errors.New("helper error")
+	ErrInternal      = errors.New("internal error")
 	ErrUnavailable   = errors.New("service unavailable")
 	ErrTimeout       = errors.New("operation timed out")
 	ErrNotSupported  = errors.New("not supported")
@@ -69,42 +69,66 @@ func Unwrap(err error) error {
 	return errors.Unwrap(err)
 }
 
+// Common helper function for creating formatted errors with a base error
+func formatError(baseError error, format string, args ...interface{}) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%s: %w", format, baseError)
+	}
+	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), baseError)
+}
+
 // NotFoundf returns an error indicating that the requested resource was not found.
 func NotFoundf(format string, args ...interface{}) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s: %w", format, ErrNotFound)
-	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), ErrNotFound)
+	return formatError(ErrNotFound, format, args...)
 }
 
 // AlreadyExistsf returns an error indicating that the resource already exists.
 func AlreadyExistsf(format string, args ...interface{}) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s: %w", format, ErrAlreadyExists)
-	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), ErrAlreadyExists)
+	return formatError(ErrAlreadyExists, format, args...)
 }
 
 // InvalidInputf returns an error indicating that the input was invalid.
 func InvalidInputf(format string, args ...interface{}) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s: %w", format, ErrInvalidInput)
-	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), ErrInvalidInput)
+	return formatError(ErrInvalidInput, format, args...)
 }
 
-// Internalf returns an error indicating an helper error.
+// Unauthorizedf returns an error indicating that the user is not authorized.
+func Unauthorizedf(format string, args ...interface{}) error {
+	return formatError(ErrUnauthorized, format, args...)
+}
+
+// Forbiddenf returns an error indicating that the action is forbidden.
+func Forbiddenf(format string, args ...interface{}) error {
+	return formatError(ErrForbidden, format, args...)
+}
+
+// Internalf returns an error indicating an internal error.
 func Internalf(format string, args ...interface{}) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s: %w", format, ErrInternal)
-	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), ErrInternal)
+	return formatError(ErrInternal, format, args...)
+}
+
+// Unavailablef returns an error indicating that a service is unavailable.
+func Unavailablef(format string, args ...interface{}) error {
+	return formatError(ErrUnavailable, format, args...)
+}
+
+// Timeoutf returns an error indicating that an operation timed out.
+func Timeoutf(format string, args ...interface{}) error {
+	return formatError(ErrTimeout, format, args...)
+}
+
+// NotSupportedf returns an error indicating that the functionality is not supported.
+func NotSupportedf(format string, args ...interface{}) error {
+	return formatError(ErrNotSupported, format, args...)
+}
+
+// Canceledf returns an error indicating that an operation was canceled.
+func Canceledf(format string, args ...interface{}) error {
+	return formatError(ErrCanceled, format, args...)
 }
 
 // NotImplementedf returns an error indicating that the functionality is not implemented.
+// This is an alias for NotSupportedf for backward compatibility.
 func NotImplementedf(format string, args ...interface{}) error {
-	if len(args) == 0 {
-		return fmt.Errorf("%s: %w", format, ErrNotSupported)
-	}
-	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), ErrNotSupported)
+	return NotSupportedf(format, args...)
 }

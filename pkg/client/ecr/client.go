@@ -3,11 +3,12 @@ package ecr
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
+
 	"freightliner/pkg/client/common"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
-	"net/http"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -21,8 +22,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 )
 
-// ECRAPI interface for AWS ECR operations
-type ECRAPI interface {
+// ECRServiceAPI interface for AWS ECR operations
+type ECRServiceAPI interface {
 	ListImages(ctx context.Context, params *awsecr.ListImagesInput, optFns ...func(*awsecr.Options)) (*awsecr.ListImagesOutput, error)
 	BatchGetImage(ctx context.Context, params *awsecr.BatchGetImageInput, optFns ...func(*awsecr.Options)) (*awsecr.BatchGetImageOutput, error)
 	PutImage(ctx context.Context, params *awsecr.PutImageInput, optFns ...func(*awsecr.Options)) (*awsecr.PutImageOutput, error)
@@ -35,7 +36,7 @@ type ECRAPI interface {
 
 // Client implements the registry client interface for AWS ECR
 type Client struct {
-	ecr          ECRAPI
+	ecr          ECRServiceAPI
 	region       string
 	accountID    string
 	logger       *log.Logger
@@ -63,8 +64,8 @@ type ClientOptions struct {
 	Logger *log.Logger
 }
 
-// Options is an alias for ClientOptions for backward compatibility
-type Options struct {
+// LegacyClientOptions is an alias for ClientOptions for backward compatibility
+type LegacyClientOptions struct {
 	// Region is the AWS region for ECR
 	Region string
 
@@ -72,12 +73,12 @@ type Options struct {
 	AccountID string
 
 	// Internal STS client for testing
-	stsClient STSAPI
+	stsClient STSServiceAPI
 	Logger    *log.Logger
 }
 
-// STSAPI is an interface for AWS STS API operations
-type STSAPI interface {
+// STSServiceAPI is an interface for AWS STS API operations
+type STSServiceAPI interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
@@ -89,7 +90,7 @@ func NewClient(optsArg interface{}) (*Client, error) {
 	switch o := optsArg.(type) {
 	case ClientOptions:
 		opts = o
-	case Options:
+	case LegacyClientOptions:
 		opts = ClientOptions{
 			Region:    o.Region,
 			AccountID: o.AccountID,

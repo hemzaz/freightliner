@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"freightliner/pkg/client/common"
+	"os"
+	"strings"
+
 	"freightliner/pkg/client/ecr"
 	"freightliner/pkg/client/gcr"
 	"freightliner/pkg/config"
@@ -12,8 +14,6 @@ import (
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/security/encryption"
-	"os"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 )
@@ -85,7 +85,7 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 		})
 
 		// If we have a type-specific client with creation capability, use it
-		creator, ok := destClient.(common.RepositoryCreator)
+		creator, ok := destClient.(RepositoryCreator)
 		if !ok {
 			return nil, errors.NotImplementedf("destination registry does not support repository creation")
 		}
@@ -205,7 +205,7 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 // Helper functions
 
 // parseRegistryPath parses a registry path into registry type and repository name
-func parseRegistryPath(path string) (registry, repo string, err error) {
+func parseRegistryPath(path string) (string, string, error) {
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) != 2 {
 		return "", "", errors.InvalidInputf("invalid format. Use [registry]/[repository]")
@@ -219,13 +219,13 @@ func isValidRegistryType(registry string) bool {
 }
 
 // createRegistryClients creates registry clients for the specified registry types
-func (s *ReplicationService) createRegistryClients(ctx context.Context, registries ...string) (map[string]common.RegistryClient, error) {
+func (s *ReplicationService) createRegistryClients(ctx context.Context, registries ...string) (map[string]RegistryClient, error) {
 	registrySet := make(map[string]bool)
 	for _, r := range registries {
 		registrySet[r] = true
 	}
 
-	registryClients := make(map[string]common.RegistryClient)
+	registryClients := make(map[string]RegistryClient)
 
 	if len(registries) == 0 || registrySet["ecr"] {
 		ecrClient, err := ecr.NewClient(ecr.ClientOptions{
