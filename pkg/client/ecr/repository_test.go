@@ -181,7 +181,7 @@ func TestRepositoryListTags(t *testing.T) {
 
 			repo := setupTestRepository(mockECR)
 
-			tags, err := repo.ListTags()
+			tags, err := repo.ListTags(context.Background())
 			if tc.expectedErr {
 				assert.Error(t, err)
 			} else {
@@ -230,7 +230,7 @@ func TestRepositoryDeleteManifest(t *testing.T) {
 							},
 						},
 					}, nil)
-					
+
 				// Then mock the BatchDeleteImage call
 				mockECR.On("BatchDeleteImage", mock.Anything, mock.Anything, mock.Anything).
 					Return(&ecr.BatchDeleteImageOutput{
@@ -257,7 +257,7 @@ func TestRepositoryDeleteManifest(t *testing.T) {
 							},
 						},
 					}, nil)
-					
+
 				// Then mock the error on BatchDeleteImage
 				mockECR.On("BatchDeleteImage", mock.Anything, mock.Anything, mock.Anything).
 					Return(&ecr.BatchDeleteImageOutput{}, errors.New("API error"))

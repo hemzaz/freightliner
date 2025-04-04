@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"freightliner/pkg/client/common"
+	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"io"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -34,12 +36,18 @@ func (m *TransferMockRepository) GetName() string {
 	return m.name
 }
 
-func (m *TransferMockRepository) ListTags() ([]string, error) {
+func (m *TransferMockRepository) ListTags(ctx context.Context) ([]string, error) {
 	tags := make([]string, 0, len(m.tags))
 	for t := range m.tags {
 		tags = append(tags, t)
 	}
 	return tags, nil
+}
+
+// GetImage implements common.Repository.GetImage for testing
+func (m *TransferMockRepository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
+	// For tests, return a simple mock image implementation
+	return nil, errors.NotImplementedf("GetImage not implemented in tests")
 }
 
 func (m *TransferMockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {

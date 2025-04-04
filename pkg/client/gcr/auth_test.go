@@ -81,7 +81,7 @@ func TestGCRAuthenticatorAuthorization(t *testing.T) {
 				mockTS.On("Token").Return((*oauth2.Token)(nil), errors.New("token error"))
 			},
 			expectedAuth: nil,
-			expectedErr: true,
+			expectedErr:  true,
 		},
 	}
 
@@ -141,7 +141,7 @@ func TestGCRKeychainResolve(t *testing.T) {
 				// Token should not be called for non-GCR registries
 			},
 			expectedAuth: nil,
-			expectedErr: true,
+			expectedErr:  true,
 		},
 	}
 

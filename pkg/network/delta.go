@@ -102,10 +102,10 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 	if err != nil {
 		return nil, false, errors.Wrap(err, "failed to get source manifest")
 	}
-	
+
 	// Try to get the destination manifest
 	destManifest, err := destRepo.GetManifest(ctx, digest)
-	
+
 	// Create a summary to return
 	summary := &DeltaSummary{
 		OriginalSize:   int64(len(sourceManifest.Content)),
@@ -125,7 +125,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 				"source": sourceRepo.GetRepositoryName(),
 				"dest":   destRepo.GetRepositoryName(),
 			})
-			
+
 			summary.TransferSize = 0
 			summary.SavingsPercent = 100.0
 			summary.Duration = time.Since(startTime)
@@ -140,39 +140,39 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
-	
+
 	// For small manifests below a certain threshold, delta might not be worthwhile
 	// Threshold could be configurable, but 1KB is a reasonable default for manifests
-	minDeltaSize := 1024  // 1KB threshold
+	minDeltaSize := 1024 // 1KB threshold
 	if len(sourceManifest.Content) < minDeltaSize {
 		d.logger.Debug("Manifest too small for delta optimization", map[string]interface{}{
-			"size": len(sourceManifest.Content),
+			"size":      len(sourceManifest.Content),
 			"threshold": minDeltaSize,
 		})
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
-	
+
 	// If we get here, we need to calculate a delta to see if it's worthwhile
 	// First, we need the destination content if it exists
 	targetContent := sourceManifest.Content
 	destContent := []byte{}
-	
+
 	if err == nil && destManifest != nil {
 		destContent = destManifest.Content
 	}
-	
+
 	// Determine the best delta format based on manifest size and content
 	var deltaFormat string
-	
+
 	// Start with bsdiff by default for best compression
 	deltaFormat = BSDiffFormat
-	
+
 	// For very large manifests, chunk-based might be better
-	if len(sourceManifest.Content) > 10*1024*1024 {  // 10MB
+	if len(sourceManifest.Content) > 10*1024*1024 { // 10MB
 		deltaFormat = ChunkBasedFormat
 	}
-	
+
 	// Try to create a delta
 	delta, err := CreateDelta(destContent, targetContent, deltaFormat)
 	if err != nil {
@@ -182,29 +182,29 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
-	
+
 	// Check if the delta is smaller than the MaxDeltaRatio threshold
 	deltaRatio := float64(len(delta)) / float64(len(targetContent))
 	if deltaRatio > d.options.MaxDeltaRatio {
 		d.logger.Debug("Delta too large, using full transfer", map[string]interface{}{
-			"ratio": deltaRatio,
-			"threshold": d.options.MaxDeltaRatio,
-			"delta_size": len(delta),
+			"ratio":       deltaRatio,
+			"threshold":   d.options.MaxDeltaRatio,
+			"delta_size":  len(delta),
 			"target_size": len(targetContent),
 		})
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
-	
+
 	// Delta is worth using
 	savings := int64(len(targetContent)) - int64(len(delta))
 	savingsPercent := float64(savings) / float64(len(targetContent)) * 100.0
-	
+
 	// Update the summary with real values
 	summary.DeltaSize = int64(len(delta))
 	summary.TransferSize = int64(len(delta))
 	summary.SavingsPercent = savingsPercent
-	
+
 	// For chunk-based delta, estimate number of modified chunks
 	if deltaFormat == ChunkBasedFormat {
 		// Parse the delta header to get chunk info
@@ -220,7 +220,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 						// Count how many chunks were modified (have -1 in the chunk map)
 						modifiedChunks := 0
 						deltaData := delta[4+headerSize:]
-						
+
 						for i := uint32(0); i < header.ChunkCount; i++ {
 							offset := i * 4
 							if offset+4 <= uint32(len(deltaData)) {
@@ -230,7 +230,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 								}
 							}
 						}
-						
+
 						summary.ChunksModified = modifiedChunks
 					}
 				}
@@ -243,7 +243,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 			if chunkSize <= 0 {
 				chunkSize = DefaultChunkSize
 			}
-			
+
 			// Rough estimate of affected chunks based on delta size ratio
 			totalChunks := (len(targetContent) + chunkSize - 1) / chunkSize
 			summary.ChunksModified = int(math.Ceil(float64(totalChunks) * deltaRatio))
@@ -256,15 +256,15 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, 
 			summary.ChunksModified = (len(targetContent) + chunkSize - 1) / chunkSize
 		}
 	}
-	
+
 	d.logger.Info("Created delta for transfer optimization", map[string]interface{}{
-		"source_size": len(targetContent),
-		"delta_size": len(delta),
+		"source_size":     len(targetContent),
+		"delta_size":      len(delta),
 		"savings_percent": savingsPercent,
-		"format": deltaFormat,
+		"format":          deltaFormat,
 		"chunks_modified": summary.ChunksModified,
 	})
-	
+
 	// Update duration
 	summary.Duration = time.Since(startTime)
 
@@ -430,14 +430,14 @@ func ParseManifest(data []byte) (*DeltaManifest, error) {
 
 // Constants for delta formats
 const (
-	BSDiffFormat      = "bsdiff"     // Use bsdiff binary delta format (best compression)
-	SimpleDeltaFormat = "simple"     // Use simple format (faster but larger deltas)
-	ChunkBasedFormat  = "chunk"      // Chunked format for partial updates
-	NoDeltaFormat     = "none"       // No delta, just direct copy
-	
-	// Buffer sizes 
-	DefaultChunkSize  = 1024 * 1024  // 1MB default chunk size
-	BufferSize        = 32 * 1024    // 32KB buffer for I/O
+	BSDiffFormat      = "bsdiff" // Use bsdiff binary delta format (best compression)
+	SimpleDeltaFormat = "simple" // Use simple format (faster but larger deltas)
+	ChunkBasedFormat  = "chunk"  // Chunked format for partial updates
+	NoDeltaFormat     = "none"   // No delta, just direct copy
+
+	// Buffer sizes
+	DefaultChunkSize = 1024 * 1024 // 1MB default chunk size
+	BufferSize       = 32 * 1024   // 32KB buffer for I/O
 )
 
 // DeltaHeader contains information about the delta format and contents
@@ -472,7 +472,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to calculate source digest")
 	}
-	
+
 	targetDigest, err := CalculateDigest(target)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to calculate target digest")
@@ -483,7 +483,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 	case BSDiffFormat:
 		// Simplified bsdiff-like implementation
 		var delta bytes.Buffer
-		
+
 		// Create delta header
 		header := DeltaHeader{
 			Format:       BSDiffFormat,
@@ -492,27 +492,27 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 			SourceDigest: sourceDigest,
 			TargetDigest: targetDigest,
 		}
-		
+
 		// Serialize header
 		headerBytes, err := json.Marshal(header)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to serialize delta header")
 		}
-		
+
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
 		binary.Write(&delta, binary.BigEndian, headerSize)
-		
+
 		// Write header
 		delta.Write(headerBytes)
-		
+
 		// Find common prefix
 		commonPrefixLen := 0
 		minLen := len(source)
 		if len(target) < minLen {
 			minLen = len(target)
 		}
-		
+
 		for i := 0; i < minLen; i++ {
 			if source[i] == target[i] {
 				commonPrefixLen++
@@ -520,7 +520,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 				break
 			}
 		}
-		
+
 		// Find common suffix for the remaining parts
 		commonSuffixLen := 0
 		for i := 1; i <= minLen-commonPrefixLen; i++ {
@@ -530,14 +530,14 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 				break
 			}
 		}
-		
+
 		// Create a control structure:
 		// - Prefix length (uint32)
 		// - Suffix length (uint32)
 		// - Middle data (the differing part)
 		binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen))
 		binary.Write(&delta, binary.BigEndian, uint32(commonSuffixLen))
-		
+
 		// Write the different middle section
 		middleStart := commonPrefixLen
 		middleEnd := len(target) - commonSuffixLen
@@ -546,16 +546,16 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 			diffData = target[middleStart:middleEnd]
 			delta.Write(diffData)
 		}
-		
+
 		// Update header with actual delta size
 		header.DeltaSize = uint32(8 + len(diffData)) // 8 bytes for the prefix/suffix lengths + diff data
-		
+
 		return delta.Bytes(), nil
 
 	case SimpleDeltaFormat:
 		// Simple delta format - good for small files or when bsdiff is overkill
 		var delta bytes.Buffer
-		
+
 		// Create delta header
 		header := DeltaHeader{
 			Format:       SimpleDeltaFormat,
@@ -564,27 +564,27 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 			SourceDigest: sourceDigest,
 			TargetDigest: targetDigest,
 		}
-		
+
 		// Serialize header
 		headerBytes, err := json.Marshal(header)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to serialize delta header")
 		}
-		
+
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
 		binary.Write(&delta, binary.BigEndian, headerSize)
-		
+
 		// Write header
 		delta.Write(headerBytes)
-		
+
 		// Find common prefix
 		commonPrefixLen := 0
 		minLen := len(source)
 		if len(target) < minLen {
 			minLen = len(target)
 		}
-		
+
 		for i := 0; i < minLen; i++ {
 			if source[i] == target[i] {
 				commonPrefixLen++
@@ -592,7 +592,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 				break
 			}
 		}
-		
+
 		// Find common suffix for the remaining parts
 		suffixLen := 0
 		for i := 1; i <= minLen-commonPrefixLen; i++ {
@@ -602,59 +602,59 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 				break
 			}
 		}
-		
+
 		// Write the common prefix length as uint32
 		binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen))
-		
+
 		// Write the common suffix length as uint32
 		binary.Write(&delta, binary.BigEndian, uint32(suffixLen))
-		
+
 		// Write only the middle different part
 		middleStart := commonPrefixLen
 		middleEnd := len(target) - suffixLen
-		
+
 		if middleStart < middleEnd {
 			delta.Write(target[middleStart:middleEnd])
 		}
-		
+
 		// Update header with delta size
 		header.DeltaSize = uint32(delta.Len() - int(headerSize) - 4)
-		
+
 		return delta.Bytes(), nil
 
 	case ChunkBasedFormat:
 		// Chunk-based format - useful for very large files that need partial updates
 		var delta bytes.Buffer
 		chunkSize := DefaultChunkSize
-		
+
 		// Split source into chunks
 		sourceChunks, err := ChunkData(source, chunkSize)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to chunk source data")
 		}
-		
+
 		// Split target into chunks
 		targetChunks, err := ChunkData(target, chunkSize)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to chunk target data")
 		}
-		
+
 		// Calculate checksums for source chunks
 		sourceChecksums := make([]string, len(sourceChunks))
 		for i, chunk := range sourceChunks {
 			checksum, _ := CalculateDigest(chunk)
 			sourceChecksums[i] = checksum
 		}
-		
+
 		// Find matching chunks
 		chunkMatches := make([]int, len(targetChunks)) // -1 means no match
 		for i := range chunkMatches {
 			chunkMatches[i] = -1 // Initialize with no match
 		}
-		
+
 		for i, targetChunk := range targetChunks {
 			targetChecksum, _ := CalculateDigest(targetChunk)
-			
+
 			// Look for matching chunk in source
 			for j, sourceChecksum := range sourceChecksums {
 				if targetChecksum == sourceChecksum && bytes.Equal(targetChunk, sourceChunks[j]) {
@@ -663,7 +663,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 				}
 			}
 		}
-		
+
 		// Create delta header
 		header := DeltaHeader{
 			Format:       ChunkBasedFormat,
@@ -674,27 +674,27 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 			SourceDigest: sourceDigest,
 			TargetDigest: targetDigest,
 		}
-		
+
 		// Serialize header
 		headerBytes, err := json.Marshal(header)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to serialize delta header")
 		}
-		
+
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
 		binary.Write(&delta, binary.BigEndian, headerSize)
-		
+
 		// Write header
 		delta.Write(headerBytes)
-		
+
 		// Write chunk match map - for each target chunk, either:
 		// - Source chunk index to copy from (≥0)
 		// - -1 if no match (needs new chunk data)
 		for _, matchIdx := range chunkMatches {
 			binary.Write(&delta, binary.BigEndian, int32(matchIdx))
 		}
-		
+
 		// Write new chunk data for non-matching chunks
 		for i, matchIdx := range chunkMatches {
 			if matchIdx == -1 && i < len(targetChunks) {
@@ -702,16 +702,16 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 				delta.Write(targetChunks[i])
 			}
 		}
-		
+
 		// Update header with delta size
 		header.DeltaSize = uint32(delta.Len() - int(headerSize) - 4)
-		
+
 		return delta.Bytes(), nil
 
 	case NoDeltaFormat:
 		// No delta format - just store the target directly with minimal overhead
 		var delta bytes.Buffer
-		
+
 		// Create delta header
 		header := DeltaHeader{
 			Format:       NoDeltaFormat,
@@ -721,23 +721,23 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 			SourceDigest: sourceDigest,
 			TargetDigest: targetDigest,
 		}
-		
+
 		// Serialize header
 		headerBytes, err := json.Marshal(header)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to serialize delta header")
 		}
-		
+
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
 		binary.Write(&delta, binary.BigEndian, headerSize)
-		
+
 		// Write header
 		delta.Write(headerBytes)
-		
+
 		// Write the full target data
 		delta.Write(target)
-		
+
 		return delta.Bytes(), nil
 
 	default:
@@ -748,10 +748,10 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 // createIdenticalDelta creates a special delta indicating source and target are identical
 func createIdenticalDelta(source []byte) []byte {
 	var delta bytes.Buffer
-	
+
 	// Calculate source digest
 	sourceDigest, _ := CalculateDigest(source)
-	
+
 	// Create delta header for identical files
 	header := DeltaHeader{
 		Format:       "identical",
@@ -761,17 +761,17 @@ func createIdenticalDelta(source []byte) []byte {
 		SourceDigest: sourceDigest,
 		TargetDigest: sourceDigest, // Same as source
 	}
-	
+
 	// Serialize header
 	headerBytes, _ := json.Marshal(header)
-	
+
 	// Write header size as uint32 (4 bytes)
 	headerSize := uint32(len(headerBytes))
 	binary.Write(&delta, binary.BigEndian, headerSize)
-	
+
 	// Write header
 	delta.Write(headerBytes)
-	
+
 	return delta.Bytes()
 }
 
@@ -788,42 +788,42 @@ func ApplyDelta(delta, source []byte, format string) ([]byte, error) {
 	if len(delta) < 4 {
 		return nil, errors.InvalidInputf("delta too short - missing header size")
 	}
-	
+
 	// Read header size
 	headerSize := binary.BigEndian.Uint32(delta[:4])
 	if len(delta) < int(4+headerSize) {
 		return nil, errors.InvalidInputf("delta too short - incomplete header")
 	}
-	
+
 	// Parse header JSON
 	var header DeltaHeader
 	err := json.Unmarshal(delta[4:4+headerSize], &header)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse delta header")
 	}
-	
+
 	// Verify source digest if available
 	if header.SourceDigest != "" {
 		sourceDigest, err := CalculateDigest(source)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to calculate source digest")
 		}
-		
+
 		if sourceDigest != header.SourceDigest {
-			return nil, errors.InvalidInputf("source digest mismatch: expected %s, got %s", 
+			return nil, errors.InvalidInputf("source digest mismatch: expected %s, got %s",
 				header.SourceDigest, sourceDigest)
 		}
 	}
-	
+
 	// Start of delta data
 	deltaStart := 4 + headerSize
 	deltaData := delta[deltaStart:]
-	
+
 	// Special case for identical files
 	if header.Format == "identical" {
 		return source, nil
 	}
-	
+
 	// The specific implementation depends on the delta format
 	switch header.Format {
 	case BSDiffFormat:
@@ -831,155 +831,155 @@ func ApplyDelta(delta, source []byte, format string) ([]byte, error) {
 		if len(deltaData) < 8 {
 			return nil, errors.InvalidInputf("invalid bsdiff format - missing prefix/suffix lengths")
 		}
-		
+
 		// Read prefix and suffix lengths
 		prefixLen := binary.BigEndian.Uint32(deltaData[0:4])
 		suffixLen := binary.BigEndian.Uint32(deltaData[4:8])
-		
+
 		// Validate lengths
 		if prefixLen > header.SourceSize || suffixLen > header.SourceSize {
 			return nil, errors.InvalidInputf("invalid prefix/suffix lengths in bsdiff format")
 		}
-		
+
 		// Calculate sizes
 		middleLen := header.TargetSize - prefixLen - suffixLen
 		middleData := deltaData[8:]
-		
+
 		if uint32(len(middleData)) < middleLen {
 			return nil, errors.InvalidInputf("missing middle data in bsdiff format")
 		}
-		
+
 		// Create the result buffer
 		result := make([]byte, header.TargetSize)
-		
+
 		// Copy prefix from source
 		if prefixLen > 0 {
 			copy(result[:prefixLen], source[:prefixLen])
 		}
-		
+
 		// Copy middle from delta
 		if middleLen > 0 {
 			copy(result[prefixLen:prefixLen+middleLen], middleData[:middleLen])
 		}
-		
+
 		// Copy suffix from source
 		if suffixLen > 0 {
 			copy(result[prefixLen+middleLen:], source[len(source)-int(suffixLen):])
 		}
-		
+
 		// Verify the result size
 		if header.TargetSize > 0 && uint32(len(result)) != header.TargetSize {
 			return nil, errors.InvalidInputf(
-				"target size mismatch after bsdiff: expected %d bytes, got %d", 
+				"target size mismatch after bsdiff: expected %d bytes, got %d",
 				header.TargetSize, len(result))
 		}
-		
+
 		// Verify target digest if available
 		if header.TargetDigest != "" {
 			resultDigest, err := CalculateDigest(result)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to calculate result digest")
 			}
-			
+
 			if resultDigest != header.TargetDigest {
 				return nil, errors.InvalidInputf(
-					"target digest mismatch after bsdiff: expected %s, got %s", 
+					"target digest mismatch after bsdiff: expected %s, got %s",
 					header.TargetDigest, resultDigest)
 			}
 		}
-		
+
 		return result, nil
-		
+
 	case SimpleDeltaFormat:
 		if len(deltaData) < 8 {
 			return nil, errors.InvalidInputf("invalid simple delta format - missing prefix/suffix lengths")
 		}
-		
+
 		// Read prefix and suffix lengths
 		prefixLen := binary.BigEndian.Uint32(deltaData[0:4])
 		suffixLen := binary.BigEndian.Uint32(deltaData[4:8])
-		
+
 		// Validate lengths
 		if prefixLen > header.SourceSize || suffixLen > header.SourceSize {
 			return nil, errors.InvalidInputf("invalid prefix/suffix lengths in simple delta")
 		}
-		
+
 		// Calculate sizes
 		middleLen := header.TargetSize - prefixLen - suffixLen
 		middleData := deltaData[8:]
-		
+
 		if uint32(len(middleData)) < middleLen {
 			return nil, errors.InvalidInputf("missing middle data in simple delta")
 		}
-		
+
 		// Create the result buffer
 		result := make([]byte, header.TargetSize)
-		
+
 		// Copy prefix from source
 		if prefixLen > 0 {
 			copy(result[:prefixLen], source[:prefixLen])
 		}
-		
+
 		// Copy middle from delta
 		if middleLen > 0 {
 			copy(result[prefixLen:prefixLen+middleLen], middleData[:middleLen])
 		}
-		
+
 		// Copy suffix from source
 		if suffixLen > 0 {
 			copy(result[prefixLen+middleLen:], source[len(source)-int(suffixLen):])
 		}
-		
+
 		// Verify target digest if available
 		if header.TargetDigest != "" {
 			resultDigest, err := CalculateDigest(result)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to calculate result digest")
 			}
-			
+
 			if resultDigest != header.TargetDigest {
 				return nil, errors.InvalidInputf(
-					"target digest mismatch after simple patch: expected %s, got %s", 
+					"target digest mismatch after simple patch: expected %s, got %s",
 					header.TargetDigest, resultDigest)
 			}
 		}
-		
+
 		return result, nil
-		
+
 	case ChunkBasedFormat:
 		// Chunk-based delta application
 		if header.ChunkSize == 0 || header.ChunkCount == 0 {
 			return nil, errors.InvalidInputf("invalid chunk-based delta: missing chunk information")
 		}
-		
+
 		// Size of the chunk map in bytes
 		chunkMapSize := header.ChunkCount * 4 // Each chunk reference is an int32
-		
+
 		if uint32(len(deltaData)) < chunkMapSize {
 			return nil, errors.InvalidInputf("invalid chunk-based delta: missing chunk map")
 		}
-		
+
 		// Read chunk map
 		chunkMap := make([]int32, header.ChunkCount)
 		for i := uint32(0); i < header.ChunkCount; i++ {
 			offset := i * 4
 			chunkMap[i] = int32(binary.BigEndian.Uint32(deltaData[offset : offset+4]))
 		}
-		
+
 		// Get source chunks
 		sourceChunks, err := ChunkData(source, int(header.ChunkSize))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to chunk source data")
 		}
-		
+
 		// New chunk data starts after the chunk map
 		newChunkData := deltaData[chunkMapSize:]
 		newChunkOffset := 0
-		
+
 		// Create result buffer
 		result := new(bytes.Buffer)
 		result.Grow(int(header.TargetSize)) // Pre-allocate for efficiency
-		
+
 		// Apply chunk map to reconstruct target
 		for _, chunkRef := range chunkMap {
 			if chunkRef >= 0 && int(chunkRef) < len(sourceChunks) {
@@ -991,69 +991,69 @@ func ApplyDelta(delta, source []byte, format string) ([]byte, error) {
 				if newChunkOffset+chunkSize > len(newChunkData) {
 					chunkSize = len(newChunkData) - newChunkOffset
 				}
-				
+
 				if chunkSize <= 0 {
 					return nil, errors.InvalidInputf(
-						"invalid chunk-based delta: missing chunk data at offset %d", 
+						"invalid chunk-based delta: missing chunk data at offset %d",
 						newChunkOffset)
 				}
-				
-				result.Write(newChunkData[newChunkOffset:newChunkOffset+chunkSize])
+
+				result.Write(newChunkData[newChunkOffset : newChunkOffset+chunkSize])
 				newChunkOffset += chunkSize
 			}
 		}
-		
+
 		// Verify the result size
 		resultBytes := result.Bytes()
 		if uint32(len(resultBytes)) != header.TargetSize {
 			return nil, errors.InvalidInputf(
-				"target size mismatch after chunk reassembly: expected %d bytes, got %d", 
+				"target size mismatch after chunk reassembly: expected %d bytes, got %d",
 				header.TargetSize, len(resultBytes))
 		}
-		
+
 		// Verify target digest if available
 		if header.TargetDigest != "" {
 			resultDigest, err := CalculateDigest(resultBytes)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to calculate result digest")
 			}
-			
+
 			if resultDigest != header.TargetDigest {
 				return nil, errors.InvalidInputf(
-					"target digest mismatch after chunk reassembly: expected %s, got %s", 
+					"target digest mismatch after chunk reassembly: expected %s, got %s",
 					header.TargetDigest, resultDigest)
 			}
 		}
-		
+
 		return resultBytes, nil
-		
+
 	case NoDeltaFormat:
 		// No delta format - just return the data directly
 		result := deltaData
-		
+
 		// Verify the result size
 		if header.TargetSize > 0 && uint32(len(result)) != header.TargetSize {
 			return nil, errors.InvalidInputf(
-				"target size mismatch in no-delta format: expected %d bytes, got %d", 
+				"target size mismatch in no-delta format: expected %d bytes, got %d",
 				header.TargetSize, len(result))
 		}
-		
+
 		// Verify target digest if available
 		if header.TargetDigest != "" {
 			resultDigest, err := CalculateDigest(result)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to calculate result digest")
 			}
-			
+
 			if resultDigest != header.TargetDigest {
 				return nil, errors.InvalidInputf(
-					"target digest mismatch in no-delta format: expected %s, got %s", 
+					"target digest mismatch in no-delta format: expected %s, got %s",
 					header.TargetDigest, resultDigest)
 			}
 		}
-		
+
 		return result, nil
-		
+
 	default:
 		return nil, errors.InvalidInputf("unsupported delta format: %s", header.Format)
 	}

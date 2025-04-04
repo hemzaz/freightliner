@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"freightliner/pkg/client/common"
-	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/security/encryption"
@@ -50,16 +49,16 @@ type Scheduler struct {
 type SchedulerOptions struct {
 	// Logger is the logger to use
 	Logger *log.Logger
-	
+
 	// WorkerPool is the worker pool for executing jobs
 	WorkerPool *WorkerPool
-	
+
 	// RegistryProviders is a map of registry providers by type (e.g., "ecr", "gcr")
 	RegistryProviders map[string]common.RegistryProvider
-	
+
 	// ReplicationService is the service that handles actual replication
 	ReplicationService ReplicationService
-	
+
 	// EncryptionManager is the manager for encryption operations (optional)
 	EncryptionManager *encryption.Manager
 }
@@ -67,18 +66,18 @@ type SchedulerOptions struct {
 // NewScheduler creates a new replication scheduler
 func NewScheduler(opts SchedulerOptions) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Create default logger if not provided
 	logger := opts.Logger
 	if logger == nil {
 		logger = log.NewLogger(log.InfoLevel)
 	}
-	
+
 	// Configure cron parser with seconds field
 	cronParser := cron.NewParser(
 		cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)
-	
+
 	scheduler := &Scheduler{
 		jobs:              make(map[string]*Job),
 		ctx:               ctx,
@@ -90,10 +89,10 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 		cronParser:        cronParser,
 		encryptionMgr:     opts.EncryptionManager,
 	}
-	
+
 	// Start the scheduler loop
 	go scheduler.run()
-	
+
 	return scheduler
 }
 
@@ -132,7 +131,7 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 
 	// Parse the schedule as a cron expression
 	var nextRun time.Time
-	
+
 	if rule.Schedule == "@now" {
 		// Special case for immediate execution
 		nextRun = time.Now()
@@ -141,7 +140,7 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		if err != nil {
 			return errors.Wrap(err, "invalid cron expression: %s", rule.Schedule)
 		}
-		
+
 		// Calculate the next run time based on the schedule
 		nextRun = schedule.Next(time.Now())
 	}
@@ -225,10 +224,10 @@ func (s *Scheduler) checkJobs() {
 				schedule, err := s.cronParser.Parse(job.Rule.Schedule)
 				if err != nil {
 					s.logger.Warn("Invalid cron expression, using default schedule", map[string]interface{}{
-						"id":        id,
-						"schedule":  job.Rule.Schedule,
-						"error":     err.Error(),
-						"next_run":  now.Add(1 * time.Hour),
+						"id":       id,
+						"schedule": job.Rule.Schedule,
+						"error":    err.Error(),
+						"next_run": now.Add(1 * time.Hour),
 					})
 					job.NextRun = now.Add(1 * time.Hour)
 				} else {
@@ -294,24 +293,24 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 		if s.replicationSvc == nil {
 			return errors.InvalidInputf("replication service not configured")
 		}
-		
+
 		// Log job start
 		s.logger.Info("Starting replication job", map[string]interface{}{
-			"id":                 id,
-			"source_registry":    job.Rule.SourceRegistry,
-			"source_repository":  job.Rule.SourceRepository, 
-			"dest_registry":      job.Rule.DestinationRegistry,
-			"dest_repository":    job.Rule.DestinationRepository,
-			"include_tags":       job.Rule.IncludeTags,
-			"exclude_tags":       job.Rule.ExcludeTags,
-			"force_overwrite":    job.Rule.ForceOverwrite,
+			"id":                id,
+			"source_registry":   job.Rule.SourceRegistry,
+			"source_repository": job.Rule.SourceRepository,
+			"dest_registry":     job.Rule.DestinationRegistry,
+			"dest_repository":   job.Rule.DestinationRepository,
+			"include_tags":      job.Rule.IncludeTags,
+			"exclude_tags":      job.Rule.ExcludeTags,
+			"force_overwrite":   job.Rule.ForceOverwrite,
 		})
-		
+
 		// Execute the replication using the service
 		startTime := time.Now()
 		err := s.replicationSvc.ReplicateRepository(ctx, job.Rule)
 		duration := time.Since(startTime)
-		
+
 		if err != nil {
 			replicationErr := errors.Wrap(err, "replication failed")
 			s.logger.Error("Replication job failed", replicationErr, map[string]interface{}{
@@ -321,7 +320,7 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 			})
 			return replicationErr
 		}
-		
+
 		// Log job completion
 		s.logger.Info("Completed replication job", map[string]interface{}{
 			"id":       id,

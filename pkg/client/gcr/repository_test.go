@@ -185,7 +185,7 @@ func TestRepositoryListTags(t *testing.T) {
 				tagsFunc: mockTags.List,
 			}
 
-			tags, err := repository.ListTags()
+			tags, err := repository.ListTags(context.Background())
 			if tc.expectedErr {
 				assert.Error(t, err)
 			} else {
@@ -199,10 +199,10 @@ func TestRepositoryListTags(t *testing.T) {
 }
 
 func TestRepositoryGetManifest(t *testing.T) {
-	// Skip all tests in this function since we need to mock the remote.Get function 
+	// Skip all tests in this function since we need to mock the remote.Get function
 	// which is used in GetManifest, but our current test setup doesn't support this properly
 	t.Skip("GetManifest tests need to be reworked")
-	
+
 	manifestBytes := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`)
 
 	tests := []struct {
@@ -226,7 +226,7 @@ func TestRepositoryGetManifest(t *testing.T) {
 					},
 				}
 				mockRem.On("Get", mock.Anything, mock.Anything).Return(descriptor, nil)
-				
+
 				// Also need to mock RawManifest method
 				mockRem.On("RawManifest").Return(manifestBytes, nil)
 			},
@@ -284,7 +284,7 @@ func TestRepositoryGetManifest(t *testing.T) {
 func TestRepositoryPutManifest(t *testing.T) {
 	// Skip all tests in this function since we need to properly mock remote.Put
 	t.Skip("PutManifest tests need to be reworked")
-	
+
 	manifestBytes := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`)
 
 	tests := []struct {
@@ -361,7 +361,7 @@ func TestRepositoryPutManifest(t *testing.T) {
 func TestRepositoryDeleteManifest(t *testing.T) {
 	// Skip this test since DeleteManifest is intentionally not implemented for GCR
 	t.Skip("DeleteManifest is not implemented for GCR")
-	
+
 	tests := []struct {
 		name            string
 		tag             string
@@ -427,7 +427,7 @@ func TestRepositoryDeleteManifest(t *testing.T) {
 func TestStaticImage(t *testing.T) {
 	// Skip this test for now as it needs the Digest method to be properly mocked
 	t.Skip("Static image test needs to be reworked")
-	
+
 	manifestBytes := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`)
 
 	img := newStaticImage(manifestBytes, "application/vnd.docker.distribution.manifest.v2+json")

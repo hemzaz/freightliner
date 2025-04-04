@@ -87,7 +87,7 @@ func TestNewClient(t *testing.T) {
 		{
 			name:        "Invalid registry with path",
 			location:    "us",
-			project:     "", // Empty project should cause an error
+			project:     "",    // Empty project should cause an error
 			expectedErr: false, // The client creation should still work, but operations would fail
 		},
 	}

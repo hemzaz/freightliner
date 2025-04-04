@@ -66,11 +66,11 @@ func (a *ECRAuthenticator) Authorization() (*authn.AuthConfig, error) {
 // NewECRClientForRegion creates a new ECR client for the given region
 func NewECRClientForRegion(region string) (ECRAPI, error) {
 	// Create AWS SDK config for the target region
-	cfg, err := LoadAWSConfig(region)
+	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(region))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to load AWS config for region %s", region)
 	}
-	
+
 	// Create ECR client using the region-specific config
 	return ecr.NewFromConfig(cfg), nil
 }
@@ -96,7 +96,7 @@ func (a *ECRAuthenticator) RegistryAuthenticator(registry string) (authn.Authent
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create ECR client for region %s", region)
 		}
-		
+
 		// Create a new authenticator for the cross-region registry
 		crossRegionAuth := NewECRAuthenticator(ecrClient, region)
 		return crossRegionAuth, nil
@@ -104,18 +104,6 @@ func (a *ECRAuthenticator) RegistryAuthenticator(registry string) (authn.Authent
 
 	// For the same region, we can use this authenticator
 	return a, nil
-}
-
-// LoadAWSConfig loads AWS SDK configuration for the specified region
-func LoadAWSConfig(region string) (config.Config, error) {
-	// Load the AWS SDK config with the specified region
-	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
-	if err != nil {
-		return config.Config{}, errors.Wrap(err, "failed to load AWS config")
-	}
-	
-	return cfg, nil
 }
 
 // GetECRRegistry returns the ECR registry URL for the given account and region
@@ -147,12 +135,12 @@ func isECRRegistry(registry string) bool {
 	if strings.Contains(registry, ".dkr.ecr.") && strings.Contains(registry, ".amazonaws.com") {
 		return true
 	}
-	
+
 	// Check for public ECR registry format
 	if registry == "public.ecr.aws" {
 		return true
 	}
-	
+
 	return false
 }
 

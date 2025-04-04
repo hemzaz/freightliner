@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -43,12 +44,18 @@ func (m *MockRepository) GetName() string {
 	return m.name
 }
 
-func (m *MockRepository) ListTags() ([]string, error) {
+func (m *MockRepository) ListTags(ctx context.Context) ([]string, error) {
 	var tags []string
 	for tag := range m.Tags {
 		tags = append(tags, tag)
 	}
 	return tags, nil
+}
+
+// GetImage implements common.Repository.GetImage for testing
+func (m *MockRepository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
+	// For tests, return a simple mock image implementation
+	return nil, errors.NotImplementedf("GetImage not implemented in tests")
 }
 
 func (m *MockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {
@@ -191,11 +198,11 @@ func TestChunkBasedDelta(t *testing.T) {
 	// For proper chunk-based delta testing, we need data specifically designed to
 	// work well with our algorithm, rather than random data which is not compressible.
 	// We'll use a smaller data set with predictable patterns
-	
+
 	// Create base array of repeating patterns
 	basePattern := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	source := make([]byte, 100*1024) // 100KB is enough for testing
-	
+
 	// Fill source with repeating pattern
 	for i := 0; i < len(source); i += len(basePattern) {
 		copied := copy(source[i:], basePattern)
@@ -204,15 +211,15 @@ func TestChunkBasedDelta(t *testing.T) {
 			break
 		}
 	}
-	
+
 	// Create target with most data identical to source
 	target := make([]byte, len(source))
 	copy(target, source)
-	
+
 	// Only modify a small portion - 10% of the data
 	modifyStart := len(target) / 2
 	modifyLength := len(target) / 10
-	
+
 	// Put some different content in the middle
 	differentPattern := []byte("9876543210ZYXWVUTSRQPONMLKJIHGFEDCBA")
 	for i := 0; i < modifyLength; i += len(differentPattern) {
@@ -226,7 +233,7 @@ func TestChunkBasedDelta(t *testing.T) {
 	// Create a delta using the chunk-based format
 	// Force smaller chunk size to make test more predictable
 	// DefaultChunkSize will be used internally by CreateDelta
-	
+
 	// The real test - create the delta
 	delta, err := CreateDelta(source, target, ChunkBasedFormat)
 	if err != nil {
@@ -237,7 +244,7 @@ func TestChunkBasedDelta(t *testing.T) {
 		t.Errorf("Expected non-empty delta, got %d bytes", len(delta))
 	}
 
-	// For predictable test patterns (unlike random data), 
+	// For predictable test patterns (unlike random data),
 	// the delta should be smaller than the target
 	compressionRatio := float64(len(delta)) / float64(len(target))
 	t.Logf("Chunk-based delta size: %d bytes, ratio: %.2f", len(delta), compressionRatio)
@@ -252,14 +259,14 @@ func TestChunkBasedDelta(t *testing.T) {
 	if !bytes.Equal(result, target) {
 		// Binary data equality failed
 		t.Errorf("Delta application failed, result length: %d, target length: %d", len(result), len(target))
-		
+
 		// Additional diagnostics for the first few differences
 		diffCount := 0
 		minLen := len(result)
 		if len(target) < minLen {
 			minLen = len(target)
 		}
-		
+
 		for i := 0; i < minLen; i++ {
 			if result[i] != target[i] {
 				if diffCount < 5 {
@@ -289,19 +296,19 @@ func TestNoDeltaFormat(t *testing.T) {
 
 	// Parse header size
 	headerSize := binary.BigEndian.Uint32(delta[:4])
-	
+
 	// Check that deltaSize (from NoDeltaFormat) is properly set
-	headerBytes := delta[4:4+headerSize]
+	headerBytes := delta[4 : 4+headerSize]
 	var header DeltaHeader
 	err = json.Unmarshal(headerBytes, &header)
 	if err != nil {
 		t.Fatalf("Failed to parse delta header: %v", err)
 	}
-	
+
 	if header.Format != NoDeltaFormat {
 		t.Errorf("Expected format to be %s, got %s", NoDeltaFormat, header.Format)
 	}
-	
+
 	if header.DeltaSize != uint32(len(target)) {
 		t.Errorf("Expected delta size to be %d, got %d", len(target), header.DeltaSize)
 	}
@@ -328,19 +335,19 @@ func TestIdenticalContent(t *testing.T) {
 
 	// Parse header size
 	headerSize := binary.BigEndian.Uint32(delta[:4])
-	
+
 	// Check that the header is properly set
-	headerBytes := delta[4:4+headerSize]
+	headerBytes := delta[4 : 4+headerSize]
 	var header DeltaHeader
 	err = json.Unmarshal(headerBytes, &header)
 	if err != nil {
 		t.Fatalf("Failed to parse delta header: %v", err)
 	}
-	
+
 	if header.Format != "identical" {
 		t.Errorf("Expected format to be 'identical', got %s", header.Format)
 	}
-	
+
 	if header.DeltaSize != 0 {
 		t.Errorf("Expected delta size to be 0, got %d", header.DeltaSize)
 	}
@@ -360,7 +367,7 @@ func TestDigestValidation(t *testing.T) {
 	source := []byte("Original content")
 	target := []byte("Modified content")
 
-	// Create a delta 
+	// Create a delta
 	delta, err := CreateDelta(source, target, BSDiffFormat)
 	if err != nil {
 		t.Fatalf("CreateDelta failed: %v", err)
@@ -376,7 +383,7 @@ func TestDigestValidation(t *testing.T) {
 	if err == nil {
 		t.Error("Expected digest validation to fail, but it succeeded")
 	}
-	
+
 	// Check error type and message
 	if !strings.Contains(err.Error(), "source digest mismatch") {
 		t.Errorf("Expected source digest mismatch error, got: %v", err)
@@ -389,7 +396,7 @@ func TestDeltaHeader(t *testing.T) {
 
 	// Test all delta formats to check header consistency
 	formats := []string{BSDiffFormat, SimpleDeltaFormat, ChunkBasedFormat, NoDeltaFormat}
-	
+
 	for _, format := range formats {
 		t.Run("Format_"+format, func(t *testing.T) {
 			// Create a delta
@@ -397,42 +404,42 @@ func TestDeltaHeader(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateDelta failed for %s: %v", format, err)
 			}
-			
+
 			// Parse the header
 			if len(delta) < 4 {
 				t.Fatalf("Delta too short")
 			}
-			
+
 			headerSize := binary.BigEndian.Uint32(delta[:4])
 			if len(delta) < int(4+headerSize) {
 				t.Fatalf("Delta too short for header")
 			}
-			
+
 			var header DeltaHeader
 			err = json.Unmarshal(delta[4:4+headerSize], &header)
 			if err != nil {
 				t.Fatalf("Failed to parse header: %v", err)
 			}
-			
+
 			// Verify header fields
 			if header.Format != format {
 				t.Errorf("Expected format %s, got %s", format, header.Format)
 			}
-			
+
 			if header.SourceSize != uint32(len(source)) {
 				t.Errorf("Expected source size %d, got %d", len(source), header.SourceSize)
 			}
-			
+
 			if header.TargetSize != uint32(len(target)) {
 				t.Errorf("Expected target size %d, got %d", len(target), header.TargetSize)
 			}
-			
+
 			// Check digests
 			sourceDigest, _ := CalculateDigest(source)
 			if header.SourceDigest != sourceDigest {
 				t.Errorf("Expected source digest %s, got %s", sourceDigest, header.SourceDigest)
 			}
-			
+
 			targetDigest, _ := CalculateDigest(target)
 			if header.TargetDigest != targetDigest {
 				t.Errorf("Expected target digest %s, got %s", targetDigest, header.TargetDigest)
@@ -447,25 +454,25 @@ func TestErrorConditions(t *testing.T) {
 	if err == nil || !errors.Is(err, errors.ErrInvalidInput) {
 		t.Errorf("Expected invalid input error for empty source, got: %v", err)
 	}
-	
+
 	// Test empty target
 	_, err = CreateDelta([]byte("source"), []byte{}, BSDiffFormat)
 	if err == nil || !errors.Is(err, errors.ErrInvalidInput) {
 		t.Errorf("Expected invalid input error for empty target, got: %v", err)
 	}
-	
+
 	// Test invalid format
 	_, err = CreateDelta([]byte("source"), []byte("target"), "invalid-format")
 	if err == nil || !strings.Contains(err.Error(), "unsupported delta format") {
 		t.Errorf("Expected unsupported format error, got: %v", err)
 	}
-	
+
 	// Test invalid delta when applying
 	_, err = ApplyDelta([]byte{1, 2, 3}, []byte("source"), BSDiffFormat)
 	if err == nil {
 		t.Error("Expected error when applying invalid delta, got nil")
 	}
-	
+
 	// Test empty source when applying
 	validDelta, _ := CreateDelta([]byte("source"), []byte("target"), BSDiffFormat)
 	_, err = ApplyDelta(validDelta, []byte{}, BSDiffFormat)
@@ -477,42 +484,42 @@ func TestErrorConditions(t *testing.T) {
 func TestChunkingFunctions(t *testing.T) {
 	data := []byte("This is test data that will be split into multiple chunks for testing purposes.")
 	chunkSize := 10 // Small chunk size for testing
-	
+
 	// Test ChunkData function
 	chunks, err := ChunkData(data, chunkSize)
 	if err != nil {
 		t.Fatalf("ChunkData failed: %v", err)
 	}
-	
+
 	// Verify number of chunks
 	expectedChunks := (len(data) + chunkSize - 1) / chunkSize
 	if len(chunks) != expectedChunks {
 		t.Errorf("Expected %d chunks, got %d", expectedChunks, len(chunks))
 	}
-	
+
 	// Verify chunk sizes
 	for i, chunk := range chunks {
 		if i < len(chunks)-1 && len(chunk) != chunkSize {
 			t.Errorf("Chunk %d has size %d, expected %d", i, len(chunk), chunkSize)
 		}
 	}
-	
+
 	// Verify reconstitution
 	reconstituted := []byte{}
 	for _, chunk := range chunks {
 		reconstituted = append(reconstituted, chunk...)
 	}
-	
+
 	if !bytes.Equal(reconstituted, data) {
 		t.Error("Reconstituted data doesn't match original")
 	}
-	
+
 	// Test error conditions
 	_, err = ChunkData([]byte{}, chunkSize)
 	if err == nil || !errors.Is(err, errors.ErrInvalidInput) {
 		t.Errorf("Expected invalid input error for empty data, got: %v", err)
 	}
-	
+
 	_, err = ChunkData(data, 0)
 	if err == nil || !errors.Is(err, errors.ErrInvalidInput) {
 		t.Errorf("Expected invalid input error for zero chunk size, got: %v", err)
@@ -612,11 +619,11 @@ func TestOptimizeTransfer(t *testing.T) {
 	if summary.OriginalSize <= 0 {
 		t.Errorf("Expected positive OriginalSize, got %d", summary.OriginalSize)
 	}
-	
+
 	// Check savings percentage
-	expectedSavings := float64(summary.OriginalSize - summary.TransferSize) / float64(summary.OriginalSize) * 100.0
-	if math.Abs(summary.SavingsPercent - expectedSavings) > 0.1 {
-		t.Errorf("Savings percentage doesn't match: calculated %f vs reported %f", 
+	expectedSavings := float64(summary.OriginalSize-summary.TransferSize) / float64(summary.OriginalSize) * 100.0
+	if math.Abs(summary.SavingsPercent-expectedSavings) > 0.1 {
+		t.Errorf("Savings percentage doesn't match: calculated %f vs reported %f",
 			expectedSavings, summary.SavingsPercent)
 	}
 }
@@ -683,52 +690,52 @@ func TestDeltaManifest(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Serialize
 	data, err := manifest.Serialize()
 	if err != nil {
 		t.Fatalf("Manifest serialization failed: %v", err)
 	}
-	
+
 	// Deserialize
 	parsedManifest, err := ParseManifest(data)
 	if err != nil {
 		t.Fatalf("Manifest parsing failed: %v", err)
 	}
-	
+
 	// Verify fields
 	if parsedManifest.SourceRepo != manifest.SourceRepo {
-		t.Errorf("SourceRepo mismatch: expected %s, got %s", 
+		t.Errorf("SourceRepo mismatch: expected %s, got %s",
 			manifest.SourceRepo, parsedManifest.SourceRepo)
 	}
-	
+
 	if parsedManifest.DestRepo != manifest.DestRepo {
-		t.Errorf("DestRepo mismatch: expected %s, got %s", 
+		t.Errorf("DestRepo mismatch: expected %s, got %s",
 			manifest.DestRepo, parsedManifest.DestRepo)
 	}
-	
+
 	if parsedManifest.TotalSize != manifest.TotalSize {
-		t.Errorf("TotalSize mismatch: expected %d, got %d", 
+		t.Errorf("TotalSize mismatch: expected %d, got %d",
 			manifest.TotalSize, parsedManifest.TotalSize)
 	}
-	
+
 	if len(parsedManifest.Entries) != len(manifest.Entries) {
-		t.Errorf("Entries count mismatch: expected %d, got %d", 
+		t.Errorf("Entries count mismatch: expected %d, got %d",
 			len(manifest.Entries), len(parsedManifest.Entries))
 	}
-	
+
 	// Error conditions
 	_, err = ParseManifest([]byte{})
 	if err == nil || !errors.Is(err, errors.ErrInvalidInput) {
 		t.Errorf("Expected invalid input error for empty manifest data, got: %v", err)
 	}
-	
+
 	// Invalid JSON
 	_, err = ParseManifest([]byte("invalid json"))
 	if err == nil {
 		t.Error("Expected error for invalid JSON, got nil")
 	}
-	
+
 	// Missing required fields
 	incompleteManifest := map[string]interface{}{
 		"format_version": "1.0",

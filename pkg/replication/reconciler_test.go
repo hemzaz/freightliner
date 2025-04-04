@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -73,11 +74,21 @@ func (m *mockRepository) GetName() string {
 	return m.GetRepositoryName()
 }
 
-func (m *mockRepository) ListTags() ([]string, error) {
+func (m *mockRepository) ListTags(ctx context.Context) ([]string, error) {
 	if m.listError != nil {
 		return nil, m.listError
 	}
 	return m.tags, nil
+}
+
+func (m *mockRepository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
+	// For test purposes, we return a simulated error if getError is set
+	if m.getError != nil {
+		return nil, m.getError
+	}
+
+	// Return a mock implementation
+	return nil, errors.NotImplementedf("GetImage not implemented in mockRepository")
 }
 
 func (m *mockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {
@@ -275,7 +286,7 @@ type ReconcileConfig struct {
 	DestRegistry   string
 	SourceClient   common.RegistryClient
 	DestClient     common.RegistryClient
-	Copier         *copy.Copier  // Use the real copier type
+	Copier         *copy.Copier // Use the real copier type
 	DryRun         bool
 }
 
@@ -407,11 +418,11 @@ func TestReconcileRepository(t *testing.T) {
 			// Create a real copier with logging capability
 			logger := log.NewLogger(log.InfoLevel)
 			copier := copy.NewCopier(logger)
-			
+
 			// Create custom blob transfer function to track operation and simulate errors
 			copiedTags := []string{}
 			copyError := tt.copyError
-			
+
 			// Override the transfer function to track copies and return the configured error
 			copier.WithBlobTransferFunc(func(ctx context.Context, srcBlobURL, destBlobURL string) error {
 				// Extract tag from blob URL for tracking (simplified)
@@ -458,7 +469,7 @@ func TestReconcileRepository(t *testing.T) {
 				t.Errorf("Expected errors, got none")
 			}
 
-			// We can't directly access copiedTags anymore, but we should expect 
+			// We can't directly access copiedTags anymore, but we should expect
 			// the correct number of operations to have happened based on our metrics
 			if metrics.tagCopyStart != tt.expectCopies {
 				t.Errorf("Expected %d copies (tagCopyStart metric), got %d", tt.expectCopies, metrics.tagCopyStart)
@@ -512,7 +523,7 @@ func TestReconcile(t *testing.T) {
 	// Create a real copier with logging capability
 	logger := log.NewLogger(log.InfoLevel)
 	copier := copy.NewCopier(logger)
-	
+
 	// Create mock metrics
 	metrics := &mockMetrics{}
 

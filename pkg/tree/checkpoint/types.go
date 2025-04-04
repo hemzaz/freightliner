@@ -171,4 +171,7 @@ type CheckpointStore interface {
 
 	// DeleteCheckpoint deletes a checkpoint by ID
 	DeleteCheckpoint(id string) error
+
+	// CheckpointExists checks if a checkpoint with the given ID exists
+	CheckpointExists(id string) (bool, error)
 }

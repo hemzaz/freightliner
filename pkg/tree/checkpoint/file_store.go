@@ -106,6 +106,30 @@ func (s *FileStore) GetCheckpoint(id string) (*TreeCheckpoint, error) {
 	return &checkpoint, nil
 }
 
+// CheckpointExists checks if a checkpoint with the given ID exists
+func (s *FileStore) CheckpointExists(id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if id == "" {
+		return false, errors.InvalidInputf("checkpoint ID cannot be empty")
+	}
+
+	// Check if the checkpoint file exists
+	filename := filepath.Join(s.directory, id+".json")
+	_, err := os.Stat(filename)
+
+	if err == nil {
+		return true, nil
+	}
+
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+
+	return false, errors.Wrap(err, "failed to check if checkpoint exists")
+}
+
 // ListCheckpoints returns a list of all checkpoints in the store
 func (s *FileStore) ListCheckpoints() ([]*TreeCheckpoint, error) {
 	s.mu.Lock()

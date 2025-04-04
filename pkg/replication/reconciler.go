@@ -80,13 +80,13 @@ func (r *Reconciler) ReconcileRepository(
 	}
 
 	// List all tags in the source repository
-	sourceTags, err := sourceRepo.ListTags()
+	sourceTags, err := sourceRepo.ListTags(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to list source tags")
 	}
 
 	// List all tags in the destination repository
-	destTags, err := destRepo.ListTags()
+	destTags, err := destRepo.ListTags(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to list destination tags")
 	}
@@ -321,7 +321,7 @@ func (r *Reconciler) ReconcileRepository(
 			r.logger.Warn("WorkerPool is nil, running task synchronously", map[string]interface{}{
 				"tag": finalTag,
 			})
-			
+
 			// Execute the function directly
 			go processTagFn(ctx)
 		} else {
@@ -331,10 +331,8 @@ func (r *Reconciler) ReconcileRepository(
 	}
 
 	// Wait for all copy operations to complete
-	if r.workerPool != nil {
-		r.workerPool.Wait()
-	}
 	wg.Wait()
+	// Note: The worker pool wait has been removed since worker pool no longer has a Wait method
 
 	// Log final summary
 	r.logger.Info("Reconciliation complete", map[string]interface{}{

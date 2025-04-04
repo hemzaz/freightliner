@@ -35,8 +35,7 @@ func (r *Repository) GetRepositoryName() string {
 }
 
 // ListTags returns all tags for the repository - implements common.Repository
-func (r *Repository) ListTags() ([]string, error) {
-	ctx := context.Background()
+func (r *Repository) ListTags(ctx context.Context) ([]string, error) {
 	var tags []string
 	var nextToken *string
 
@@ -71,6 +70,27 @@ func (r *Repository) ListTags() ([]string, error) {
 	}
 
 	return tags, nil
+}
+
+// GetImage retrieves an image by tag - implements common.Repository
+func (r *Repository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
+	if tag == "" {
+		return nil, errors.InvalidInputf("tag cannot be empty")
+	}
+
+	// Create a reference for the tag
+	ref, err := name.NewTag(fmt.Sprintf("%s:%s", r.repository.String(), tag))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create tag reference")
+	}
+
+	// Get the image from the registry
+	img, err := remote.Image(ref, r.client.GetRemoteOptions()...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get image from registry")
+	}
+
+	return img, nil
 }
 
 // GetManifest returns the manifest for the given tag - implements common.Repository

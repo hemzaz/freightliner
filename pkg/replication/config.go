@@ -19,6 +19,15 @@ type ReplicationRule struct {
 
 	// Schedule is a cron expression for scheduled replication (empty for manual only)
 	Schedule string
+
+	// IncludeTags is a list of tag patterns to include (supports wildcards)
+	IncludeTags []string
+
+	// ExcludeTags is a list of tag patterns to exclude (supports wildcards)
+	ExcludeTags []string
+
+	// ForceOverwrite controls whether existing images should be overwritten
+	ForceOverwrite bool
 }
 
 // ReplicationConfig holds the configuration for replication

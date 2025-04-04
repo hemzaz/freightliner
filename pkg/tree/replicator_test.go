@@ -8,10 +8,12 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"time"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 // MockRegistryClient is a mock implementation of the common.RegistryClient interface
@@ -57,12 +59,18 @@ type MockRepository struct {
 }
 
 // ListTags returns all tags for the repository
-func (m *MockRepository) ListTags() ([]string, error) {
+func (m *MockRepository) ListTags(ctx context.Context) ([]string, error) {
 	var tags []string
 	for tag := range m.Tags {
 		tags = append(tags, tag)
 	}
 	return tags, nil
+}
+
+// GetImage returns a mock image for the given tag
+func (m *MockRepository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
+	// Return a mock image implementation
+	return &MockImage{}, nil
 }
 
 // GetManifest returns the manifest for the given tag
@@ -121,6 +129,53 @@ func (m *MockRepository) GetImageReference(tag string) (name.Reference, error) {
 // GetRemoteOptions returns options for remote operations
 func (m *MockRepository) GetRemoteOptions() ([]remote.Option, error) {
 	return []remote.Option{}, nil
+}
+
+// MockImage is a minimal implementation of the v1.Image interface for testing
+type MockImage struct{}
+
+func (m *MockImage) Layers() ([]v1.Layer, error) {
+	return []v1.Layer{}, nil
+}
+
+func (m *MockImage) MediaType() (types.MediaType, error) {
+	return types.DockerManifestSchema2, nil
+}
+
+func (m *MockImage) Size() (int64, error) {
+	return 0, nil
+}
+
+func (m *MockImage) ConfigName() (v1.Hash, error) {
+	return v1.Hash{}, nil
+}
+
+func (m *MockImage) ConfigFile() (*v1.ConfigFile, error) {
+	return &v1.ConfigFile{}, nil
+}
+
+func (m *MockImage) RawConfigFile() ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (m *MockImage) Digest() (v1.Hash, error) {
+	return v1.Hash{}, nil
+}
+
+func (m *MockImage) Manifest() (*v1.Manifest, error) {
+	return &v1.Manifest{}, nil
+}
+
+func (m *MockImage) RawManifest() ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (m *MockImage) LayerByDigest(v1.Hash) (v1.Layer, error) {
+	return nil, nil
+}
+
+func (m *MockImage) LayerByDiffID(v1.Hash) (v1.Layer, error) {
+	return nil, nil
 }
 
 // MockMetrics is a mock implementation of the metrics.Metrics interface

@@ -42,7 +42,7 @@ func (r *Repository) GetRepositoryName() string {
 }
 
 // ListTags returns all tags for the repository - implements common.Repository
-func (r *Repository) ListTags() ([]string, error) {
+func (r *Repository) ListTags(ctx context.Context) ([]string, error) {
 	var tags []string
 
 	// In a real implementation, this would use google.List or the GCR API
@@ -263,17 +263,23 @@ func (r *Repository) DeleteImage(ctx context.Context, tag string) error {
 
 		// Delete the version using Artifact Registry API
 		deleteReq := r.client.arClient.Projects.Locations.Repositories.Packages.Versions.Delete(resourceName)
-		if err := deleteReq.Context(ctx).Do(); err != nil {
+		resp, err := deleteReq.Context(ctx).Do()
+		if err != nil {
 			// Check specific error messages to provide better diagnostics
 			if strings.Contains(err.Error(), "404") {
 				return errors.NotFoundf("image %s:%s not found or already deleted", r.name, tag)
 			}
 			return errors.Wrap(err, "failed to delete image via Artifact Registry API")
 		}
-		
+
+		// Check response
+		if resp.HTTPStatusCode != http.StatusOK && resp.HTTPStatusCode != http.StatusAccepted {
+			return errors.InvalidInputf("failed to delete image, status: %d", resp.HTTPStatusCode)
+		}
+
 		return nil
 	}
-	
+
 	// Fallback approach using gcrane or container registry HTTP API
 	// Create a reference for the image digest
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", r.repository.String(), manifest.Digest))
@@ -318,7 +324,7 @@ func (r *Repository) DeleteImage(ctx context.Context, tag string) error {
 		return errors.NotFoundf("image %s:%s not found or already deleted", r.name, tag)
 	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return errors.Errorf("failed to delete image, status: %d, response: %s", 
+		return errors.InvalidInputf("failed to delete image, status: %d, response: %s",
 			resp.StatusCode, string(bodyBytes))
 	}
 
