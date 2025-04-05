@@ -40,15 +40,46 @@ type ReplicationResult struct {
 	BytesTransferred int64
 }
 
+// RepositoryReplicationOptions holds configuration for repository replication
+type RepositoryReplicationOptions struct {
+	// Source and destination registries
+	Source      string
+	Destination string
+
+	// Specific tags to replicate (empty for all tags)
+	Tags []string
+
+	// Operation behavior
+	DryRun         bool
+	ForceOverwrite bool
+
+	// Worker count for parallel operations
+	WorkerCount int
+
+	// Encryption settings
+	EnableEncryption bool
+}
+
 // ReplicateRepository replicates a repository from source to destination
 func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, destination string) (*ReplicationResult, error) {
+	// Create options from configuration
+	options := RepositoryReplicationOptions{
+		Source:           source,
+		Destination:      destination,
+		Tags:             s.cfg.Replicate.Tags,
+		DryRun:           s.cfg.Replicate.DryRun,
+		ForceOverwrite:   s.cfg.Replicate.Force,
+		WorkerCount:      s.cfg.Workers.ReplicateWorkers,
+		EnableEncryption: s.cfg.Encryption.Enabled,
+	}
+
 	// Parse source and destination
-	sourceRegistry, sourceRepo, err := parseRegistryPath(source)
+	sourceRegistry, sourceRepo, err := parseRegistryPath(options.Source)
 	if err != nil {
 		return nil, err
 	}
 
-	destRegistry, destRepo, err := parseRegistryPath(destination)
+	destRegistry, destRepo, err := parseRegistryPath(options.Destination)
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +136,11 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 		return nil, errors.Wrap(err, "failed to set up encryption")
 	}
 
-	// Determine worker count
-	workerCount := s.cfg.Workers.ReplicateWorkers
-	if workerCount == 0 && s.cfg.Workers.AutoDetect {
-		workerCount = config.GetOptimalWorkerCount()
+	// Auto-detect worker count if needed
+	if options.WorkerCount == 0 && s.cfg.Workers.AutoDetect {
+		options.WorkerCount = config.GetOptimalWorkerCount()
 		s.logger.Info("Auto-detected worker count", map[string]interface{}{
-			"workers": workerCount,
+			"workers": options.WorkerCount,
 		})
 	}
 
@@ -123,11 +153,11 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	}
 
 	// If specific tags were provided, copy them individually
-	if len(s.cfg.Replicate.Tags) > 0 {
+	if len(options.Tags) > 0 {
 		var copyErrors []string
 		tagsCopied := 0
 
-		for _, tagName := range s.cfg.Replicate.Tags {
+		for _, tagName := range options.Tags {
 			// Parse source and destination references
 			srcRef, err := name.NewTag(sourceRepository.GetName() + ":" + tagName)
 			if err != nil {
@@ -145,8 +175,8 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			copyOpts := copy.CopyOptions{
 				Source:         srcRef,
 				Destination:    destRef,
-				ForceOverwrite: s.cfg.Replicate.Force,
-				DryRun:         false,
+				ForceOverwrite: options.ForceOverwrite,
+				DryRun:         options.DryRun,
 			}
 
 			// Execute the copy

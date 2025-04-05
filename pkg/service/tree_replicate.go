@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+
 	"freightliner/pkg/client/common"
 	"freightliner/pkg/config"
 	"freightliner/pkg/copy"
@@ -40,15 +41,60 @@ type TreeReplicationResult struct {
 	CheckpointID           string
 }
 
+// TreeReplicationOptions contains options for tree replication
+type TreeReplicationOptions struct {
+	// Source and destination paths
+	Source      string
+	Destination string
+
+	// Worker configuration
+	WorkerCount int
+
+	// Filtering options
+	ExcludeRepos []string
+	ExcludeTags  []string
+	IncludeTags  []string
+
+	// Operation behavior
+	DryRun bool
+	Force  bool
+
+	// Checkpoint configuration
+	EnableCheckpoint bool
+	CheckpointDir    string
+
+	// Resume options
+	ResumeID      string
+	SkipCompleted bool
+	RetryFailed   bool
+}
+
 // ReplicateTree replicates a tree of repositories
 func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, destination string) (*TreeReplicationResult, error) {
+	// Create options struct with values from config
+	options := TreeReplicationOptions{
+		Source:           source,
+		Destination:      destination,
+		WorkerCount:      s.cfg.TreeReplicate.Workers,
+		ExcludeRepos:     s.cfg.TreeReplicate.ExcludeRepos,
+		ExcludeTags:      s.cfg.TreeReplicate.ExcludeTags,
+		IncludeTags:      s.cfg.TreeReplicate.IncludeTags,
+		DryRun:           s.cfg.TreeReplicate.DryRun,
+		Force:            s.cfg.TreeReplicate.Force,
+		EnableCheckpoint: s.cfg.TreeReplicate.EnableCheckpoint,
+		CheckpointDir:    s.cfg.TreeReplicate.CheckpointDir,
+		ResumeID:         s.cfg.TreeReplicate.ResumeID,
+		SkipCompleted:    s.cfg.TreeReplicate.SkipCompleted,
+		RetryFailed:      s.cfg.TreeReplicate.RetryFailed,
+	}
+
 	// Parse source and destination
-	sourceRegistry, sourceRepo, err := parseRegistryPath(source)
+	sourceRegistry, sourceRepo, err := parseRegistryPath(options.Source)
 	if err != nil {
 		return nil, err
 	}
 
-	destRegistry, destRepo, err := parseRegistryPath(destination)
+	destRegistry, destRepo, err := parseRegistryPath(options.Destination)
 	if err != nil {
 		return nil, err
 	}
@@ -73,38 +119,48 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 	sourceClient := clients[sourceRegistry]
 	destClient := clients[destRegistry]
 
-	// Determine worker count
-	workerCount := s.cfg.TreeReplicate.Workers
-	if workerCount == 0 && s.cfg.Workers.AutoDetect {
-		workerCount = config.GetOptimalWorkerCount()
+	// Auto-detect worker count if configured
+	if options.WorkerCount == 0 && s.cfg.Workers.AutoDetect {
+		options.WorkerCount = config.GetOptimalWorkerCount()
 		s.logger.Info("Auto-detected worker count", map[string]interface{}{
-			"workers": workerCount,
+			"workers": options.WorkerCount,
 		})
 	}
 
-	// Create options for tree replicator
-	options := map[string]interface{}{
-		"workers":          workerCount,
-		"excludeRepos":     s.cfg.TreeReplicate.ExcludeRepos,
-		"excludeTags":      s.cfg.TreeReplicate.ExcludeTags,
-		"includeTags":      s.cfg.TreeReplicate.IncludeTags,
-		"dryRun":           s.cfg.TreeReplicate.DryRun,
-		"force":            s.cfg.TreeReplicate.Force,
-		"enableCheckpoint": s.cfg.TreeReplicate.EnableCheckpoint,
-		"checkpointDir":    s.cfg.TreeReplicate.CheckpointDir,
-		"resumeID":         s.cfg.TreeReplicate.ResumeID,
-		"skipCompleted":    s.cfg.TreeReplicate.SkipCompleted,
-		"retryFailed":      s.cfg.TreeReplicate.RetryFailed,
+	// Create options map for tree replicator (for backward compatibility)
+	optionsMap := map[string]interface{}{
+		"workers":          options.WorkerCount,
+		"excludeRepos":     options.ExcludeRepos,
+		"excludeTags":      options.ExcludeTags,
+		"includeTags":      options.IncludeTags,
+		"dryRun":           options.DryRun,
+		"force":            options.Force,
+		"enableCheckpoint": options.EnableCheckpoint,
+		"checkpointDir":    options.CheckpointDir,
+		"resumeID":         options.ResumeID,
+		"skipCompleted":    options.SkipCompleted,
+		"retryFailed":      options.RetryFailed,
 	}
 
 	// Create a tree replicator
-	replicator, err := s.createTreeReplicator(ctx, sourceClient, destClient, sourceRepo, destRepo, options)
+	replicator, err := s.createTreeReplicator(ctx, sourceClient, destClient, sourceRepo, destRepo, optionsMap)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create tree replicator")
 	}
 
-	// Start replication with the correct method signature
-	result, err := replicator.ReplicateTree(ctx, sourceClient, destClient, sourceRepo, destRepo, s.cfg.TreeReplicate.Force)
+	// Set up the replicate tree options
+	replicateOpts := tree.ReplicateTreeOptions{
+		SourceClient:              sourceClient,
+		DestClient:                destClient,
+		SourcePrefix:              sourceRepo,
+		DestPrefix:                destRepo,
+		ForceOverwrite:            options.Force,
+		ResumeFromCheckpoint:      options.ResumeID,
+		SkipCompletedRepositories: options.SkipCompleted,
+	}
+
+	// Start replication with the options
+	result, err := replicator.ReplicateTree(ctx, replicateOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to replicate tree")
 	}
@@ -123,63 +179,95 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 	}, nil
 }
 
+// TreeReplicatorCreationOptions holds all options for creating a tree replicator
+type TreeReplicatorCreationOptions struct {
+	// Worker configuration
+	WorkerCount int
+
+	// Filtering options
+	ExcludeRepos []string
+	ExcludeTags  []string
+	IncludeTags  []string
+
+	// Operation behavior
+	DryRun bool
+	Force  bool
+
+	// Checkpoint configuration
+	EnableCheckpoint bool
+	CheckpointDir    string
+
+	// Resume options
+	ResumeID      string
+	SkipCompleted bool
+	RetryFailed   bool
+}
+
+// DefaultTreeReplicatorCreationOptions returns sensible defaults
+func DefaultTreeReplicatorCreationOptions() TreeReplicatorCreationOptions {
+	return TreeReplicatorCreationOptions{
+		WorkerCount:      2,
+		ExcludeRepos:     []string{},
+		ExcludeTags:      []string{},
+		IncludeTags:      []string{},
+		DryRun:           false,
+		Force:            false,
+		EnableCheckpoint: false,
+		CheckpointDir:    "${HOME}/.freightliner/checkpoints",
+		ResumeID:         "",
+		SkipCompleted:    true,
+		RetryFailed:      true,
+	}
+}
+
 // createTreeReplicator creates a new tree replicator
 func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, source common.RegistryClient, dest common.RegistryClient, sourcePath, destPath string, opts map[string]interface{}) (*tree.TreeReplicator, error) {
+	// Create options with defaults
+	options := DefaultTreeReplicatorCreationOptions()
+
 	// Extract options from the map
-	workerCount := 2 // Default value
 	if workers, ok := opts["workers"].(int); ok && workers > 0 {
-		workerCount = workers
+		options.WorkerCount = workers
 	}
 
-	var excludeRepos []string
 	if excludes, ok := opts["excludeRepos"].([]string); ok {
-		excludeRepos = excludes
+		options.ExcludeRepos = excludes
 	}
 
-	var excludeTags []string
 	if excludes, ok := opts["excludeTags"].([]string); ok {
-		excludeTags = excludes
+		options.ExcludeTags = excludes
 	}
 
-	var includeTags []string
 	if includes, ok := opts["includeTags"].([]string); ok {
-		includeTags = includes
+		options.IncludeTags = includes
 	}
 
-	dryRun := false
 	if dry, ok := opts["dryRun"].(bool); ok {
-		dryRun = dry
+		options.DryRun = dry
 	}
 
-	enableCheckpoint := false
 	if enable, ok := opts["enableCheckpoint"].(bool); ok {
-		enableCheckpoint = enable
+		options.EnableCheckpoint = enable
 	}
 
-	checkpointDir := "${HOME}/.freightliner/checkpoints"
 	if dir, ok := opts["checkpointDir"].(string); ok && dir != "" {
-		checkpointDir = dir
+		options.CheckpointDir = dir
 	}
 
-	// Only used for resume
-	resumeID := ""
 	if id, ok := opts["resumeID"].(string); ok {
-		resumeID = id
+		options.ResumeID = id
 	}
 
-	skipCompleted := true
 	if skip, ok := opts["skipCompleted"].(bool); ok {
-		skipCompleted = skip
+		options.SkipCompleted = skip
 	}
 
-	retryFailed := true
 	if retry, ok := opts["retryFailed"].(bool); ok {
-		retryFailed = retry
+		options.RetryFailed = retry
 	}
 
-	force := false
 	if f, ok := opts["force"].(bool); ok {
-		force = f
+		options.Force = f
 	}
 
 	// Create a copier for the tree replicator to use
@@ -190,13 +278,13 @@ func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, sourc
 
 	// Set up tree replicator configuration
 	treeReplicatorOpts := tree.TreeReplicatorOptions{
-		WorkerCount:         workerCount,
-		ExcludeRepositories: excludeRepos,
-		ExcludeTags:         excludeTags,
-		IncludeTags:         includeTags,
-		EnableCheckpointing: enableCheckpoint,
-		CheckpointDirectory: checkpointDir,
-		DryRun:              dryRun,
+		WorkerCount:         options.WorkerCount,
+		ExcludeRepositories: options.ExcludeRepos,
+		ExcludeTags:         options.ExcludeTags,
+		IncludeTags:         options.IncludeTags,
+		EnableCheckpointing: options.EnableCheckpoint,
+		CheckpointDirectory: options.CheckpointDir,
+		DryRun:              options.DryRun,
 	}
 
 	// Create copier instance for the tree replicator
@@ -207,22 +295,22 @@ func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, sourc
 	replicator := tree.NewTreeReplicator(s.logger, copier, treeReplicatorOpts)
 
 	// If resuming from a checkpoint, set up the resume operation
-	if resumeID != "" {
+	if options.ResumeID != "" {
 		s.logger.Info("Setting up tree replication resume", map[string]interface{}{
-			"resumeID":      resumeID,
-			"skipCompleted": skipCompleted,
-			"retryFailed":   retryFailed,
-			"checkpointDir": checkpointDir,
+			"resumeID":      options.ResumeID,
+			"skipCompleted": options.SkipCompleted,
+			"retryFailed":   options.RetryFailed,
+			"checkpointDir": options.CheckpointDir,
 		})
 
 		// Initialize the checkpoint store for resume
-		store, err := tree.InitCheckpointStore(checkpointDir)
+		store, err := tree.InitCheckpointStore(options.CheckpointDir)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to initialize checkpoint store for resume")
 		}
 
 		// Load the checkpoint
-		cp, err := checkpoint.GetCheckpointByID(store, resumeID)
+		cp, err := checkpoint.GetCheckpointByID(store, options.ResumeID)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to load checkpoint for resume")
 		}
@@ -232,10 +320,10 @@ func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, sourc
 
 		// Get repositories to process
 		repositories, err := checkpoint.GetRemainingRepositories(cp, checkpoint.ResumableOptions{
-			ID:            resumeID,
-			SkipCompleted: skipCompleted,
-			RetryFailed:   retryFailed,
-			Force:         force,
+			ID:            options.ResumeID,
+			SkipCompleted: options.SkipCompleted,
+			RetryFailed:   options.RetryFailed,
+			Force:         options.Force,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get remaining repositories for resume")
