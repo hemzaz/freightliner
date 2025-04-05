@@ -3,9 +3,10 @@ package gcr
 import (
 	"context"
 	"fmt"
-	"freightliner/pkg/helper/errors"
 	"net/http"
 	"strings"
+
+	"freightliner/pkg/helper/errors"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -136,8 +137,8 @@ func (t *gcrTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(req2)
 }
 
-// GetGCRRepository returns a Repository object for a GCR repository
-func (a *GCRAuthenticator) GetGCRRepository(project, repoName string) (name.Repository, error) {
+// GetRepository returns a Repository object for a GCR repository
+func (a *GCRAuthenticator) GetRepository(project, repoName string) (name.Repository, error) {
 	if project == "" {
 		return name.Repository{}, errors.InvalidInputf("GCP project cannot be empty")
 	}
@@ -154,9 +155,9 @@ func (a *GCRAuthenticator) GetGCRRepository(project, repoName string) (name.Repo
 	return repo, nil
 }
 
-// isGCPPath checks if a path is a valid GCP repository path
-func isGCPPath(repository string) bool {
-	// GCP paths should at least have a project/repo format
+// isGCRPath checks if a path is a valid GCR repository path
+func isGCRPath(repository string) bool {
+	// GCR paths should at least have a project/repo format
 	if repository == "" {
 		return false
 	}

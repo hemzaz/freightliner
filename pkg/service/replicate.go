@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"freightliner/pkg/client/ecr"
 	"freightliner/pkg/client/gcr"
@@ -13,9 +15,17 @@ import (
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/replication"
 	"freightliner/pkg/security/encryption"
 
+	secretmanager "cloud.google.com/go/secretmanager/apiv1"
+	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/google/go-containerregistry/pkg/name"
+	"google.golang.org/api/option"
 )
 
 // ReplicationService handles repository replication
@@ -203,33 +213,224 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 		}, nil
 	}
 
-	// For copying the entire repository, we'd need to:
-	// 1. List all tags in the repository
-	// 2. Copy each tag individually
-	// But for now, we'll just return a placeholder result
-	s.logger.Info("Full repository replication is not implemented yet", nil)
+	// Get all tags from the source repository
+	s.logger.Info("Listing all tags for full repository replication", map[string]interface{}{
+		"source_repository":      sourceRepo,
+		"destination_repository": destRepo,
+	})
 
-	// Return a placeholder result
-	result := &copy.CopyResult{
-		Success: true,
-		Stats: copy.CopyStats{
-			BytesTransferred: 0,
-			Layers:           0,
-			ManifestSize:     0,
-		},
-	}
+	sourceTags, err := sourceRepository.ListTags(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to copy repository")
+		return nil, errors.Wrap(err, "failed to list tags in source repository")
 	}
 
-	// Convert the result to our service-level ReplicationResult
-	// The copy package's CopyResult doesn't have the same fields, so we'll use placeholder values
+	if len(sourceTags) == 0 {
+		s.logger.Info("No tags found in source repository", map[string]interface{}{
+			"repository": sourceRepo,
+		})
+		return &ReplicationResult{
+			TagsCopied:  0,
+			TagsSkipped: 0,
+			Errors:      0,
+		}, nil
+	}
+
+	s.logger.Info("Starting full repository replication", map[string]interface{}{
+		"source_repository":      sourceRepo,
+		"destination_repository": destRepo,
+		"tag_count":              len(sourceTags),
+		"dry_run":                options.DryRun,
+		"force_overwrite":        options.ForceOverwrite,
+	})
+
+	// Create a worker pool for parallel processing
+	workerPool := s.createWorkerPool(options.WorkerCount)
+	workerPool.Start()
+
+	// Define variables to track results
+	var (
+		tagsCopied       int
+		tagsSkipped      int
+		errorCount       int
+		bytesTransferred int64
+		resultLock       sync.Mutex
+		wg               sync.WaitGroup
+	)
+
+	// Process results from the worker pool
+	go func() {
+		for result := range workerPool.GetResults() {
+			if result.Error != nil {
+				resultLock.Lock()
+				errorCount++
+				resultLock.Unlock()
+			}
+		}
+	}()
+
+	// Process each tag
+	for _, tag := range sourceTags {
+		wg.Add(1)
+
+		// Create local variable for tag to avoid closure issues
+		currentTag := tag
+
+		// Create job for this tag
+		err := workerPool.SubmitWithContext(ctx, fmt.Sprintf("copy-tag-%s", currentTag), func(jobCtx context.Context) error {
+			defer wg.Done()
+
+			// Create source and destination references
+			srcRef, err := sourceRepository.GetImageReference(currentTag)
+			if err != nil {
+				s.logger.Error("Failed to get source image reference", err, map[string]interface{}{
+					"tag": currentTag,
+				})
+				return err
+			}
+
+			destRef, err := destRepository.GetImageReference(currentTag)
+			if err != nil {
+				s.logger.Error("Failed to get destination image reference", err, map[string]interface{}{
+					"tag": currentTag,
+				})
+				return err
+			}
+
+			// Check if tag already exists at destination and has same digest
+			if !options.ForceOverwrite {
+				skipTag, err := s.shouldSkipTag(jobCtx, currentTag, sourceRepository, destRepository)
+				if err != nil {
+					s.logger.Warn("Error checking if tag should be skipped, will attempt to copy", map[string]interface{}{
+						"tag":   currentTag,
+						"error": err.Error(),
+					})
+				} else if skipTag {
+					resultLock.Lock()
+					tagsSkipped++
+					resultLock.Unlock()
+					return nil
+				}
+			}
+
+			// Setup copy options
+			copyOpts := copy.CopyOptions{
+				Source:         srcRef,
+				Destination:    destRef,
+				ForceOverwrite: options.ForceOverwrite,
+				DryRun:         options.DryRun,
+			}
+
+			// Get remote options
+			srcOpts, err := sourceRepository.GetRemoteOptions()
+			if err != nil {
+				return errors.Wrap(err, "failed to get source remote options")
+			}
+
+			destOpts, err := destRepository.GetRemoteOptions()
+			if err != nil {
+				return errors.Wrap(err, "failed to get destination remote options")
+			}
+
+			// Execute copy
+			result, err := copier.CopyImage(jobCtx, srcRef, destRef, srcOpts, destOpts, copyOpts)
+			if err != nil {
+				s.logger.Error("Failed to copy tag", err, map[string]interface{}{
+					"tag": currentTag,
+				})
+				return err
+			}
+
+			// Update stats
+			resultLock.Lock()
+			tagsCopied++
+			bytesTransferred += result.Stats.BytesTransferred
+			resultLock.Unlock()
+
+			s.logger.Info("Tag copied successfully", map[string]interface{}{
+				"tag":    currentTag,
+				"bytes":  result.Stats.BytesTransferred,
+				"layers": result.Stats.Layers,
+			})
+
+			return nil
+		})
+
+		if err != nil {
+			s.logger.Error("Failed to submit job to worker pool", err, map[string]interface{}{
+				"tag": currentTag,
+			})
+			resultLock.Lock()
+			errorCount++
+			resultLock.Unlock()
+		}
+	}
+
+	// Wait for all jobs to complete
+	wg.Wait()
+	workerPool.Wait()
+
+	s.logger.Info("Repository replication completed", map[string]interface{}{
+		"source_repository":      sourceRepo,
+		"destination_repository": destRepo,
+		"tags_copied":            tagsCopied,
+		"tags_skipped":           tagsSkipped,
+		"errors":                 errorCount,
+		"bytes_transferred":      bytesTransferred,
+	})
+
 	return &ReplicationResult{
-		TagsCopied:       1, // Placeholder
-		TagsSkipped:      0,
-		Errors:           0,
-		BytesTransferred: result.Stats.BytesTransferred,
+		TagsCopied:       tagsCopied,
+		TagsSkipped:      tagsSkipped,
+		Errors:           errorCount,
+		BytesTransferred: bytesTransferred,
 	}, nil
+}
+
+// createWorkerPool creates a worker pool for parallel processing
+func (s *ReplicationService) createWorkerPool(workerCount int) *replication.WorkerPool {
+	if workerCount <= 0 {
+		workerCount = 1
+	}
+	return replication.NewWorkerPool(workerCount, s.logger)
+}
+
+// shouldSkipTag checks if a tag should be skipped during replication
+func (s *ReplicationService) shouldSkipTag(
+	ctx context.Context,
+	tag string,
+	sourceRepo Repository,
+	destRepo Repository,
+) (bool, error) {
+	// Get source manifest
+	sourceManifest, err := sourceRepo.GetManifest(ctx, tag)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to get source manifest")
+	}
+
+	// Try to get destination manifest
+	destManifest, err := destRepo.GetManifest(ctx, tag)
+	if err != nil {
+		// If the destination manifest doesn't exist, we need to copy it
+		return false, nil
+	}
+
+	// If both manifests have the same digest, we can skip copying
+	if sourceManifest.Digest == destManifest.Digest {
+		s.logger.Debug("Skipping tag, already exists with same digest", map[string]interface{}{
+			"tag":           tag,
+			"source_digest": sourceManifest.Digest,
+			"dest_digest":   destManifest.Digest,
+		})
+		return true, nil
+	}
+
+	s.logger.Debug("Tag exists but has different digest, will re-copy", map[string]interface{}{
+		"tag":           tag,
+		"source_digest": sourceManifest.Digest,
+		"dest_digest":   destManifest.Digest,
+	})
+
+	return false, nil
 }
 
 // Helper functions
@@ -366,6 +567,76 @@ type SecretsProvider interface {
 	GetSecret(ctx context.Context, name string) (string, error)
 }
 
+// awsSecretsProvider implements the SecretsProvider interface using AWS Secrets Manager
+type awsSecretsProvider struct {
+	client *secretsmanager.Client
+	logger *log.Logger
+}
+
+// GetSecret retrieves a secret from AWS Secrets Manager
+func (p *awsSecretsProvider) GetSecret(ctx context.Context, name string) (string, error) {
+	// Create the request to get the secret value
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(name),
+	}
+
+	// Call AWS Secrets Manager to get the secret value
+	result, err := p.client.GetSecretValue(ctx, input)
+	if err != nil {
+		var resourceNotFound *types.ResourceNotFoundException
+		if errors.As(err, &resourceNotFound) {
+			return "", errors.NotFoundf("secret not found: %s", name)
+		}
+		return "", errors.Wrap(err, "failed to get secret from AWS Secrets Manager")
+	}
+
+	// The secret value can be either a SecretString or SecretBinary
+	var secretValue string
+	if result.SecretString != nil {
+		secretValue = *result.SecretString
+	} else if result.SecretBinary != nil {
+		// For binary secrets, decode from base64
+		decodedBinarySecret := make([]byte, base64.StdEncoding.DecodedLen(len(result.SecretBinary)))
+		n, err := base64.StdEncoding.Decode(decodedBinarySecret, result.SecretBinary)
+		if err != nil {
+			return "", errors.Wrap(err, "failed to decode binary secret")
+		}
+		secretValue = string(decodedBinarySecret[:n])
+	} else {
+		return "", errors.InvalidInputf("secret value is empty for secret: %s", name)
+	}
+
+	return secretValue, nil
+}
+
+// gcpSecretsProvider implements the SecretsProvider interface using Google Secret Manager
+type gcpSecretsProvider struct {
+	client  *secretmanager.Client
+	project string
+	logger  *log.Logger
+}
+
+// GetSecret retrieves a secret from Google Secret Manager
+func (p *gcpSecretsProvider) GetSecret(ctx context.Context, name string) (string, error) {
+	// Construct the full resource name for the secret
+	secretName := fmt.Sprintf("projects/%s/secrets/%s/versions/latest", p.project, name)
+
+	// Create the access request for the secret
+	req := &secretmanagerpb.AccessSecretVersionRequest{
+		Name: secretName,
+	}
+
+	// Call Google Secret Manager to access the secret
+	result, err := p.client.AccessSecretVersion(ctx, req)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get secret from Google Secret Manager")
+	}
+
+	// Extract the payload data
+	secretValue := string(result.Payload.Data)
+	return secretValue, nil
+}
+
 // RegistryCredentials contains credentials for different registry types
 type RegistryCredentials struct {
 	ECR struct {
@@ -373,7 +644,7 @@ type RegistryCredentials struct {
 		SecretKey    string `json:"secretKey"`
 		SessionToken string `json:"sessionToken,omitempty"`
 		Region       string `json:"region,omitempty"`
-		AccountID    string `json:"accountId,omitempty"`
+		AccountID    string `json:"accountID,omitempty"`
 	} `json:"ecr"`
 
 	GCR struct {
@@ -478,20 +749,73 @@ func (s *ReplicationService) initializeSecretsManager(ctx context.Context) (Secr
 
 // createAWSSecretsProvider creates an AWS Secrets Manager provider
 func (s *ReplicationService) createAWSSecretsProvider(ctx context.Context, region string) (SecretsProvider, error) {
-	// Implementation would go here - for now, we'll use a placeholder
-	return nil, errors.NotImplementedf("AWS Secrets Manager provider creation")
+	// Configure AWS SDK options
+	configOpts := []func(*config.LoadOptions) error{
+		config.WithRegion(region),
+	}
+
+	// Load the default AWS configuration
+	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to load AWS config")
+	}
+
+	// Create the Secrets Manager client
+	client := secretsmanager.NewFromConfig(cfg)
+
+	// Return the AWS secrets provider implementation
+	return &awsSecretsProvider{
+		client: client,
+		logger: s.logger,
+	}, nil
 }
 
 // createGCPSecretsProvider creates a Google Secret Manager provider
 func (s *ReplicationService) createGCPSecretsProvider(ctx context.Context, project, credentialsFile string) (SecretsProvider, error) {
-	// Implementation would go here - for now, we'll use a placeholder
-	return nil, errors.NotImplementedf("Google Secret Manager provider creation")
+	// Configure client options
+	var clientOpts []option.ClientOption
+	if credentialsFile != "" {
+		clientOpts = append(clientOpts, option.WithCredentialsFile(credentialsFile))
+	}
+
+	// Create the Secret Manager client
+	client, err := secretmanager.NewClient(ctx, clientOpts...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Secret Manager client")
+	}
+
+	// Return the GCP secrets provider implementation
+	return &gcpSecretsProvider{
+		client:  client,
+		project: project,
+		logger:  s.logger,
+	}, nil
 }
 
 // loadRegistryCredentials loads registry credentials from a secrets provider
 func (s *ReplicationService) loadRegistryCredentials(ctx context.Context, provider SecretsProvider) (RegistryCredentials, error) {
-	// Implementation would go here - for now, we'll use an empty result
-	return RegistryCredentials{}, nil
+	// Get the registry credentials from the secrets provider
+	registryCredsJson, err := provider.GetSecret(ctx, s.cfg.Secrets.RegistryCredsSecret)
+	if err != nil {
+		return RegistryCredentials{}, errors.Wrap(err, "failed to get registry credentials from secrets provider")
+	}
+
+	if registryCredsJson == "" {
+		return RegistryCredentials{}, errors.InvalidInputf("empty registry credentials retrieved from secrets provider")
+	}
+
+	// Parse the credentials JSON
+	var creds RegistryCredentials
+	if err := json.Unmarshal([]byte(registryCredsJson), &creds); err != nil {
+		return RegistryCredentials{}, errors.Wrap(err, "failed to unmarshal registry credentials")
+	}
+
+	// Log successful retrieval
+	s.logger.Info("Successfully loaded registry credentials from secrets provider", map[string]interface{}{
+		"secret_name": s.cfg.Secrets.RegistryCredsSecret,
+	})
+
+	return creds, nil
 }
 
 // applyRegistryCredentials applies registry credentials to the environment
@@ -547,8 +871,28 @@ func (s *ReplicationService) applyRegistryCredentials(creds RegistryCredentials)
 
 // loadEncryptionKeys loads encryption keys from a secrets provider
 func (s *ReplicationService) loadEncryptionKeys(ctx context.Context, provider SecretsProvider) (EncryptionKeys, error) {
-	// Implementation would go here - for now, we'll use an empty result
-	return EncryptionKeys{}, nil
+	// Get the encryption keys from the secrets provider
+	encryptionKeysJson, err := provider.GetSecret(ctx, s.cfg.Secrets.EncryptionKeysSecret)
+	if err != nil {
+		return EncryptionKeys{}, errors.Wrap(err, "failed to get encryption keys from secrets provider")
+	}
+
+	if encryptionKeysJson == "" {
+		return EncryptionKeys{}, errors.InvalidInputf("empty encryption keys retrieved from secrets provider")
+	}
+
+	// Parse the encryption keys JSON
+	var keys EncryptionKeys
+	if err := json.Unmarshal([]byte(encryptionKeysJson), &keys); err != nil {
+		return EncryptionKeys{}, errors.Wrap(err, "failed to unmarshal encryption keys")
+	}
+
+	// Log successful retrieval
+	s.logger.Info("Successfully loaded encryption keys from secrets provider", map[string]interface{}{
+		"secret_name": s.cfg.Secrets.EncryptionKeysSecret,
+	})
+
+	return keys, nil
 }
 
 // applyEncryptionKeys applies encryption keys to the configuration

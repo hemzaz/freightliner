@@ -251,29 +251,29 @@ func TestGCRTransport(t *testing.T) {
 	}
 }
 
-func TestIsGCPPath(t *testing.T) {
+func TestIsGCRPath(t *testing.T) {
 	tests := []struct {
 		name       string
 		repository string
 		expected   bool
 	}{
 		{
-			name:       "Valid GCP path with project and repo",
+			name:       "Valid GCR path with project and repo",
 			repository: "project/repo",
 			expected:   true,
 		},
 		{
-			name:       "Valid GCP path with multiple segments",
+			name:       "Valid GCR path with multiple segments",
 			repository: "project/path/to/repo",
 			expected:   true,
 		},
 		{
-			name:       "Invalid GCP path - single segment",
+			name:       "Invalid GCR path - single segment",
 			repository: "single-segment",
 			expected:   false,
 		},
 		{
-			name:       "Invalid GCP path - empty string",
+			name:       "Invalid GCR path - empty string",
 			repository: "",
 			expected:   false,
 		},
@@ -281,7 +281,7 @@ func TestIsGCPPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := isGCPPath(tc.repository)
+			result := isGCRPath(tc.repository)
 			assert.Equal(t, tc.expected, result)
 		})
 	}

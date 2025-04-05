@@ -169,7 +169,32 @@ func (t *TreeReplicator) ReplicateTree(
 	ctx context.Context,
 	opts ReplicateTreeOptions,
 ) (*TreeReplicationResult, error) {
-	// Setup and initialize replication
+	// Initialize replication
+	result, cancelCtx := t.initReplication(ctx)
+	defer cancelCtx()
+	
+	// Initialize checkpoint
+	treeCheckpoint := t.setupCheckpoint(opts, result)
+	
+	// List and filter repositories
+	repositories, repoCount, err := t.getRepositories(ctx, opts, treeCheckpoint, result)
+	if err != nil || repoCount == 0 {
+		return result, err
+	}
+	
+	// Process repositories with worker pool
+	statusErr := t.processRepositories(ctx, opts, repositories, treeCheckpoint, result)
+	
+	// Complete replication with appropriate status
+	if statusErr != nil {
+		return result, statusErr
+	}
+	
+	return result, nil
+}
+
+// initReplication initializes the replication process with a result and cancelable context
+func (t *TreeReplicator) initReplication(ctx context.Context) (*TreeReplicationResult, func()) {
 	startTime := time.Now()
 	result := &TreeReplicationResult{
 		Repositories:     0,
@@ -179,79 +204,164 @@ func (t *TreeReplicator) ReplicateTree(
 		Progress:         0,
 		StartTime:        startTime,
 	}
-
+	
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	return result, cancel
+}
 
-	// Initialize checkpoint if enabled
-	var treeCheckpoint *checkpoint.TreeCheckpoint
-	if t.checkpointing.Enabled && t.checkpointStore != nil {
-		treeCheckpoint = &checkpoint.TreeCheckpoint{
-			ID:             uuid.New().String(),
-			SourceRegistry: opts.SourceClient.GetRegistryName(),
-			SourcePrefix:   opts.SourcePrefix,
-			DestRegistry:   opts.DestClient.GetRegistryName(),
-			DestPrefix:     opts.DestPrefix,
-			Status:         checkpoint.StatusInProgress,
-			StartTime:      startTime,
-			LastUpdated:    startTime,
-			Repositories:   make(map[string]checkpoint.RepoStatus),
-		}
-
-		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
-			wrappedErr := errors.Wrap(err, "failed to save initial checkpoint")
-			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
-				"checkpoint_id": treeCheckpoint.ID,
-			})
-		} else {
-			result.CheckpointID = treeCheckpoint.ID
-		}
+// setupCheckpoint initializes a checkpoint if checkpointing is enabled
+func (t *TreeReplicator) setupCheckpoint(
+	opts ReplicateTreeOptions, 
+	result *TreeReplicationResult,
+) *checkpoint.TreeCheckpoint {
+	if !t.checkpointing.Enabled || t.checkpointStore == nil {
+		return nil
 	}
+	
+	treeCheckpoint := &checkpoint.TreeCheckpoint{
+		ID:             uuid.New().String(),
+		SourceRegistry: opts.SourceClient.GetRegistryName(),
+		SourcePrefix:   opts.SourcePrefix,
+		DestRegistry:   opts.DestClient.GetRegistryName(),
+		DestPrefix:     opts.DestPrefix,
+		Status:         checkpoint.StatusInProgress,
+		StartTime:      result.StartTime,
+		LastUpdated:    result.StartTime,
+		Repositories:   make(map[string]checkpoint.RepoStatus),
+	}
+	
+	if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+		wrappedErr := errors.Wrap(err, "failed to save initial checkpoint")
+		t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+			"checkpoint_id": treeCheckpoint.ID,
+		})
+	} else {
+		result.CheckpointID = treeCheckpoint.ID
+	}
+	
+	return treeCheckpoint
+}
 
-	// List and filter repositories
+// getRepositories lists and filters repositories from the source
+func (t *TreeReplicator) getRepositories(
+	ctx context.Context,
+	opts ReplicateTreeOptions,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+) ([]string, int, error) {
 	repositories, err := t.listAndFilterRepositories(ctx, opts.SourceClient, opts.SourcePrefix)
 	if err != nil {
 		t.handleError(err, treeCheckpoint, "Failed to list repositories")
-		return result, err
+		return nil, 0, err
 	}
-
+	
 	repoCount := len(repositories)
 	result.Repositories = repoCount
-
+	
 	if repoCount == 0 {
 		t.logger.Info("No repositories found matching prefix", map[string]interface{}{
 			"source_registry": opts.SourceClient.GetRegistryName(),
 			"prefix":          opts.SourcePrefix,
 		})
 		t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
-		return result, nil
 	}
+	
+	return repositories, repoCount, nil
+}
 
-	// Setup worker pool
+// processRepositories starts the worker pool and processes all repositories
+func (t *TreeReplicator) processRepositories(
+	ctx context.Context,
+	opts ReplicateTreeOptions,
+	repositories []string,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+) error {
+	repoCount := len(repositories)
+	
+	// Log start of replication
 	t.logger.Info("Starting replication", map[string]interface{}{
 		"repositories": repoCount,
 		"workers":      t.workerCount,
 		"dry_run":      t.dryRun,
 	})
+	
+	// Set up worker pool
+	jobs, metrics, doneSignal := t.setupWorkerPool(ctx, repoCount, opts, treeCheckpoint, result)
+	defer close(doneSignal)
+	
+	// Queue repository jobs
+	t.queueRepositoryJobs(ctx, repositories, jobs)
+	
+	// Wait for completion and update metrics
+	metrics.WaitGroup.Wait()
+	t.updateFinalMetrics(result, metrics.CompletedRepos, repoCount)
+	
+	// Check for interruption
+	if ctx.Err() != nil {
+		result.Interrupted = true
+		t.completeReplication(treeCheckpoint, result, checkpoint.StatusInterrupted)
+		return ctx.Err()
+	}
+	
+	t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
+	return nil
+}
 
-	// Create jobs channel and worker group
+// setupWorkerPool creates and starts workers for repository processing
+func (t *TreeReplicator) setupWorkerPool(
+	ctx context.Context,
+	repoCount int,
+	opts ReplicateTreeOptions,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+) (chan replicationJob, *workerMetrics, chan struct{}) {
+	// Create channels and metrics
 	jobs := make(chan replicationJob, repoCount)
 	var wg sync.WaitGroup
 	var completedRepos atomic.Int32
 	var errorCount atomic.Int32
-
-	// Setup signal handling for graceful cancellation
+	
+	// Setup signal handling
+	cancel := func() {} // Default no-op
 	done := t.setupSignalHandling(ctx, cancel)
-	defer close(done)
-
-	// Start workers
-	workerOpts := replicationWorkerOptions{
-		Context:        ctx,
-		Jobs:           jobs,
+	
+	// Package metrics for workers
+	metrics := &workerMetrics{
 		WaitGroup:      &wg,
 		CompletedRepos: &completedRepos,
 		ErrorCount:     &errorCount,
+	}
+	
+	// Start workers
+	t.startWorkers(ctx, jobs, opts, treeCheckpoint, result, metrics)
+	
+	return jobs, metrics, done
+}
+
+// workerMetrics holds tracking variables for worker pool
+type workerMetrics struct {
+	WaitGroup      *sync.WaitGroup
+	CompletedRepos *atomic.Int32
+	ErrorCount     *atomic.Int32
+}
+
+// startWorkers launches worker goroutines
+func (t *TreeReplicator) startWorkers(
+	ctx context.Context,
+	jobs chan replicationJob,
+	opts ReplicateTreeOptions,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+	metrics *workerMetrics,
+) {
+	workerOpts := replicationWorkerOptions{
+		Context:        ctx,
+		Jobs:           jobs,
+		WaitGroup:      metrics.WaitGroup,
+		CompletedRepos: metrics.CompletedRepos,
+		ErrorCount:     metrics.ErrorCount,
 		SourceClient:   opts.SourceClient,
 		DestClient:     opts.DestClient,
 		SourcePrefix:   opts.SourcePrefix,
@@ -260,13 +370,19 @@ func (t *TreeReplicator) ReplicateTree(
 		TreeCheckpoint: treeCheckpoint,
 		Result:         result,
 	}
-
+	
 	for i := 0; i < t.workerCount; i++ {
-		wg.Add(1)
+		metrics.WaitGroup.Add(1)
 		go t.replicationWorker(workerOpts)
 	}
+}
 
-	// Queue jobs
+// queueRepositoryJobs sends repository jobs to worker pool
+func (t *TreeReplicator) queueRepositoryJobs(
+	ctx context.Context,
+	repositories []string,
+	jobs chan<- replicationJob,
+) {
 	for _, repo := range repositories {
 		select {
 		case <-ctx.Done():
@@ -275,26 +391,21 @@ func (t *TreeReplicator) ReplicateTree(
 			// Job queued successfully
 		}
 	}
-
-	// Close jobs channel when all jobs are queued
+	
 	close(jobs)
+}
 
-	// Wait for workers to complete
-	wg.Wait()
-
-	// Update final metrics
-	result.Duration = time.Since(startTime)
-	result.Progress = float64(completedRepos.Load()) / float64(repoCount) * 100.0
-
-	// Handle completion status
-	if ctx.Err() != nil {
-		result.Interrupted = true
-		t.completeReplication(treeCheckpoint, result, checkpoint.StatusInterrupted)
-		return result, ctx.Err()
+// updateFinalMetrics updates final progress and duration metrics
+func (t *TreeReplicator) updateFinalMetrics(
+	result *TreeReplicationResult,
+	completedRepos *atomic.Int32,
+	repoCount int,
+) {
+	result.Duration = time.Since(result.StartTime)
+	if repoCount > 0 {
+		result.Progress = float64(completedRepos.Load()) / float64(repoCount) * 100.0
 	}
-
-	t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
-	return result, nil
+}
 }
 
 // Helper functions to break down the large methods
