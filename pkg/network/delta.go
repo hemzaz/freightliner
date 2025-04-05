@@ -7,12 +7,13 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
 	"hash"
 	"math"
 	"time"
+
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
 )
 
 // DeltaOptions configures delta update behavior
@@ -93,7 +94,7 @@ type DeltaSummary struct {
 }
 
 // OptimizeTransfer uses delta techniques to optimize a transfer between repositories
-func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo common.Repository, digest, mediaType string) (*DeltaSummary, bool, error) {
+func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Repository, digest, mediaType string) (*DeltaSummary, bool, error) {
 	startTime := time.Now()
 	ctx := context.Background()
 
@@ -325,7 +326,7 @@ type DeltaManifest struct {
 }
 
 // GenerateManifest creates a delta manifest between source and destination
-func (g *DeltaGenerator) GenerateManifest(ctx context.Context, sourceClient, destClient common.RegistryClient, sourceRepo, destRepo string) (*DeltaManifest, error) {
+func (g *DeltaGenerator) GenerateManifest(ctx context.Context, sourceClient, destClient interfaces.RegistryClient, sourceRepo, destRepo string) (*DeltaManifest, error) {
 	if sourceClient == nil {
 		return nil, errors.InvalidInputf("source client cannot be nil")
 	}
@@ -380,9 +381,9 @@ func (g *DeltaGenerator) GenerateManifest(ctx context.Context, sourceClient, des
 }
 
 // createEmptyManifest creates a manifest with no existing destination content
-func (g *DeltaGenerator) createEmptyManifest(srcRepo common.Repository, destRepo string) (*DeltaManifest, error) {
+func (g *DeltaGenerator) createEmptyManifest(srcRepo interfaces.Repository, destRepo string) (*DeltaManifest, error) {
 	manifest := &DeltaManifest{
-		SourceRepo:    srcRepo.GetName(),
+		SourceRepo:    srcRepo.GetRepositoryName(),
 		DestRepo:      destRepo,
 		CreatedAt:     time.Now(),
 		FormatVersion: "1.0",

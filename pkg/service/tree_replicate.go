@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 
-	"freightliner/pkg/client/common"
 	"freightliner/pkg/config"
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
@@ -221,7 +220,7 @@ func DefaultTreeReplicatorCreationOptions() TreeReplicatorCreationOptions {
 }
 
 // createTreeReplicator creates a new tree replicator
-func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, source common.RegistryClient, dest common.RegistryClient, sourcePath, destPath string, opts map[string]interface{}) (*tree.TreeReplicator, error) {
+func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, source RegistryClient, dest RegistryClient, sourcePath, destPath string, opts map[string]interface{}) (*tree.TreeReplicator, error) {
 	// Create options with defaults
 	options := DefaultTreeReplicatorCreationOptions()
 

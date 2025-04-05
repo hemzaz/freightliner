@@ -2,15 +2,20 @@ package replication
 
 import (
 	"context"
-	"sync"
 	"time"
 
-	"freightliner/pkg/client/common"
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/helper/util"
+	"freightliner/pkg/interfaces"
 	"freightliner/pkg/metrics"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
+
+// We're directly using the WorkerPool from the same package, no need for an alias
 
 // Reconciler handles reconciling repositories between registries
 type Reconciler struct {
@@ -20,6 +25,7 @@ type Reconciler struct {
 	metrics     metrics.MetricsCollector
 	dryRun      bool
 	forceUpdate bool
+	workerCount int
 }
 
 // ReconcilerOptions configures the reconciler behavior
@@ -34,6 +40,11 @@ type ReconcilerOptions struct {
 
 // NewReconciler creates a new reconciler
 func NewReconciler(opts ReconcilerOptions) *Reconciler {
+	workerCount := 0
+	if opts.WorkerPool != nil {
+		workerCount = opts.WorkerPool.WorkerCount()
+	}
+
 	return &Reconciler{
 		logger:      opts.Logger,
 		copier:      opts.Copier,
@@ -41,6 +52,7 @@ func NewReconciler(opts ReconcilerOptions) *Reconciler {
 		metrics:     opts.Metrics,
 		dryRun:      opts.DryRun,
 		forceUpdate: opts.ForceUpdate,
+		workerCount: workerCount,
 	}
 }
 
@@ -48,8 +60,8 @@ func NewReconciler(opts ReconcilerOptions) *Reconciler {
 func (r *Reconciler) ReconcileRepository(
 	ctx context.Context,
 	rule ReplicationRule,
-	sourceClient common.RegistryClient,
-	destClient common.RegistryClient) error {
+	sourceClient interfaces.RegistryClient,
+	destClient interfaces.RegistryClient) error {
 
 	// Validate input parameters
 	if err := r.validateReconcileParams(rule, sourceClient, destClient); err != nil {
@@ -69,8 +81,8 @@ func (r *Reconciler) ReconcileRepository(
 // validateReconcileParams validates the input parameters for reconciliation
 func (r *Reconciler) validateReconcileParams(
 	rule ReplicationRule,
-	sourceClient common.RegistryClient,
-	destClient common.RegistryClient) error {
+	sourceClient interfaces.RegistryClient,
+	destClient interfaces.RegistryClient) error {
 
 	if rule.SourceRepository == "" {
 		return errors.InvalidInputf("source repository cannot be empty")
@@ -95,8 +107,8 @@ func (r *Reconciler) validateReconcileParams(
 func (r *Reconciler) getRepositoriesAndTags(
 	ctx context.Context,
 	rule ReplicationRule,
-	sourceClient common.RegistryClient,
-	destClient common.RegistryClient) (common.Repository, common.Repository, []string, map[string]bool, error) {
+	sourceClient interfaces.RegistryClient,
+	destClient interfaces.RegistryClient) (interfaces.Repository, interfaces.Repository, []string, map[string]bool, error) {
 
 	// Get the source repository
 	sourceRepo, err := sourceClient.GetRepository(ctx, rule.SourceRepository)
@@ -136,8 +148,8 @@ func (r *Reconciler) tagNeedsReplica(
 	ctx context.Context,
 	rule ReplicationRule,
 	tag string,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
 	destTagMap map[string]bool) (bool, error) {
 
 	// If the tag is not in destination, it needs replication
@@ -190,99 +202,95 @@ func (r *Reconciler) tagNeedsReplica(
 	return true, nil
 }
 
-// processTagFn returns a function to process a single tag replication task
-func (r *Reconciler) createTagProcessorFunc(
+// processTagTask processes a single tag replication task
+func (r *Reconciler) processTagTask(
 	ctx context.Context,
 	rule ReplicationRule,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
 	tag string,
-	wg *sync.WaitGroup,
-	copiedTags *int,
-	failedTags *int) func(context.Context) error {
+	results *util.Results) error {
 
-	return func(ctx context.Context) error {
-		defer wg.Done()
+	r.logger.Info("Copying tag", map[string]interface{}{
+		"source_repository":      rule.SourceRepository,
+		"destination_repository": rule.DestinationRepository,
+		"tag":                    tag,
+	})
 
-		r.logger.Info("Copying tag", map[string]interface{}{
-			"source_repository":      rule.SourceRepository,
-			"destination_repository": rule.DestinationRepository,
-			"tag":                    tag,
+	// Track metrics for this tag copy operation
+	if r.metrics != nil {
+		r.metrics.TagCopyStarted(rule.SourceRepository, rule.DestinationRepository, tag)
+	}
+
+	startTime := time.Now()
+
+	// Get references and options
+	srcRef, destRef, srcOpts, destOpts, err := r.prepareReferences(ctx, rule, sourceRepo, destRepo, tag)
+	if err != nil {
+		results.AddMetric("failedTags", 1)
+		return err
+	}
+
+	// Skip the actual copy in dry run mode
+	if r.dryRun {
+		r.logger.Info("Dry run - would copy image", map[string]interface{}{
+			"source_repo": sourceRepo.GetRepositoryName(),
+			"dest_repo":   destRepo.GetRepositoryName(),
+			"tag":         tag,
 		})
+		results.AddMetric("copiedTags", 1)
 
-		// Track metrics for this tag copy operation
 		if r.metrics != nil {
-			r.metrics.TagCopyStarted(rule.SourceRepository, rule.DestinationRepository, tag)
-		}
-
-		startTime := time.Now()
-
-		// Get references and options
-		srcRef, destRef, srcOpts, destOpts, err := r.prepareReferences(ctx, rule, sourceRepo, destRepo, tag)
-		if err != nil {
-			*failedTags++
-			return err
-		}
-
-		// Skip the actual copy in dry run mode
-		if r.dryRun {
-			r.logger.Info("Dry run - would copy image", map[string]interface{}{
-				"source_repo": sourceRepo.GetRepositoryName(),
-				"dest_repo":   destRepo.GetRepositoryName(),
-				"tag":         tag,
-			})
-			*copiedTags++
-
-			if r.metrics != nil {
-				r.metrics.TagCopyCompleted(rule.SourceRepository, rule.DestinationRepository, tag, 0)
-			}
-
-			return nil
-		}
-
-		// Perform the copy
-		copyResult, err := r.performCopy(ctx, rule, srcRef, destRef, srcOpts, destOpts, tag)
-		if err != nil {
-			*failedTags++
-			return err
-		}
-
-		// Log success
-		r.logger.Info("Successfully copied tag", map[string]interface{}{
-			"source_repository":      rule.SourceRepository,
-			"destination_repository": rule.DestinationRepository,
-			"tag":                    tag,
-			"bytes_transferred":      copyResult.Stats.BytesTransferred,
-			"layers":                 copyResult.Stats.Layers,
-			"duration":               time.Since(startTime),
-		})
-
-		*copiedTags++
-
-		// Update metrics
-		if r.metrics != nil {
-			r.metrics.TagCopyCompleted(
-				rule.SourceRepository,
-				rule.DestinationRepository,
-				tag,
-				copyResult.Stats.BytesTransferred,
-			)
+			r.metrics.TagCopyCompleted(rule.SourceRepository, rule.DestinationRepository, tag, 0)
 		}
 
 		return nil
 	}
+
+	// Perform the copy
+	copyResult, err := r.performCopy(ctx, rule, srcRef, destRef, srcOpts, destOpts, tag)
+	if err != nil {
+		results.AddMetric("failedTags", 1)
+		return err
+	}
+
+	// Log success
+	r.logger.Info("Successfully copied tag", map[string]interface{}{
+		"source_repository":      rule.SourceRepository,
+		"destination_repository": rule.DestinationRepository,
+		"tag":                    tag,
+		"bytes_transferred":      copyResult.Stats.BytesTransferred,
+		"layers":                 copyResult.Stats.Layers,
+		"duration":               time.Since(startTime),
+	})
+
+	results.AddMetric("copiedTags", 1)
+	results.AddMetric("bytesTransferred", copyResult.Stats.BytesTransferred)
+
+	// Update metrics
+	if r.metrics != nil {
+		r.metrics.TagCopyCompleted(
+			rule.SourceRepository,
+			rule.DestinationRepository,
+			tag,
+			copyResult.Stats.BytesTransferred,
+		)
+	}
+
+	return nil
 }
 
 // prepareReferences prepares the source and destination references and options
 func (r *Reconciler) prepareReferences(
 	ctx context.Context,
 	rule ReplicationRule,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
-	tag string) (srcRef, destRef interface{}, srcOpts, destOpts []interface{}, err error) {
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
+	tag string) (srcRef, destRef name.Reference, srcOpts, destOpts []remote.Option, err error) {
 
 	// Get source image reference
-	srcRef, err = sourceRepo.GetImageReference(tag)
+	var srcRefTemp name.Reference
+	srcRefRaw, err := sourceRepo.GetImageReference(tag)
 	if err != nil {
 		r.logger.Error("Failed to get source image reference", err, map[string]interface{}{
 			"source_repository": rule.SourceRepository,
@@ -295,9 +303,11 @@ func (r *Reconciler) prepareReferences(
 
 		return nil, nil, nil, nil, err
 	}
+	srcRefTemp = srcRefRaw
 
 	// Get destination image reference
-	destRef, err = destRepo.GetImageReference(tag)
+	var destRefTemp name.Reference
+	destRefRaw, err := destRepo.GetImageReference(tag)
 	if err != nil {
 		r.logger.Error("Failed to get destination image reference", err, map[string]interface{}{
 			"dest_repository": rule.DestinationRepository,
@@ -310,9 +320,10 @@ func (r *Reconciler) prepareReferences(
 
 		return nil, nil, nil, nil, err
 	}
+	destRefTemp = destRefRaw
 
 	// Get source and destination options
-	srcOpts, err = sourceRepo.GetRemoteOptions()
+	srcOptsRaw, err := sourceRepo.GetRemoteOptions()
 	if err != nil {
 		r.logger.Error("Failed to get source remote options", err, map[string]interface{}{
 			"source_repository": rule.SourceRepository,
@@ -326,7 +337,7 @@ func (r *Reconciler) prepareReferences(
 		return nil, nil, nil, nil, err
 	}
 
-	destOpts, err = destRepo.GetRemoteOptions()
+	destOptsRaw, err := destRepo.GetRemoteOptions()
 	if err != nil {
 		r.logger.Error("Failed to get destination remote options", err, map[string]interface{}{
 			"dest_repository": rule.DestinationRepository,
@@ -340,15 +351,15 @@ func (r *Reconciler) prepareReferences(
 		return nil, nil, nil, nil, err
 	}
 
-	return srcRef, destRef, srcOpts, destOpts, nil
+	return srcRefTemp, destRefTemp, srcOptsRaw, destOptsRaw, nil
 }
 
 // performCopy performs the actual copy operation
 func (r *Reconciler) performCopy(
 	ctx context.Context,
 	rule ReplicationRule,
-	srcRef, destRef interface{},
-	srcOpts, destOpts []interface{},
+	srcRef, destRef name.Reference,
+	srcOpts, destOpts []remote.Option,
 	tag string) (*copy.CopyResult, error) {
 
 	// Set up copy options
@@ -390,22 +401,30 @@ func (r *Reconciler) performCopy(
 func (r *Reconciler) processAndReplicateTags(
 	ctx context.Context,
 	rule ReplicationRule,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
 	sourceTags []string,
 	destTagMap map[string]bool) error {
 
-	var wg sync.WaitGroup
-	var totalTags, copiedTags, skippedTags, failedTags int
+	// Create a results collector for metrics
+	results := util.NewResults()
+	results.AddMetric("totalTags", 0)
+	results.AddMetric("skippedTags", 0)
+	results.AddMetric("copiedTags", 0)
+	results.AddMetric("failedTags", 0)
+	results.AddMetric("bytesTransferred", 0)
+
+	// Create a limited error group with the worker count as concurrency limit
+	g := util.NewLimitedErrGroup(ctx, r.workerCount)
 
 	// Process each source tag that matches the rule
 	for _, tag := range sourceTags {
 		if !ShouldReplicate(rule, rule.SourceRepository, tag) {
-			skippedTags++
+			results.AddMetric("skippedTags", 1)
 			continue
 		}
 
-		totalTags++
+		results.AddMetric("totalTags", 1)
 
 		// Check if the tag needs replication
 		needsReplica, err := r.tagNeedsReplica(ctx, rule, tag, sourceRepo, destRepo, destTagMap)
@@ -416,33 +435,33 @@ func (r *Reconciler) processAndReplicateTags(
 					"error": err.Error(),
 				})
 			}
-			skippedTags++
+			results.AddMetric("skippedTags", 1)
 			continue
 		}
 
-		// Copy the tag to the destination
-		wg.Add(1)
-		finalTag := tag // Create a copy for the closure
+		// Create local variable for tag to avoid closure issues
+		currentTag := tag
 
-		// Create the tag processor function
-		processTagFn := r.createTagProcessorFunc(ctx, rule, sourceRepo, destRepo, finalTag, &wg, &copiedTags, &failedTags)
-
-		// Run the tag processor
-		if r.workerPool == nil {
-			// Run synchronously if no worker pool
-			r.logger.Warn("WorkerPool is nil, running task synchronously", map[string]interface{}{
-				"tag": finalTag,
-			})
-			// Execute the function directly
-			go processTagFn(ctx)
-		} else {
-			// Submit to worker pool if available
-			r.workerPool.Submit(processTagFn)
-		}
+		// Submit the task to the errgroup
+		g.Go(func() error {
+			return r.processTagTask(ctx, rule, sourceRepo, destRepo, currentTag, results)
+		})
 	}
 
-	// Wait for all copy operations to complete
-	wg.Wait()
+	// Wait for all copy operations to complete and collect any errors
+	if err := g.Wait(); err != nil {
+		r.logger.Error("Error processing one or more tags", err, map[string]interface{}{
+			"source_repository":      rule.SourceRepository,
+			"destination_repository": rule.DestinationRepository,
+		})
+		return err
+	}
+
+	// Get metrics from the collector
+	totalTags := int(results.GetMetric("totalTags"))
+	copiedTags := int(results.GetMetric("copiedTags"))
+	skippedTags := int(results.GetMetric("skippedTags"))
+	failedTags := int(results.GetMetric("failedTags"))
 
 	// Log final summary and update metrics
 	r.logCompletionAndUpdateMetrics(rule, totalTags, copiedTags, skippedTags, failedTags)
@@ -482,7 +501,7 @@ func (r *Reconciler) logCompletionAndUpdateMetrics(
 func (r *Reconciler) ReconcileAllRepositories(
 	ctx context.Context,
 	rules []ReplicationRule,
-	registryClients map[string]common.RegistryClient) error {
+	registryClients map[string]interfaces.RegistryClient) error {
 
 	if ctx == nil {
 		return errors.InvalidInputf("context cannot be nil")

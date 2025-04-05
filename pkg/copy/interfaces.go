@@ -1,52 +1,28 @@
 package copy
 
 import (
-	"context"
-	"io"
+	"freightliner/pkg/interfaces"
+)
 
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+// Import types from the shared interfaces package for compatibility
+type (
+	RepositoryName        = interfaces.RepositoryName
+	ImageReferencer       = interfaces.ImageReferencer
+	RemoteOptionsProvider = interfaces.RemoteOptionsProvider
+	ImageGetter           = interfaces.ImageGetter
+	Manifest              = interfaces.Manifest
+	ManifestAccessor      = interfaces.ManifestAccessor
+	LayerAccessor         = interfaces.LayerAccessor
 )
 
 // Repository represents a container repository interface needed for copy operations
+// This is a local interface that defines exactly what operations the copy package
+// requires from a repository, following the Interface Segregation Principle.
+// It's intentionally more limited than interfaces.Repository.
 type Repository interface {
-	// GetImageReference returns a name.Reference for the given tag
-	GetImageReference(tag string) (name.Reference, error)
-
-	// GetName returns the name of the repository
-	GetName() string
-
-	// GetRemoteOptions returns options for remote operations
-	GetRemoteOptions() ([]remote.Option, error)
-
-	// GetImage retrieves the v1.Image for the given tag
-	GetImage(ctx context.Context, tag string) (v1.Image, error)
-}
-
-// ManifestAccessor provides access to image manifests
-type ManifestAccessor interface {
-	// GetManifest returns the manifest for the given tag
-	GetManifest(ctx context.Context, tag string) (*Manifest, error)
-
-	// PutManifest uploads a manifest with the given tag
-	PutManifest(ctx context.Context, tag string, manifest *Manifest) error
-}
-
-// Manifest represents a container image manifest
-type Manifest struct {
-	// Content is the raw manifest content
-	Content []byte
-
-	// MediaType is the content type of the manifest
-	MediaType string
-
-	// Digest is the SHA256 digest of the manifest
-	Digest string
-}
-
-// LayerAccessor provides access to image layers
-type LayerAccessor interface {
-	// GetLayerReader returns a reader for the layer with the given digest
-	GetLayerReader(ctx context.Context, digest string) (io.ReadCloser, error)
+	RepositoryName
+	ImageReferencer
+	RemoteOptionsProvider
+	ImageGetter
+	ManifestAccessor
 }

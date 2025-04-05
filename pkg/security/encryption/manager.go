@@ -7,9 +7,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"freightliner/pkg/helper/errors"
 	"io"
 	"sync"
+
+	"freightliner/pkg/helper/errors"
 )
 
 // Manager handles encryption and decryption operations using cloud KMS providers
@@ -29,6 +30,14 @@ func NewManager(providers map[string]Provider, config EncryptionConfig) *Manager
 
 // RegisterProvider adds a provider to the manager
 func (m *Manager) RegisterProvider(name string, provider Provider) {
+	// Validate input before locking to fail fast
+	if name == "" {
+		return // Silently ignore empty provider names
+	}
+	if provider == nil {
+		return // Silently ignore nil providers
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.providers[name] = provider
@@ -36,6 +45,11 @@ func (m *Manager) RegisterProvider(name string, provider Provider) {
 
 // GetProvider returns a provider by name
 func (m *Manager) GetProvider(name string) (Provider, error) {
+	// Validate input before locking to fail fast
+	if name == "" {
+		return nil, errors.InvalidInputf("provider name cannot be empty")
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -49,6 +63,7 @@ func (m *Manager) GetProvider(name string) (Provider, error) {
 
 // GetDefaultProvider returns the default provider configured for this manager
 func (m *Manager) GetDefaultProvider() (Provider, error) {
+	// Validate configuration before attempting to get provider
 	if m.config.Provider == "" {
 		return nil, errors.InvalidInputf("no default provider configured")
 	}
@@ -446,6 +461,8 @@ func (m *Manager) DecryptBase64(ctx context.Context, data string, opts *DecryptO
 
 // Close closes all providers
 func (m *Manager) Close() error {
+	// No input validation needed as this is a no-parameter method
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

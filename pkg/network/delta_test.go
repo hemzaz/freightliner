@@ -5,24 +5,25 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
 	"io"
 	"math"
 	"strings"
 	"testing"
 	"time"
 
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
+
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
-// MockRepository implements the common.Repository interface for testing
+// MockRepository implements the interfaces.Repository interface for testing
 type MockRepository struct {
 	Tags             map[string][]byte
-	manifests        map[string]*common.Manifest
+	manifests        map[string]*interfaces.Manifest
 	putManifestCalls int
 	getManifestCalls int
 	name             string
@@ -31,7 +32,7 @@ type MockRepository struct {
 func NewMockRepository() *MockRepository {
 	return &MockRepository{
 		Tags:      make(map[string][]byte),
-		manifests: make(map[string]*common.Manifest),
+		manifests: make(map[string]*interfaces.Manifest),
 		name:      "mock/repository",
 	}
 }
@@ -58,7 +59,7 @@ func (m *MockRepository) GetImage(ctx context.Context, tag string) (v1.Image, er
 	return nil, errors.NotImplementedf("GetImage not implemented in tests")
 }
 
-func (m *MockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {
+func (m *MockRepository) GetManifest(ctx context.Context, tag string) (*interfaces.Manifest, error) {
 	m.getManifestCalls++
 
 	// Handle digest-based tags
@@ -79,11 +80,11 @@ func (m *MockRepository) GetManifest(ctx context.Context, tag string) (*common.M
 	return manifest, nil
 }
 
-func (m *MockRepository) PutManifest(ctx context.Context, tag string, manifest *common.Manifest) error {
+func (m *MockRepository) PutManifest(ctx context.Context, tag string, manifest *interfaces.Manifest) error {
 	m.putManifestCalls++
 
 	if m.manifests == nil {
-		m.manifests = make(map[string]*common.Manifest)
+		m.manifests = make(map[string]*interfaces.Manifest)
 	}
 
 	m.manifests[tag] = manifest
@@ -95,10 +96,10 @@ func (m *MockRepository) PutManifest2(tag string, content []byte, mediaType stri
 	m.putManifestCalls++
 
 	if m.manifests == nil {
-		m.manifests = make(map[string]*common.Manifest)
+		m.manifests = make(map[string]*interfaces.Manifest)
 	}
 
-	m.manifests[tag] = &common.Manifest{
+	m.manifests[tag] = &interfaces.Manifest{
 		Content:   content,
 		MediaType: mediaType,
 		Digest:    "sha256:" + tag,

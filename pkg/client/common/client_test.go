@@ -8,11 +8,11 @@ import (
 )
 
 type mockRegistry struct {
-	repositories map[string]Repository
+	repositories map[string]interface{}
 	listError    error
 }
 
-func (m *mockRegistry) GetRepository(name string) (Repository, error) {
+func (m *mockRegistry) GetRepository(name string) (interface{}, error) {
 	if m.repositories == nil {
 		return nil, errors.New("mock registry not initialized")
 	}

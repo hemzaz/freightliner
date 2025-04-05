@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"freightliner/pkg/client/common"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -22,7 +22,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 )
 
-// ECRServiceAPI interface for AWS ECR operations
+// ECRServiceAPI is an interface for AWS ECR operations
+// This interface is defined in the same package as its implementation because
+// it represents an adapter for a third-party service and is only used internally.
+// It helps with testing by allowing us to mock the AWS ECR API.
 type ECRServiceAPI interface {
 	ListImages(ctx context.Context, params *awsecr.ListImagesInput, optFns ...func(*awsecr.Options)) (*awsecr.ListImagesOutput, error)
 	BatchGetImage(ctx context.Context, params *awsecr.BatchGetImageInput, optFns ...func(*awsecr.Options)) (*awsecr.BatchGetImageOutput, error)
@@ -232,7 +235,7 @@ func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string,
 }
 
 // GetRepository returns a repository by name
-func (c *Client) GetRepository(ctx context.Context, repoName string) (common.Repository, error) {
+func (c *Client) GetRepository(ctx context.Context, repoName string) (interfaces.Repository, error) {
 	if repoName == "" {
 		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}
@@ -252,7 +255,7 @@ func (c *Client) GetRepository(ctx context.Context, repoName string) (common.Rep
 }
 
 // CreateRepository creates a new repository in ECR
-func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map[string]string) (common.Repository, error) {
+func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map[string]string) (interfaces.Repository, error) {
 	if repoName == "" {
 		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}

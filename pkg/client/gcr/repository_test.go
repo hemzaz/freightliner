@@ -3,8 +3,9 @@ package gcr
 import (
 	"context"
 	"errors"
-	"freightliner/pkg/client/common"
 	"testing"
+
+	"freightliner/pkg/interfaces"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -341,7 +342,7 @@ func TestRepositoryPutManifest(t *testing.T) {
 				remoteFunc: remoteFunc,
 			}
 
-			manifest := &common.Manifest{
+			manifest := &interfaces.Manifest{
 				Content:   tc.manifest,
 				MediaType: tc.mediaType,
 				Digest:    "sha256:test",

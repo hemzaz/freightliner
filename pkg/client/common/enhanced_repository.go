@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 // EnhancedRepositoryOptions provides options for creating an enhanced repository
@@ -105,7 +104,7 @@ func (r *EnhancedRepository) GetImageSummary(ctx context.Context, reference stri
 	}
 
 	// Create tag reference
-	tag, err := r.CreateTagReference(reference)
+	_, err := r.CreateTagReference(reference)
 	if err != nil {
 		return ImageSummary{}, err
 	}
@@ -146,7 +145,7 @@ func (r *EnhancedRepository) GetImageSummary(ctx context.Context, reference stri
 	summary := ImageSummary{
 		Digest:    digest.String(),
 		Size:      size,
-		MediaType: manifest.MediaType,
+		MediaType: string(manifest.MediaType),
 		Layers:    len(manifest.Layers),
 	}
 
@@ -165,15 +164,23 @@ func (r *EnhancedRepository) GetImageSummary(ctx context.Context, reference stri
 }
 
 // ListImageManifests lists all manifests in the repository
-func (r *EnhancedRepository) ListImageManifests(ctx context.Context) ([]v1.Descriptor, error) {
-	// This is a common operation for listing all images
-	return remote.List(r.repository)
+func (r *EnhancedRepository) ListImageManifests(ctx context.Context) ([]string, error) {
+	// This method should be implemented by derived repositories
+	return nil, errors.NotImplementedf("ListImageManifests must be implemented by specific repository implementations")
 }
 
 // CopyTag copies a tag from another repository
-func (r *EnhancedRepository) CopyTag(ctx context.Context, sourceRepo Repository, sourceTag, destTag string) error {
+// CopyTag copies a tag from another repository
+func (r *EnhancedRepository) CopyTag(ctx context.Context, sourceRepo interface{}, sourceTag, destTag string) error {
+	// Convert sourceRepo to the expected interface
+	sourceRepository, ok := sourceRepo.(interface {
+		GetTag(ctx context.Context, tag string) (v1.Image, error)
+	})
+	if !ok {
+		return errors.InvalidInputf("source repository is not compatible")
+	}
 	// Get the source image
-	sourceImage, err := sourceRepo.GetTag(ctx, sourceTag)
+	sourceImage, err := sourceRepository.GetTag(ctx, sourceTag)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get source image: %s", sourceTag)
 	}

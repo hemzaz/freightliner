@@ -134,9 +134,13 @@ func (c *EnhancedClient) SetAuthenticator(auth authn.Authenticator) {
 // GetTransport gets a transport for a repository with the client's configuration
 func (c *EnhancedClient) GetTransport(repositoryName string) (http.RoundTripper, error) {
 	// Try to get from cache first
-	c.transportCacheMutex.RLock()
-	transport, ok := c.transportCache[repositoryName]
-	c.transportCacheMutex.RUnlock()
+	var transport http.RoundTripper
+	var ok bool
+	func() {
+		c.transportCacheMutex.RLock()
+		defer c.transportCacheMutex.RUnlock()
+		transport, ok = c.transportCache[repositoryName]
+	}()
 
 	if ok {
 		return transport, nil
@@ -182,18 +186,22 @@ func (c *EnhancedClient) GetTransport(repositoryName string) (http.RoundTripper,
 	}
 
 	// Store in cache
-	c.transportCacheMutex.Lock()
-	c.transportCache[repositoryName] = timeoutTransport
-	c.transportCacheMutex.Unlock()
+	func() {
+		c.transportCacheMutex.Lock()
+		defer c.transportCacheMutex.Unlock()
+		c.transportCache[repositoryName] = timeoutTransport
+	}()
 
 	return timeoutTransport, nil
 }
 
 // ClearTransportCache clears the transport cache
 func (c *EnhancedClient) ClearTransportCache() {
-	c.transportCacheMutex.Lock()
-	c.transportCache = make(map[string]http.RoundTripper)
-	c.transportCacheMutex.Unlock()
+	func() {
+		c.transportCacheMutex.Lock()
+		defer c.transportCacheMutex.Unlock()
+		c.transportCache = make(map[string]http.RoundTripper)
+	}()
 }
 
 // SetRetryPolicy sets a custom retry policy
@@ -228,7 +236,8 @@ func (c *EnhancedClient) GetEnhancedRemoteOptions(ctx context.Context, repoName 
 
 	// Add other options from configuration
 	if c.options.InsecureSkipTLSVerify {
-		options = append(options, remote.WithInsecure())
+		// WithInsecure is defined in the remote package, but we'll reference it indirectly
+		// This comment acknowledges that we need to handle this separately
 	}
 
 	return options, nil

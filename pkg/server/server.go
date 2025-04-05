@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"freightliner/pkg/config"
-	"freightliner/pkg/helper/log"
-	"freightliner/pkg/replication"
-	"freightliner/pkg/service"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"freightliner/pkg/config"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/replication"
+	"freightliner/pkg/service"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -53,13 +54,8 @@ func NewServer(ctx context.Context, cfg *config.Config,
 		})
 	}
 
-	poolOpts := replication.WorkerPoolOptions{
-		Workers:   workerCount,
-		Logger:    logger,
-		QueueSize: 100, // Buffer up to 100 tasks
-	}
-
-	workerPool := replication.NewWorkerPool(poolOpts)
+	// Create worker pool
+	workerPool := replication.NewWorkerPool(workerCount, logger)
 
 	// Create job manager
 	jobManager := NewJobManager()
@@ -201,7 +197,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		allowOrigin := "*"
 
 		if len(s.cfg.Server.AllowedOrigins) > 0 && s.cfg.Server.AllowedOrigins[0] != "*" {
-			allowOrigin = ""
+			allowOrigin := ""
 			for _, allowed := range s.cfg.Server.AllowedOrigins {
 				if allowed == origin {
 					allowOrigin = origin

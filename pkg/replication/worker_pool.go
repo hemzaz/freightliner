@@ -12,7 +12,7 @@ import (
 // WorkerPool manages a pool of workers for parallel processing
 type WorkerPool struct {
 	workers     int
-	jobQueue    chan Job
+	jobQueue    chan WorkerJob
 	results     chan JobResult
 	waitGroup   sync.WaitGroup
 	stopContext context.Context
@@ -20,8 +20,8 @@ type WorkerPool struct {
 	logger      *log.Logger
 }
 
-// Job represents a unit of work to be processed by a worker
-type Job struct {
+// WorkerJob represents a unit of work to be processed by a worker
+type WorkerJob struct {
 	ID       string
 	Task     TaskFunc
 	Priority int
@@ -51,7 +51,7 @@ func NewWorkerPool(workerCount int, logger *log.Logger) *WorkerPool {
 
 	return &WorkerPool{
 		workers:     workerCount,
-		jobQueue:    make(chan Job, workerCount*10),
+		jobQueue:    make(chan WorkerJob, workerCount*10),
 		results:     make(chan JobResult, workerCount*10),
 		stopContext: ctx,
 		stopFunc:    cancel,
@@ -77,7 +77,7 @@ func (p *WorkerPool) Start() {
 }
 
 // handleJobFromQueue processes a job from the queue
-func (p *WorkerPool) handleJobFromQueue(workerID int, job Job, ok bool) bool {
+func (p *WorkerPool) handleJobFromQueue(workerID int, job WorkerJob, ok bool) bool {
 	if !ok {
 		p.logger.Debug("Worker stopped by closed job queue", map[string]interface{}{
 			"worker_id": workerID,
@@ -113,7 +113,7 @@ func (p *WorkerPool) worker(id int) {
 
 // setupJobContext creates a job context that will be canceled if either the job's context
 // or the pool's context is canceled
-func (p *WorkerPool) setupJobContext(job Job) (context.Context, context.CancelFunc) {
+func (p *WorkerPool) setupJobContext(job WorkerJob) (context.Context, context.CancelFunc) {
 	jobCtx, cancel := context.WithCancel(job.Context)
 
 	// Setup cancellation if the pool's context is canceled
@@ -130,7 +130,7 @@ func (p *WorkerPool) setupJobContext(job Job) (context.Context, context.CancelFu
 }
 
 // executeJob runs the job's task and measures execution time
-func (p *WorkerPool) executeJob(ctx context.Context, job Job) (time.Duration, error) {
+func (p *WorkerPool) executeJob(ctx context.Context, job WorkerJob) (time.Duration, error) {
 	startTime := time.Now()
 	err := job.Task(ctx)
 	duration := time.Since(startTime)
@@ -168,7 +168,7 @@ func (p *WorkerPool) sendJobResult(result JobResult) {
 }
 
 // processJob processes a single job
-func (p *WorkerPool) processJob(workerID int, job Job) {
+func (p *WorkerPool) processJob(workerID int, job WorkerJob) {
 	p.logger.Debug("Processing job", map[string]interface{}{
 		"worker_id": workerID,
 		"job_id":    job.ID,
@@ -196,12 +196,12 @@ func (p *WorkerPool) processJob(workerID int, job Job) {
 }
 
 // createJob creates a new job with the given parameters
-func (p *WorkerPool) createJob(id string, task TaskFunc, priority int, ctx context.Context) Job {
+func (p *WorkerPool) createJob(id string, task TaskFunc, priority int, ctx context.Context) WorkerJob {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	return Job{
+	return WorkerJob{
 		ID:       id,
 		Task:     task,
 		Priority: priority,
@@ -210,7 +210,7 @@ func (p *WorkerPool) createJob(id string, task TaskFunc, priority int, ctx conte
 }
 
 // enqueueJob adds a job to the job queue
-func (p *WorkerPool) enqueueJob(job Job) error {
+func (p *WorkerPool) enqueueJob(job WorkerJob) error {
 	select {
 	case <-p.stopContext.Done():
 		return errors.New("worker pool is stopped")

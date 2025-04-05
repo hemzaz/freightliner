@@ -2,11 +2,12 @@ package tree
 
 import (
 	"context"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/tree/checkpoint"
 	"sync"
 	"time"
+
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/interfaces"
+	"freightliner/pkg/tree/checkpoint"
 )
 
 // ResumeOptions configures the replication resume process
@@ -45,8 +46,8 @@ func (t *TreeReplicator) ListResumableReplications() ([]checkpoint.ResumableChec
 // ResumeTreeReplication resumes a previously interrupted tree replication
 func (t *TreeReplicator) ResumeTreeReplication(
 	ctx context.Context,
-	sourceClient common.RegistryClient,
-	destClient common.RegistryClient,
+	sourceClient interfaces.RegistryClient,
+	destClient interfaces.RegistryClient,
 	opts ResumeOptions,
 ) (*TreeReplicationResult, error) {
 	start := time.Now()

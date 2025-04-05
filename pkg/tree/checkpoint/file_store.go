@@ -2,12 +2,13 @@ package checkpoint
 
 import (
 	"encoding/json"
-	"freightliner/pkg/helper/errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"freightliner/pkg/helper/errors"
 )
 
 // FileStore implements the CheckpointStore interface using the filesystem
@@ -43,12 +44,13 @@ func NewFileStore(directory string) (*FileStore, error) {
 
 // SaveCheckpoint saves a checkpoint to the store
 func (s *FileStore) SaveCheckpoint(checkpoint *TreeCheckpoint) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Validate input before locking to fail fast
 	if checkpoint == nil {
 		return errors.InvalidInputf("checkpoint cannot be nil")
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Update the checkpoint timestamp
 	checkpoint.LastUpdated = time.Now()
@@ -79,12 +81,13 @@ func (s *FileStore) LoadCheckpoint(id string) (*TreeCheckpoint, error) {
 
 // GetCheckpoint retrieves a checkpoint from the store
 func (s *FileStore) GetCheckpoint(id string) (*TreeCheckpoint, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Validate input before locking to fail fast
 	if id == "" {
 		return nil, errors.InvalidInputf("checkpoint ID cannot be empty")
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Read the checkpoint file
 	filename := filepath.Join(s.directory, id+".json")
@@ -108,12 +111,13 @@ func (s *FileStore) GetCheckpoint(id string) (*TreeCheckpoint, error) {
 
 // CheckpointExists checks if a checkpoint with the given ID exists
 func (s *FileStore) CheckpointExists(id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Validate input before locking to fail fast
 	if id == "" {
 		return false, errors.InvalidInputf("checkpoint ID cannot be empty")
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Check if the checkpoint file exists
 	filename := filepath.Join(s.directory, id+".json")
@@ -164,12 +168,13 @@ func (s *FileStore) ListCheckpoints() ([]*TreeCheckpoint, error) {
 
 // DeleteCheckpoint deletes a checkpoint from the store
 func (s *FileStore) DeleteCheckpoint(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Validate input before locking to fail fast
 	if id == "" {
 		return errors.InvalidInputf("checkpoint ID cannot be empty")
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Delete the checkpoint file
 	filename := filepath.Join(s.directory, id+".json")
@@ -186,12 +191,13 @@ func (s *FileStore) DeleteCheckpoint(id string) error {
 
 // PruneCheckpoints deletes checkpoints older than the given duration
 func (s *FileStore) PruneCheckpoints(olderThan time.Duration) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Validate input before locking to fail fast
 	if olderThan <= 0 {
 		return 0, errors.InvalidInputf("duration must be positive")
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// List all checkpoints
 	checkpoints, err := s.listCheckpointsUnlocked()

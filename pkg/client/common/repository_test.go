@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"freightliner/pkg/interfaces"
+
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -16,7 +18,7 @@ import (
 type testMockRepository struct {
 	name        string
 	tags        []string
-	manifests   map[string]*Manifest
+	manifests   map[string]*interfaces.Manifest
 	layers      map[string]string // digest -> content
 	listError   error
 	getError    error
@@ -39,7 +41,7 @@ func (r *testMockRepository) ListTags(ctx context.Context) ([]string, error) {
 	return r.tags, nil
 }
 
-func (r *testMockRepository) GetManifest(ctx context.Context, tag string) (*Manifest, error) {
+func (r *testMockRepository) GetManifest(ctx context.Context, tag string) (*interfaces.Manifest, error) {
 	if r.getError != nil {
 		return nil, r.getError
 	}
@@ -52,13 +54,13 @@ func (r *testMockRepository) GetManifest(ctx context.Context, tag string) (*Mani
 	return manifest, nil
 }
 
-func (r *testMockRepository) PutManifest(ctx context.Context, tag string, manifest *Manifest) error {
+func (r *testMockRepository) PutManifest(ctx context.Context, tag string, manifest *interfaces.Manifest) error {
 	if r.putError != nil {
 		return r.putError
 	}
 
 	if r.manifests == nil {
-		r.manifests = make(map[string]*Manifest)
+		r.manifests = make(map[string]*interfaces.Manifest)
 	}
 
 	r.manifests[tag] = manifest

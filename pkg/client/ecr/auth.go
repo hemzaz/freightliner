@@ -4,14 +4,20 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"freightliner/pkg/helper/errors"
 	"strings"
+
+	"freightliner/pkg/helper/errors"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 )
+
+// ECRAPI defines the interface for ECR API operations needed by this package
+type ECRAPI interface {
+	GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
+}
 
 // ECRAuthenticator implements the go-containerregistry authn.Authenticator interface for ECR
 type ECRAuthenticator struct {

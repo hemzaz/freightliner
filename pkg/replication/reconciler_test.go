@@ -3,15 +3,16 @@ package replication
 import (
 	"context"
 	stderrors "errors"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/copy"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
-	"freightliner/pkg/metrics"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"freightliner/pkg/copy"
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
+	"freightliner/pkg/metrics"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -20,11 +21,11 @@ import (
 
 // Mock registry client
 type mockRegistryClient struct {
-	repositories map[string]common.Repository
+	repositories map[string]interfaces.Repository
 	listError    error
 }
 
-func (m *mockRegistryClient) GetRepository(ctx context.Context, name string) (common.Repository, error) {
+func (m *mockRegistryClient) GetRepository(ctx context.Context, name string) (interfaces.Repository, error) {
 	if m.listError != nil {
 		return nil, m.listError
 	}
@@ -58,7 +59,7 @@ func (m *mockRegistryClient) GetRegistryName() string {
 type mockRepository struct {
 	name      string
 	tags      []string
-	manifests map[string]*common.Manifest
+	manifests map[string]*interfaces.Manifest
 	listError error
 	getError  error
 	putError  error
@@ -91,26 +92,26 @@ func (m *mockRepository) GetImage(ctx context.Context, tag string) (v1.Image, er
 	return nil, errors.NotImplementedf("GetImage not implemented in mockRepository")
 }
 
-func (m *mockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {
+func (m *mockRepository) GetManifest(ctx context.Context, tag string) (*interfaces.Manifest, error) {
 	if m.getError != nil {
 		return nil, m.getError
 	}
 
 	manifest, exists := m.manifests[tag]
 	if !exists {
-		return nil, common.NewRegistryError("manifest not found", common.ErrNotFound)
+		return nil, errors.NotFoundf("manifest not found")
 	}
 
 	return manifest, nil
 }
 
-func (m *mockRepository) PutManifest(ctx context.Context, tag string, manifest *common.Manifest) error {
+func (m *mockRepository) PutManifest(ctx context.Context, tag string, manifest *interfaces.Manifest) error {
 	if m.putError != nil {
 		return m.putError
 	}
 
 	if m.manifests == nil {
-		m.manifests = make(map[string]*common.Manifest)
+		m.manifests = make(map[string]*interfaces.Manifest)
 	}
 
 	m.manifests[tag] = manifest
@@ -167,7 +168,7 @@ type mockCopier struct {
 	copiedTags []string
 }
 
-func (m *mockCopier) CopyTag(ctx context.Context, sourceRepo, destRepo common.Repository, tag string, dryRun bool) error {
+func (m *mockCopier) CopyTag(ctx context.Context, sourceRepo, destRepo interfaces.Repository, tag string, dryRun bool) error {
 	if m.copyError != nil {
 		return m.copyError
 	}
@@ -284,8 +285,8 @@ func (m *mockMetrics) TagCopyError(sourceRepo, destRepo, tag string, err error) 
 type ReconcileConfig struct {
 	SourceRegistry string
 	DestRegistry   string
-	SourceClient   common.RegistryClient
-	DestClient     common.RegistryClient
+	SourceClient   interfaces.RegistryClient
+	DestClient     interfaces.RegistryClient
 	Copier         *copy.Copier // Use the real copier type
 	DryRun         bool
 }
@@ -322,7 +323,7 @@ func TestReconcileRepository(t *testing.T) {
 			sourceRepo: mockRepository{
 				name: "test/repo",
 				tags: []string{"latest", "v1.0", "v2.0"},
-				manifests: map[string]*common.Manifest{
+				manifests: map[string]*interfaces.Manifest{
 					"latest": {Content: []byte("manifest1"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v1.0":   {Content: []byte("manifest2"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v2.0":   {Content: []byte("manifest3"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
@@ -331,7 +332,7 @@ func TestReconcileRepository(t *testing.T) {
 			destRepo: mockRepository{
 				name:      "test/repo",
 				tags:      []string{},
-				manifests: map[string]*common.Manifest{},
+				manifests: map[string]*interfaces.Manifest{},
 			},
 			copyError:    nil,
 			expectCopies: 3,
@@ -342,7 +343,7 @@ func TestReconcileRepository(t *testing.T) {
 			sourceRepo: mockRepository{
 				name: "test/repo",
 				tags: []string{"latest", "v1.0", "v2.0"},
-				manifests: map[string]*common.Manifest{
+				manifests: map[string]*interfaces.Manifest{
 					"latest": {Content: []byte("manifest1"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v1.0":   {Content: []byte("manifest2"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v2.0":   {Content: []byte("manifest3"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
@@ -351,7 +352,7 @@ func TestReconcileRepository(t *testing.T) {
 			destRepo: mockRepository{
 				name: "test/repo",
 				tags: []string{"latest"},
-				manifests: map[string]*common.Manifest{
+				manifests: map[string]*interfaces.Manifest{
 					"latest": {Content: []byte("manifest1"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 				},
 			},
@@ -364,7 +365,7 @@ func TestReconcileRepository(t *testing.T) {
 			sourceRepo: mockRepository{
 				name: "test/repo",
 				tags: []string{"latest", "v1.0", "v2.0"},
-				manifests: map[string]*common.Manifest{
+				manifests: map[string]*interfaces.Manifest{
 					"latest": {Content: []byte("manifest1"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v1.0":   {Content: []byte("manifest2"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v2.0":   {Content: []byte("manifest3"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
@@ -373,7 +374,7 @@ func TestReconcileRepository(t *testing.T) {
 			destRepo: mockRepository{
 				name: "test/repo",
 				tags: []string{"latest", "v1.0", "v2.0"},
-				manifests: map[string]*common.Manifest{
+				manifests: map[string]*interfaces.Manifest{
 					"latest": {Content: []byte("manifest1"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v1.0":   {Content: []byte("manifest2"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 					"v2.0":   {Content: []byte("manifest3"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
@@ -402,13 +403,13 @@ func TestReconcileRepository(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock clients
 			sourceClient := &mockRegistryClient{
-				repositories: map[string]common.Repository{
+				repositories: map[string]interfaces.Repository{
 					tt.sourceRepo.name: &tt.sourceRepo,
 				},
 			}
 
 			destClient := &mockRegistryClient{
-				repositories: map[string]common.Repository{
+				repositories: map[string]interfaces.Repository{
 					tt.destRepo.name: &tt.destRepo,
 				},
 			}
@@ -493,7 +494,7 @@ func TestReconcile(t *testing.T) {
 	sourceRepo := mockRepository{
 		name: "test/repo",
 		tags: []string{"latest", "v1.0"},
-		manifests: map[string]*common.Manifest{
+		manifests: map[string]*interfaces.Manifest{
 			"latest": {Content: []byte("manifest1"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 			"v1.0":   {Content: []byte("manifest2"), MediaType: "application/vnd.docker.distribution.manifest.v2+json"},
 		},
@@ -502,18 +503,18 @@ func TestReconcile(t *testing.T) {
 	destRepo := mockRepository{
 		name:      "test/repo",
 		tags:      []string{},
-		manifests: map[string]*common.Manifest{},
+		manifests: map[string]*interfaces.Manifest{},
 	}
 
 	// Create mock clients
 	sourceClient := &mockRegistryClient{
-		repositories: map[string]common.Repository{
+		repositories: map[string]interfaces.Repository{
 			sourceRepo.name: &sourceRepo,
 		},
 	}
 
 	destClient := &mockRegistryClient{
-		repositories: map[string]common.Repository{
+		repositories: map[string]interfaces.Repository{
 			destRepo.name: &destRepo,
 		},
 	}

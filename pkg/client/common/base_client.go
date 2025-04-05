@@ -20,7 +20,7 @@ type BaseClient struct {
 
 	// Cache for repositories to avoid recreating them
 	repositoriesMutex sync.RWMutex
-	repositories      map[string]Repository
+	repositories      map[string]interface{}
 }
 
 // BaseClientOptions provides options for creating a base client
@@ -39,7 +39,7 @@ func NewBaseClient(opts BaseClientOptions) *BaseClient {
 		registryName: opts.RegistryName,
 		util:         NewRegistryUtil(opts.Logger),
 		logger:       opts.Logger,
-		repositories: make(map[string]Repository),
+		repositories: make(map[string]interface{}),
 	}
 }
 
@@ -49,22 +49,26 @@ func (c *BaseClient) GetRegistryName() string {
 }
 
 // GetRepository returns a repository by name with caching
-func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (Repository, error) {
+func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (interface{}, error) {
 	if repoName == "" {
 		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}
 
 	// Check the cache first
-	c.repositoriesMutex.RLock()
-	repo, ok := c.repositories[repoName]
-	c.repositoriesMutex.RUnlock()
+	var repo interface{}
+	var ok bool
+	func() {
+		c.repositoriesMutex.RLock()
+		defer c.repositoriesMutex.RUnlock()
+		repo, ok = c.repositories[repoName]
+	}()
 
 	if ok {
 		return repo, nil
 	}
 
 	// Create a proper repository reference
-	repository, err := c.util.CreateRepositoryReference(c.registryName, repoName)
+	_, err := c.util.CreateRepositoryReference(c.registryName, repoName)
 	if err != nil {
 		return nil, err
 	}
@@ -75,33 +79,39 @@ func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (Reposi
 }
 
 // GetCachedRepository gets a repository from the cache or creates a new one
-func (c *BaseClient) GetCachedRepository(ctx context.Context, repoName string, factory func(name.Repository) Repository) (Repository, error) {
+func (c *BaseClient) GetCachedRepository(ctx context.Context, repoName string, factory func(name.Repository) interface{}) (interface{}, error) {
 	if repoName == "" {
 		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}
 
 	// Check the cache first
-	c.repositoriesMutex.RLock()
-	repo, ok := c.repositories[repoName]
-	c.repositoriesMutex.RUnlock()
+	var repo interface{}
+	var ok bool
+	func() {
+		c.repositoriesMutex.RLock()
+		defer c.repositoriesMutex.RUnlock()
+		repo, ok = c.repositories[repoName]
+	}()
 
 	if ok {
 		return repo, nil
 	}
 
 	// Create a proper repository reference
-	repository, err := c.util.CreateRepositoryReference(c.registryName, repoName)
+	repo_ref, err := c.util.CreateRepositoryReference(c.registryName, repoName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create the repository using the factory function
-	repo = factory(repository)
+	repo = factory(repo_ref)
 
 	// Cache the repository
-	c.repositoriesMutex.Lock()
-	c.repositories[repoName] = repo
-	c.repositoriesMutex.Unlock()
+	func() {
+		c.repositoriesMutex.Lock()
+		defer c.repositoriesMutex.Unlock()
+		c.repositories[repoName] = repo
+	}()
 
 	return repo, nil
 }

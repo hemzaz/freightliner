@@ -2,11 +2,12 @@ package tree
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/tree/checkpoint"
-	"testing"
-	"time"
 )
 
 func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryClient, *MockRegistryClient, string) {
@@ -66,11 +67,13 @@ func TestResumeTreeReplication(t *testing.T) {
 	// Run replication
 	result, err := replicator.ReplicateTree(
 		ctx,
-		sourceRegistry,
-		destRegistry,
-		"project",
-		"mirror/project",
-		false,
+		ReplicateTreeOptions{
+			SourceClient:   sourceRegistry,
+			DestClient:     destRegistry,
+			SourcePrefix:   "project",
+			DestPrefix:     "mirror/project",
+			ForceOverwrite: false,
+		},
 	)
 
 	// We don't care if there's an error or not, as long as we get a checkpoint ID
@@ -143,11 +146,13 @@ func TestListResumableReplications(t *testing.T) {
 	// Run replication
 	_, err := replicator.ReplicateTree(
 		ctx,
-		sourceRegistry,
-		destRegistry,
-		"project",
-		"mirror/project",
-		false,
+		ReplicateTreeOptions{
+			SourceClient:   sourceRegistry,
+			DestClient:     destRegistry,
+			SourcePrefix:   "project",
+			DestPrefix:     "mirror/project",
+			ForceOverwrite: false,
+		},
 	)
 
 	// We don't care if there's an error or not

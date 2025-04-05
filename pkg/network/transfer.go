@@ -2,11 +2,12 @@ package network
 
 import (
 	"context"
-	"freightliner/pkg/client/common"
+	"time"
+
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/helper/util"
-	"time"
+	"freightliner/pkg/interfaces"
 )
 
 // TransferOptions configures the network optimization behavior
@@ -82,8 +83,8 @@ func NewTransferManager(opts TransferOptions, logger *log.Logger) (*TransferMana
 // TransferBlob transfers a single blob between repositories
 func (t *TransferManager) TransferBlob(
 	ctx context.Context,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
 	digest string,
 ) (*TransferStats, error) {
 	if sourceRepo == nil {
@@ -120,8 +121,8 @@ func (t *TransferManager) TransferBlob(
 // transferBlobInternal performs the actual blob transfer
 func (t *TransferManager) transferBlobInternal(
 	ctx context.Context,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
 	digest string,
 	stats *TransferStats,
 ) error {
@@ -152,8 +153,8 @@ func (t *TransferManager) transferBlobInternal(
 	// For now, simulate the transfer
 	t.logger.Info("Transferring blob", map[string]interface{}{
 		"digest": digest,
-		"source": sourceRepo.GetName(),
-		"dest":   destRepo.GetName(),
+		"source": sourceRepo.GetRepositoryName(),
+		"dest":   destRepo.GetRepositoryName(),
 	})
 
 	return nil
@@ -162,8 +163,8 @@ func (t *TransferManager) transferBlobInternal(
 // TransferImage transfers a complete image between repositories
 func (t *TransferManager) TransferImage(
 	ctx context.Context,
-	sourceRepo common.Repository,
-	destRepo common.Repository,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
 	tag string,
 ) (*TransferStats, error) {
 	if sourceRepo == nil {

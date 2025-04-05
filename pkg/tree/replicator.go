@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"freightliner/pkg/client/common"
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
 	"freightliner/pkg/tree/checkpoint"
 
 	"github.com/google/uuid"
@@ -84,10 +84,10 @@ type TreeReplicatorOptions struct {
 // ReplicateTreeOptions provides options for the ReplicateTree method
 type ReplicateTreeOptions struct {
 	// SourceClient is the client for the source registry
-	SourceClient common.RegistryClient
+	SourceClient interfaces.RegistryClient
 
 	// DestClient is the client for the destination registry
-	DestClient common.RegistryClient
+	DestClient interfaces.RegistryClient
 
 	// SourcePrefix is the prefix for source repositories
 	SourcePrefix string
@@ -169,7 +169,32 @@ func (t *TreeReplicator) ReplicateTree(
 	ctx context.Context,
 	opts ReplicateTreeOptions,
 ) (*TreeReplicationResult, error) {
-	// Setup and initialize replication
+	// Initialize replication
+	result, cancelCtx := t.initReplication(ctx)
+	defer cancelCtx()
+
+	// Initialize checkpoint
+	treeCheckpoint := t.setupCheckpoint(opts, result)
+
+	// List and filter repositories
+	repositories, repoCount, err := t.getRepositories(ctx, opts, treeCheckpoint, result)
+	if err != nil || repoCount == 0 {
+		return result, err
+	}
+
+	// Process repositories with worker pool
+	statusErr := t.processRepositories(ctx, opts, repositories, treeCheckpoint, result)
+
+	// Complete replication with appropriate status
+	if statusErr != nil {
+		return result, statusErr
+	}
+
+	return result, nil
+}
+
+// initReplication initializes the replication process with a result and cancelable context
+func (t *TreeReplicator) initReplication(ctx context.Context) (*TreeReplicationResult, func()) {
 	startTime := time.Now()
 	result := &TreeReplicationResult{
 		Repositories:     0,
@@ -182,38 +207,53 @@ func (t *TreeReplicator) ReplicateTree(
 
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	return result, cancel
+}
 
-	// Initialize checkpoint if enabled
-	var treeCheckpoint *checkpoint.TreeCheckpoint
-	if t.checkpointing.Enabled && t.checkpointStore != nil {
-		treeCheckpoint = &checkpoint.TreeCheckpoint{
-			ID:             uuid.New().String(),
-			SourceRegistry: opts.SourceClient.GetRegistryName(),
-			SourcePrefix:   opts.SourcePrefix,
-			DestRegistry:   opts.DestClient.GetRegistryName(),
-			DestPrefix:     opts.DestPrefix,
-			Status:         checkpoint.StatusInProgress,
-			StartTime:      startTime,
-			LastUpdated:    startTime,
-			Repositories:   make(map[string]checkpoint.RepoStatus),
-		}
-
-		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
-			wrappedErr := errors.Wrap(err, "failed to save initial checkpoint")
-			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
-				"checkpoint_id": treeCheckpoint.ID,
-			})
-		} else {
-			result.CheckpointID = treeCheckpoint.ID
-		}
+// setupCheckpoint initializes a checkpoint if checkpointing is enabled
+func (t *TreeReplicator) setupCheckpoint(
+	opts ReplicateTreeOptions,
+	result *TreeReplicationResult,
+) *checkpoint.TreeCheckpoint {
+	if !t.checkpointing.Enabled || t.checkpointStore == nil {
+		return nil
 	}
 
-	// List and filter repositories
+	treeCheckpoint := &checkpoint.TreeCheckpoint{
+		ID:             uuid.New().String(),
+		SourceRegistry: opts.SourceClient.GetRegistryName(),
+		SourcePrefix:   opts.SourcePrefix,
+		DestRegistry:   opts.DestClient.GetRegistryName(),
+		DestPrefix:     opts.DestPrefix,
+		Status:         checkpoint.StatusInProgress,
+		StartTime:      result.StartTime,
+		LastUpdated:    result.StartTime,
+		Repositories:   make(map[string]checkpoint.RepoStatus),
+	}
+
+	if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+		wrappedErr := errors.Wrap(err, "failed to save initial checkpoint")
+		t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+			"checkpoint_id": treeCheckpoint.ID,
+		})
+	} else {
+		result.CheckpointID = treeCheckpoint.ID
+	}
+
+	return treeCheckpoint
+}
+
+// getRepositories lists and filters repositories from the source
+func (t *TreeReplicator) getRepositories(
+	ctx context.Context,
+	opts ReplicateTreeOptions,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+) ([]string, int, error) {
 	repositories, err := t.listAndFilterRepositories(ctx, opts.SourceClient, opts.SourcePrefix)
 	if err != nil {
 		t.handleError(err, treeCheckpoint, "Failed to list repositories")
-		return result, err
+		return nil, 0, err
 	}
 
 	repoCount := len(repositories)
@@ -225,33 +265,103 @@ func (t *TreeReplicator) ReplicateTree(
 			"prefix":          opts.SourcePrefix,
 		})
 		t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
-		return result, nil
 	}
 
-	// Setup worker pool
+	return repositories, repoCount, nil
+}
+
+// processRepositories starts the worker pool and processes all repositories
+func (t *TreeReplicator) processRepositories(
+	ctx context.Context,
+	opts ReplicateTreeOptions,
+	repositories []string,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+) error {
+	repoCount := len(repositories)
+
+	// Log start of replication
 	t.logger.Info("Starting replication", map[string]interface{}{
 		"repositories": repoCount,
 		"workers":      t.workerCount,
 		"dry_run":      t.dryRun,
 	})
 
-	// Create jobs channel and worker group
+	// Set up worker pool
+	jobs, metrics, doneSignal := t.setupWorkerPool(ctx, repoCount, opts, treeCheckpoint, result)
+	defer close(doneSignal)
+
+	// Queue repository jobs
+	t.queueRepositoryJobs(ctx, repositories, jobs)
+
+	// Wait for completion and update metrics
+	metrics.WaitGroup.Wait()
+	t.updateFinalMetrics(result, metrics.CompletedRepos, repoCount)
+
+	// Check for interruption
+	if ctx.Err() != nil {
+		result.Interrupted = true
+		t.completeReplication(treeCheckpoint, result, checkpoint.StatusInterrupted)
+		return ctx.Err()
+	}
+
+	t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
+	return nil
+}
+
+// setupWorkerPool creates and starts workers for repository processing
+func (t *TreeReplicator) setupWorkerPool(
+	ctx context.Context,
+	repoCount int,
+	opts ReplicateTreeOptions,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+) (chan replicationJob, *workerMetrics, chan struct{}) {
+	// Create channels and metrics
 	jobs := make(chan replicationJob, repoCount)
 	var wg sync.WaitGroup
 	var completedRepos atomic.Int32
 	var errorCount atomic.Int32
 
-	// Setup signal handling for graceful cancellation
+	// Setup signal handling
+	cancel := func() {} // Default no-op
 	done := t.setupSignalHandling(ctx, cancel)
-	defer close(done)
 
-	// Start workers
-	workerOpts := replicationWorkerOptions{
-		Context:        ctx,
-		Jobs:           jobs,
+	// Package metrics for workers
+	metrics := &workerMetrics{
 		WaitGroup:      &wg,
 		CompletedRepos: &completedRepos,
 		ErrorCount:     &errorCount,
+	}
+
+	// Start workers
+	t.startWorkers(ctx, jobs, opts, treeCheckpoint, result, metrics)
+
+	return jobs, metrics, done
+}
+
+// workerMetrics holds tracking variables for worker pool
+type workerMetrics struct {
+	WaitGroup      *sync.WaitGroup
+	CompletedRepos *atomic.Int32
+	ErrorCount     *atomic.Int32
+}
+
+// startWorkers launches worker goroutines
+func (t *TreeReplicator) startWorkers(
+	ctx context.Context,
+	jobs chan replicationJob,
+	opts ReplicateTreeOptions,
+	treeCheckpoint *checkpoint.TreeCheckpoint,
+	result *TreeReplicationResult,
+	metrics *workerMetrics,
+) {
+	workerOpts := replicationWorkerOptions{
+		Context:        ctx,
+		Jobs:           jobs,
+		WaitGroup:      metrics.WaitGroup,
+		CompletedRepos: metrics.CompletedRepos,
+		ErrorCount:     metrics.ErrorCount,
 		SourceClient:   opts.SourceClient,
 		DestClient:     opts.DestClient,
 		SourcePrefix:   opts.SourcePrefix,
@@ -262,11 +372,17 @@ func (t *TreeReplicator) ReplicateTree(
 	}
 
 	for i := 0; i < t.workerCount; i++ {
-		wg.Add(1)
+		metrics.WaitGroup.Add(1)
 		go t.replicationWorker(workerOpts)
 	}
+}
 
-	// Queue jobs
+// queueRepositoryJobs sends repository jobs to worker pool
+func (t *TreeReplicator) queueRepositoryJobs(
+	ctx context.Context,
+	repositories []string,
+	jobs chan<- replicationJob,
+) {
 	for _, repo := range repositories {
 		select {
 		case <-ctx.Done():
@@ -276,145 +392,19 @@ func (t *TreeReplicator) ReplicateTree(
 		}
 	}
 
-	// Close jobs channel when all jobs are queued
 	close(jobs)
-
-	// Wait for workers to complete
-	wg.Wait()
-
-	// Update final metrics
-	result.Duration = time.Since(startTime)
-	result.Progress = float64(completedRepos.Load()) / float64(repoCount) * 100.0
-
-	// Handle completion status
-	if ctx.Err() != nil {
-		result.Interrupted = true
-		t.completeReplication(treeCheckpoint, result, checkpoint.StatusInterrupted)
-		return result, ctx.Err()
-	}
-
-	t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
-	return result, nil
 }
 
-// replicationWorkerOptions holds all parameters for replication workers
-type replicationWorkerOptions struct {
-	Context        context.Context
-	Jobs           <-chan replicationJob
-	WaitGroup      *sync.WaitGroup
-	CompletedRepos *atomic.Int32
-	ErrorCount     *atomic.Int32
-	SourceClient   common.RegistryClient
-	DestClient     common.RegistryClient
-	SourcePrefix   string
-	DestPrefix     string
-	ForceOverwrite bool
-	TreeCheckpoint *checkpoint.TreeCheckpoint
-	Result         *TreeReplicationResult
-}
-
-// replicationWorker processes repository replication jobs
-func (t *TreeReplicator) replicationWorker(opts replicationWorkerOptions) {
-	defer opts.WaitGroup.Done()
-
-	for job := range opts.Jobs {
-		select {
-		case <-opts.Context.Done():
-			return
-		default:
-			// Process job
-			repo := job.repository
-
-			// Generate destination repository name by replacing prefix
-			destRepo := strings.Replace(repo, opts.SourcePrefix, opts.DestPrefix, 1)
-
-			t.logger.Info("Replicating repository", map[string]interface{}{
-				"source":      fmt.Sprintf("%s/%s", opts.SourceClient.GetRegistryName(), repo),
-				"destination": fmt.Sprintf("%s/%s", opts.DestClient.GetRegistryName(), destRepo),
-				"dry_run":     t.dryRun,
-			})
-
-			// Create options for processing the repository
-			processOpts := repositoryProcessOptions{
-				Context:        opts.Context,
-				SourceClient:   opts.SourceClient,
-				DestClient:     opts.DestClient,
-				SourceRepo:     repo,
-				DestRepo:       destRepo,
-				ForceOverwrite: opts.ForceOverwrite,
-				TreeCheckpoint: opts.TreeCheckpoint,
-				Result:         opts.Result,
-			}
-
-			// Process repository
-			if err := t.processRepository(processOpts); err != nil {
-				opts.ErrorCount.Add(1)
-				t.logger.Error("Failed to replicate repository", err, map[string]interface{}{
-					"source":      fmt.Sprintf("%s/%s", opts.SourceClient.GetRegistryName(), repo),
-					"destination": fmt.Sprintf("%s/%s", opts.DestClient.GetRegistryName(), destRepo),
-				})
-			}
-
-			opts.CompletedRepos.Add(1)
-		}
+// updateFinalMetrics updates final progress and duration metrics
+func (t *TreeReplicator) updateFinalMetrics(
+	result *TreeReplicationResult,
+	completedRepos *atomic.Int32,
+	repoCount int,
+) {
+	result.Duration = time.Since(result.StartTime)
+	if repoCount > 0 {
+		result.Progress = float64(completedRepos.Load()) / float64(repoCount) * 100.0
 	}
-}
-
-// repositoryProcessOptions holds options for processing a single repository
-type repositoryProcessOptions struct {
-	Context        context.Context
-	SourceClient   common.RegistryClient
-	DestClient     common.RegistryClient
-	SourceRepo     string
-	DestRepo       string
-	ForceOverwrite bool
-	TreeCheckpoint *checkpoint.TreeCheckpoint
-	Result         *TreeReplicationResult
-}
-
-// processRepository handles the replication of a single repository
-func (t *TreeReplicator) processRepository(opts repositoryProcessOptions) error {
-	// Process repository implementation
-	// and handle tag filtering, image copying, etc.
-
-	// Update checkpoint if enabled
-	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
-		opts.TreeCheckpoint.Repositories[opts.SourceRepo] = checkpoint.RepoStatus{
-			Status:     checkpoint.StatusInProgress,
-			SourceRepo: opts.SourceRepo,
-			DestRepo:   opts.DestRepo,
-		}
-
-		if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
-			wrappedErr := errors.Wrap(err, "failed to update repository checkpoint")
-			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
-				"checkpoint_id": opts.TreeCheckpoint.ID,
-				"source_repo":   opts.SourceRepo,
-				"dest_repo":     opts.DestRepo,
-			})
-		}
-	}
-
-	// Mock implementation - in actual code would use source/destClient to perform replication
-	time.Sleep(10 * time.Millisecond) // Simulating work
-
-	// In a real implementation, we would:
-	// 1. Get source repository reference
-	// 2. Get destination repository reference
-	// 3. List tags in source repository
-	// 4. Filter tags
-	// 5. For each tag, copy the image
-
-	// Update checkpoint status to completed for this repo
-	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
-		if repo, ok := opts.TreeCheckpoint.Repositories[opts.SourceRepo]; ok {
-			repo.Status = checkpoint.StatusCompleted
-			opts.TreeCheckpoint.Repositories[opts.SourceRepo] = repo
-			opts.TreeCheckpoint.CompletedRepositories = append(opts.TreeCheckpoint.CompletedRepositories, opts.SourceRepo)
-		}
-	}
-
-	return nil
 }
 
 // Helper functions to break down the large methods
@@ -470,17 +460,18 @@ func isTagIncluded(tag string, excludeCache, includeCache *patternCache, include
 	return includeCache != nil && includeCache.matches(tag)
 }
 
-// listAndFilterRepositoriesOptions holds options for listing and filtering repositories
+// listAndFilterRepositoriesOptions contains options for listing and filtering repositories
 type listAndFilterRepositoriesOptions struct {
 	Context      context.Context
-	SourceClient common.RegistryClient
-	SourcePrefix string
+	Client       interfaces.RegistryClient
+	Prefix       string
+	ExcludeRepos []string
 }
 
 // listAndFilterRepositories gets repositories and applies filters
 func (t *TreeReplicator) listAndFilterRepositories(
 	ctx context.Context,
-	sourceClient common.RegistryClient,
+	sourceClient interfaces.RegistryClient,
 	sourcePrefix string,
 ) ([]string, error) {
 	t.logger.Info("Listing repositories", map[string]interface{}{
@@ -507,59 +498,6 @@ func (t *TreeReplicator) listAndFilterRepositories(
 	return repositories, nil
 }
 
-// handleErrorOptions contains options for handling errors
-type handleErrorOptions struct {
-	Error          error
-	TreeCheckpoint *checkpoint.TreeCheckpoint
-	Message        string
-}
-
-// handleError processes errors and updates checkpoints
-func (t *TreeReplicator) handleError(err error, treeCheckpoint *checkpoint.TreeCheckpoint, message string) {
-	// Add context to the error if it's not already wrapped
-	if !strings.Contains(err.Error(), message) {
-		err = errors.Wrap(err, "%s", message)
-	}
-
-	t.logger.Error(message, err, nil)
-
-	if t.checkpointing.Enabled && t.checkpointStore != nil && treeCheckpoint != nil {
-		treeCheckpoint.Status = checkpoint.StatusFailed
-		treeCheckpoint.LastError = err.Error()
-		if saveErr := t.checkpointStore.SaveCheckpoint(treeCheckpoint); saveErr != nil {
-			t.logger.Warn("Failed to save error checkpoint", map[string]interface{}{
-				"error":          saveErr.Error(),
-				"original_error": err.Error(),
-				"id":             treeCheckpoint.ID,
-			})
-		}
-	}
-}
-
-// completeReplicationOptions contains options for completing replication
-type completeReplicationOptions struct {
-	TreeCheckpoint *checkpoint.TreeCheckpoint
-	Result         *TreeReplicationResult
-	Status         checkpoint.Status
-}
-
-// completeReplication finalizes the replication and updates the checkpoint
-func (t *TreeReplicator) completeReplication(treeCheckpoint *checkpoint.TreeCheckpoint, result *TreeReplicationResult, status checkpoint.Status) {
-	if t.checkpointing.Enabled && t.checkpointStore != nil && treeCheckpoint != nil {
-		treeCheckpoint.Status = status
-		treeCheckpoint.Progress = result.Progress
-		treeCheckpoint.LastUpdated = time.Now()
-
-		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
-			wrappedErr := errors.Wrap(err, "failed to save final checkpoint")
-			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
-				"checkpoint_id": treeCheckpoint.ID,
-				"status":        status,
-			})
-		}
-	}
-}
-
 // patternCache caches compiled glob patterns for faster matching
 type patternCache struct {
 	exactMatches    map[string]struct{} // For exact string matches
@@ -568,11 +506,6 @@ type patternCache struct {
 	containsMatches map[string]struct{} // For *contains* style patterns
 	complexPatterns []string            // For more complex patterns requiring path.Match
 	hasWildcard     bool                // Whether "*" is in the patterns
-}
-
-// newPatternCacheOptions contains options for creating a pattern cache
-type newPatternCacheOptions struct {
-	Patterns []string
 }
 
 // newPatternCache creates an optimized pattern cache from a slice of patterns
@@ -697,6 +630,19 @@ func (pc *patternCache) matchesComplex(s string) bool {
 	return false
 }
 
+// matchesAnyPattern returns true if the string matches any of the patterns
+// This is a compatibility wrapper around the new optimized pattern cache
+func (t *TreeReplicator) matchesAnyPattern(s string, patterns []string) bool {
+	cache := newPatternCache(patterns)
+	return cache.matches(s)
+}
+
+// matchPattern is a helper function for testing that matches a string against a pattern
+func matchPattern(pattern, s string) bool {
+	cache := newPatternCache([]string{pattern})
+	return cache.matches(s)
+}
+
 // replicationJob represents a single repository replication task
 type replicationJob struct {
 	repository string
@@ -718,8 +664,177 @@ func (t *TreeReplicator) setupSignalHandling(ctx context.Context, cancel context
 	return done
 }
 
-// InitCheckpointStore initializes the checkpoint store in the specified directory
-func InitCheckpointStore(dir string) (checkpoint.CheckpointStore, error) {
-	// Implementation would be here
-	return nil, nil
+// replicationWorkerOptions holds all parameters for replication workers
+type replicationWorkerOptions struct {
+	Context        context.Context
+	Jobs           <-chan replicationJob
+	WaitGroup      *sync.WaitGroup
+	CompletedRepos *atomic.Int32
+	ErrorCount     *atomic.Int32
+	SourceClient   interfaces.RegistryClient
+	DestClient     interfaces.RegistryClient
+	SourcePrefix   string
+	DestPrefix     string
+	ForceOverwrite bool
+	TreeCheckpoint *checkpoint.TreeCheckpoint
+	Result         *TreeReplicationResult
 }
+
+// replicationWorker processes repository replication jobs
+func (t *TreeReplicator) replicationWorker(opts replicationWorkerOptions) {
+	defer opts.WaitGroup.Done()
+
+	for job := range opts.Jobs {
+		select {
+		case <-opts.Context.Done():
+			return
+		default:
+			// Process job
+			repo := job.repository
+
+			// Generate destination repository name by replacing prefix
+			destRepo := strings.Replace(repo, opts.SourcePrefix, opts.DestPrefix, 1)
+
+			t.logger.Info("Replicating repository", map[string]interface{}{
+				"source":      fmt.Sprintf("%s/%s", opts.SourceClient.GetRegistryName(), repo),
+				"destination": fmt.Sprintf("%s/%s", opts.DestClient.GetRegistryName(), destRepo),
+				"dry_run":     t.dryRun,
+			})
+
+			// Create options for processing the repository
+			processOpts := repositoryProcessOptions{
+				Context:        opts.Context,
+				SourceClient:   opts.SourceClient,
+				DestClient:     opts.DestClient,
+				SourceRepo:     repo,
+				DestRepo:       destRepo,
+				ForceOverwrite: opts.ForceOverwrite,
+				TreeCheckpoint: opts.TreeCheckpoint,
+				Result:         opts.Result,
+			}
+
+			// Process repository
+			if err := t.processRepository(processOpts); err != nil {
+				opts.ErrorCount.Add(1)
+				t.logger.Error("Failed to replicate repository", err, map[string]interface{}{
+					"source":      fmt.Sprintf("%s/%s", opts.SourceClient.GetRegistryName(), repo),
+					"destination": fmt.Sprintf("%s/%s", opts.DestClient.GetRegistryName(), destRepo),
+				})
+			}
+
+			opts.CompletedRepos.Add(1)
+		}
+	}
+}
+
+// repositoryProcessOptions holds options for processing a single repository
+type repositoryProcessOptions struct {
+	Context        context.Context
+	SourceClient   interfaces.RegistryClient
+	DestClient     interfaces.RegistryClient
+	SourceRepo     string
+	DestRepo       string
+	ForceOverwrite bool
+	TreeCheckpoint *checkpoint.TreeCheckpoint
+	Result         *TreeReplicationResult
+}
+
+// processRepository handles the replication of a single repository
+func (t *TreeReplicator) processRepository(opts repositoryProcessOptions) error {
+	// Process repository implementation
+	// and handle tag filtering, image copying, etc.
+
+	// Update checkpoint if enabled
+	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
+		opts.TreeCheckpoint.Repositories[opts.SourceRepo] = checkpoint.RepoStatus{
+			Status:     checkpoint.StatusInProgress,
+			SourceRepo: opts.SourceRepo,
+			DestRepo:   opts.DestRepo,
+		}
+
+		if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
+			wrappedErr := errors.Wrap(err, "failed to update repository checkpoint")
+			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+				"checkpoint_id": opts.TreeCheckpoint.ID,
+				"source_repo":   opts.SourceRepo,
+				"dest_repo":     opts.DestRepo,
+			})
+		}
+	}
+
+	// Mock implementation - in actual code would use source/destClient to perform replication
+	time.Sleep(10 * time.Millisecond) // Simulating work
+
+	// In a real implementation, we would:
+	// 1. Get source repository reference
+	// 2. Get destination repository reference
+	// 3. List tags in source repository
+	// 4. Filter tags
+	// 5. For each tag, copy the image
+
+	// Update checkpoint status to completed for this repo
+	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
+		if repo, ok := opts.TreeCheckpoint.Repositories[opts.SourceRepo]; ok {
+			repo.Status = checkpoint.StatusCompleted
+			opts.TreeCheckpoint.Repositories[opts.SourceRepo] = repo
+			opts.TreeCheckpoint.CompletedRepositories = append(opts.TreeCheckpoint.CompletedRepositories, opts.SourceRepo)
+		}
+	}
+
+	return nil
+}
+
+// handleErrorOptions contains options for handling errors
+type handleErrorOptions struct {
+	Error          error
+	TreeCheckpoint *checkpoint.TreeCheckpoint
+	Message        string
+}
+
+// handleError processes errors and updates checkpoints
+func (t *TreeReplicator) handleError(err error, treeCheckpoint *checkpoint.TreeCheckpoint, message string) {
+	// Add context to the error if it's not already wrapped
+	if !strings.Contains(err.Error(), message) {
+		err = errors.Wrap(err, "%s", message)
+	}
+
+	t.logger.Error(message, err, nil)
+
+	if t.checkpointing.Enabled && t.checkpointStore != nil && treeCheckpoint != nil {
+		treeCheckpoint.Status = checkpoint.StatusFailed
+		treeCheckpoint.LastError = err.Error()
+		if saveErr := t.checkpointStore.SaveCheckpoint(treeCheckpoint); saveErr != nil {
+			t.logger.Warn("Failed to save error checkpoint", map[string]interface{}{
+				"error":          saveErr.Error(),
+				"original_error": err.Error(),
+				"id":             treeCheckpoint.ID,
+			})
+		}
+	}
+}
+
+// completeReplicationOptions contains options for completing replication
+type completeReplicationOptions struct {
+	TreeCheckpoint *checkpoint.TreeCheckpoint
+	Result         *TreeReplicationResult
+	Status         checkpoint.Status
+}
+
+// completeReplication finalizes the replication and updates the checkpoint
+func (t *TreeReplicator) completeReplication(treeCheckpoint *checkpoint.TreeCheckpoint, result *TreeReplicationResult, status checkpoint.Status) {
+	if t.checkpointing.Enabled && t.checkpointStore != nil && treeCheckpoint != nil {
+		treeCheckpoint.Status = status
+		treeCheckpoint.Progress = result.Progress
+		treeCheckpoint.LastUpdated = time.Now()
+
+		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
+			wrappedErr := errors.Wrap(err, "failed to save final checkpoint")
+			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+				"checkpoint_id": treeCheckpoint.ID,
+				"status":        status,
+			})
+		}
+	}
+}
+
+// Note: InitCheckpointStore is implemented in checkpoint.go

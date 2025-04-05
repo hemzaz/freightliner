@@ -3,11 +3,12 @@ package gcr
 import (
 	"context"
 	"fmt"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
 	"net/http"
 	"strings"
+
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -106,7 +107,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 }
 
 // GetRepository returns a repository by name
-func (c *Client) GetRepository(ctx context.Context, repoName string) (common.Repository, error) {
+func (c *Client) GetRepository(ctx context.Context, repoName string) (interfaces.Repository, error) {
 	// Input validation
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

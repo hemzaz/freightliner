@@ -3,12 +3,13 @@ package replication
 import (
 	"context"
 	"fmt"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
-	"freightliner/pkg/security/encryption"
 	"sync"
 	"time"
+
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
+	"freightliner/pkg/security/encryption"
 
 	"github.com/robfig/cron/v3"
 )
@@ -40,7 +41,7 @@ type Scheduler struct {
 	logger            *log.Logger
 	workerPool        *WorkerPool
 	replicationSvc    ReplicationService
-	registryProviders map[string]common.RegistryProvider
+	registryProviders map[string]interfaces.RegistryProvider
 	cronParser        cron.Parser
 	encryptionMgr     *encryption.Manager
 }
@@ -54,7 +55,7 @@ type SchedulerOptions struct {
 	WorkerPool *WorkerPool
 
 	// RegistryProviders is a map of registry providers by type (e.g., "ecr", "gcr")
-	RegistryProviders map[string]common.RegistryProvider
+	RegistryProviders map[string]interfaces.RegistryProvider
 
 	// ReplicationService is the service that handles actual replication
 	ReplicationService ReplicationService
@@ -98,6 +99,7 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 
 // AddJob adds a new job to the scheduler
 func (s *Scheduler) AddJob(rule ReplicationRule) error {
+	// Validate input before locking to fail fast
 	if rule.SourceRegistry == "" {
 		return errors.InvalidInputf("source registry cannot be empty")
 	}
@@ -114,9 +116,6 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		return errors.InvalidInputf("destination repository cannot be empty")
 	}
 
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	// Create a unique ID for the job
 	id := rule.SourceRegistry + "/" + rule.SourceRepository + " -> " +
 		rule.DestinationRegistry + "/" + rule.DestinationRepository
@@ -129,6 +128,17 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		return nil
 	}
 
+	// Pre-validate the schedule if it's not a special case
+	if rule.Schedule != "@now" {
+		_, err := s.cronParser.Parse(rule.Schedule)
+		if err != nil {
+			return errors.Wrap(err, "invalid cron expression: %s", rule.Schedule)
+		}
+	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	// Parse the schedule as a cron expression
 	var nextRun time.Time
 
@@ -138,6 +148,7 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 	} else {
 		schedule, err := s.cronParser.Parse(rule.Schedule)
 		if err != nil {
+			// This should never happen as we've already validated the schedule
 			return errors.Wrap(err, "invalid cron expression: %s", rule.Schedule)
 		}
 
@@ -168,17 +179,18 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 
 // RemoveJob removes a job from the scheduler
 func (s *Scheduler) RemoveJob(rule ReplicationRule) error {
+	// Validate input before locking to fail fast
 	if rule.SourceRegistry == "" || rule.SourceRepository == "" ||
 		rule.DestinationRegistry == "" || rule.DestinationRepository == "" {
 		return errors.InvalidInputf("all registry and repository fields must be provided")
 	}
 
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	// Create a unique ID for the job
 	id := rule.SourceRegistry + "/" + rule.SourceRepository + " -> " +
 		rule.DestinationRegistry + "/" + rule.DestinationRepository
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
 	if _, exists := s.jobs[id]; exists {
 		delete(s.jobs, id)
@@ -252,6 +264,7 @@ func (s *Scheduler) checkJobs() {
 
 // submitJob submits a job to the worker pool
 func (s *Scheduler) submitJob(id string, job *Job) {
+	// Validate input before any processing or locking
 	if id == "" || job == nil {
 		err := errors.InvalidInputf("job ID empty or job is nil")
 		s.logger.Error("Invalid job submission", err, map[string]interface{}{
@@ -260,12 +273,29 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 		return
 	}
 
+	// Verify worker pool is initialized
+	if s.workerPool == nil {
+		err := errors.InvalidInputf("worker pool not initialized")
+		s.logger.Error("Invalid worker pool", err, map[string]interface{}{
+			"error": err.Error(),
+			"id":    id,
+		})
+
+		// Mark the job as not running since submission will fail
+		s.mutex.Lock()
+		if j, exists := s.jobs[id]; exists {
+			j.Running = false
+		}
+		s.mutex.Unlock()
+		return
+	}
+
 	s.logger.Info("Running scheduled job", map[string]interface{}{
 		"id": id,
 	})
 
 	// Submit the job to the worker pool
-	err := s.workerPool.Submit(func(ctx context.Context) error {
+	err := s.workerPool.Submit(id, func(ctx context.Context) error {
 		defer func() {
 			// Recover from panics
 			if r := recover(); r != nil {
@@ -348,9 +378,15 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 
 // Stop stops the scheduler
 func (s *Scheduler) Stop() error {
+	// Check context before locking
+	if s.ctx.Err() != nil {
+		return errors.AlreadyExistsf("scheduler already stopped")
+	}
+
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	// Double-check context after acquiring lock to prevent race condition
 	if s.ctx.Err() != nil {
 		return errors.AlreadyExistsf("scheduler already stopped")
 	}

@@ -36,7 +36,7 @@ func (s *Server) replicateHandler(w http.ResponseWriter, r *http.Request) {
 	s.jobManager.AddJob(job)
 
 	// Submit job to worker pool
-	err := s.workerPool.Submit(func(ctx context.Context) error {
+	err := s.workerPool.Submit(job.GetID(), func(ctx context.Context) error {
 		// Update job status
 		job.SetStatus(JobStatusRunning)
 
@@ -102,7 +102,7 @@ func (s *Server) replicateTreeHandler(w http.ResponseWriter, r *http.Request) {
 	s.jobManager.AddJob(job)
 
 	// Submit job to worker pool
-	err := s.workerPool.Submit(func(ctx context.Context) error {
+	err := s.workerPool.Submit(job.GetID(), func(ctx context.Context) error {
 		// Update job status
 		job.SetStatus(JobStatusRunning)
 

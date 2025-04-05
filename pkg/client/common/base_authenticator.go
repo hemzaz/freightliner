@@ -1,7 +1,6 @@
 package common
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -20,7 +19,7 @@ func NewBaseAuthenticator() *BaseAuthenticator {
 }
 
 // Authorization returns an auth header to authenticate a request
-func (a *BaseAuthenticator) Authorization(ctx context.Context, resource authn.Resource) (*authn.AuthConfig, error) {
+func (a *BaseAuthenticator) Authorization() (*authn.AuthConfig, error) {
 	// This must be implemented by derived authenticators
 	return nil, nil
 }
@@ -67,7 +66,7 @@ type authnTransport struct {
 
 // RoundTrip implements http.RoundTripper
 func (t *authnTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	authConfig, err := t.auth.Authorization(req.Context(), t.resource)
+	authConfig, err := t.auth.Authorization()
 	if err != nil {
 		return nil, err
 	}

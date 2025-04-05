@@ -70,9 +70,13 @@ func (r *BaseRepository) GetTag(ctx context.Context, tagName string) (v1.Image, 
 	}
 
 	// Check the cache first
-	r.imagesMutex.RLock()
-	img, ok := r.images[tagName]
-	r.imagesMutex.RUnlock()
+	var img v1.Image
+	var ok bool
+	func() {
+		r.imagesMutex.RLock()
+		defer r.imagesMutex.RUnlock()
+		img, ok = r.images[tagName]
+	}()
 
 	if ok {
 		return img, nil
@@ -148,18 +152,24 @@ func (r *BaseRepository) GetRemoteImage(ctx context.Context, ref name.Reference,
 
 // CacheImage adds an image to the cache
 func (r *BaseRepository) CacheImage(tagName string, img v1.Image) {
-	r.imagesMutex.Lock()
-	r.images[tagName] = img
-	r.imagesMutex.Unlock()
+	func() {
+		r.imagesMutex.Lock()
+		defer r.imagesMutex.Unlock()
+		r.images[tagName] = img
+	}()
 }
 
 // ClearCache clears the image cache
 func (r *BaseRepository) ClearCache() {
-	r.imagesMutex.Lock()
-	r.images = make(map[string]v1.Image)
-	r.imagesMutex.Unlock()
+	func() {
+		r.imagesMutex.Lock()
+		defer r.imagesMutex.Unlock()
+		r.images = make(map[string]v1.Image)
+	}()
 
-	r.tagsMutex.Lock()
-	r.tags = nil
-	r.tagsMutex.Unlock()
+	func() {
+		r.tagsMutex.Lock()
+		defer r.tagsMutex.Unlock()
+		r.tags = nil
+	}()
 }

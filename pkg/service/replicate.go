@@ -7,21 +7,22 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"freightliner/pkg/client/ecr"
 	"freightliner/pkg/client/gcr"
-	"freightliner/pkg/config"
+	freightlinerConfig "freightliner/pkg/config"
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/helper/util"
 	"freightliner/pkg/replication"
+	"freightliner/pkg/secrets"
 	"freightliner/pkg/security/encryption"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -30,12 +31,12 @@ import (
 
 // ReplicationService handles repository replication
 type ReplicationService struct {
-	cfg    *config.Config
+	cfg    *freightlinerConfig.Config
 	logger *log.Logger
 }
 
 // NewReplicationService creates a new replication service
-func NewReplicationService(cfg *config.Config, logger *log.Logger) *ReplicationService {
+func NewReplicationService(cfg *freightlinerConfig.Config, logger *log.Logger) *ReplicationService {
 	return &ReplicationService{
 		cfg:    cfg,
 		logger: logger,
@@ -148,7 +149,7 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 
 	// Auto-detect worker count if needed
 	if options.WorkerCount == 0 && s.cfg.Workers.AutoDetect {
-		options.WorkerCount = config.GetOptimalWorkerCount()
+		options.WorkerCount = freightlinerConfig.GetOptimalWorkerCount()
 		s.logger.Info("Auto-detected worker count", map[string]interface{}{
 			"workers": options.WorkerCount,
 		})
@@ -243,42 +244,18 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 		"force_overwrite":        options.ForceOverwrite,
 	})
 
-	// Create a worker pool for parallel processing
-	workerPool := s.createWorkerPool(options.WorkerCount)
-	workerPool.Start()
+	// Create a results collector for metrics
+	results := util.NewResults()
 
-	// Define variables to track results
-	var (
-		tagsCopied       int
-		tagsSkipped      int
-		errorCount       int
-		bytesTransferred int64
-		resultLock       sync.Mutex
-		wg               sync.WaitGroup
-	)
-
-	// Process results from the worker pool
-	go func() {
-		for result := range workerPool.GetResults() {
-			if result.Error != nil {
-				resultLock.Lock()
-				errorCount++
-				resultLock.Unlock()
-			}
-		}
-	}()
+	// Create a limited error group with the worker count as concurrency limit
+	g := util.NewLimitedErrGroup(ctx, options.WorkerCount)
 
 	// Process each tag
 	for _, tag := range sourceTags {
-		wg.Add(1)
-
 		// Create local variable for tag to avoid closure issues
 		currentTag := tag
 
-		// Create job for this tag
-		err := workerPool.SubmitWithContext(ctx, fmt.Sprintf("copy-tag-%s", currentTag), func(jobCtx context.Context) error {
-			defer wg.Done()
-
+		g.Go(func() error {
 			// Create source and destination references
 			srcRef, err := sourceRepository.GetImageReference(currentTag)
 			if err != nil {
@@ -298,16 +275,14 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 
 			// Check if tag already exists at destination and has same digest
 			if !options.ForceOverwrite {
-				skipTag, err := s.shouldSkipTag(jobCtx, currentTag, sourceRepository, destRepository)
+				skipTag, err := s.shouldSkipTag(ctx, currentTag, sourceRepository, destRepository)
 				if err != nil {
 					s.logger.Warn("Error checking if tag should be skipped, will attempt to copy", map[string]interface{}{
 						"tag":   currentTag,
 						"error": err.Error(),
 					})
 				} else if skipTag {
-					resultLock.Lock()
-					tagsSkipped++
-					resultLock.Unlock()
+					results.AddMetric("tagsSkipped", 1)
 					return nil
 				}
 			}
@@ -332,7 +307,7 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			}
 
 			// Execute copy
-			result, err := copier.CopyImage(jobCtx, srcRef, destRef, srcOpts, destOpts, copyOpts)
+			result, err := copier.CopyImage(ctx, srcRef, destRef, srcOpts, destOpts, copyOpts)
 			if err != nil {
 				s.logger.Error("Failed to copy tag", err, map[string]interface{}{
 					"tag": currentTag,
@@ -341,10 +316,8 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			}
 
 			// Update stats
-			resultLock.Lock()
-			tagsCopied++
-			bytesTransferred += result.Stats.BytesTransferred
-			resultLock.Unlock()
+			results.AddMetric("tagsCopied", 1)
+			results.AddMetric("bytesTransferred", result.Stats.BytesTransferred)
 
 			s.logger.Info("Tag copied successfully", map[string]interface{}{
 				"tag":    currentTag,
@@ -354,20 +327,26 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 
 			return nil
 		})
-
-		if err != nil {
-			s.logger.Error("Failed to submit job to worker pool", err, map[string]interface{}{
-				"tag": currentTag,
-			})
-			resultLock.Lock()
-			errorCount++
-			resultLock.Unlock()
-		}
 	}
 
-	// Wait for all jobs to complete
-	wg.Wait()
-	workerPool.Wait()
+	// Wait for all jobs to complete and collect any errors
+	if err := g.Wait(); err != nil {
+		// If there was an error, we still continue and return the results
+		// but also log the error
+		s.logger.Error("Error during tag replication", err, map[string]interface{}{
+			"source_repository":      sourceRepo,
+			"destination_repository": destRepo,
+		})
+
+		// Count this as an error
+		results.AddMetric("errorCount", 1)
+	}
+
+	// Get metrics from results collector
+	tagsCopied := int(results.GetMetric("tagsCopied"))
+	tagsSkipped := int(results.GetMetric("tagsSkipped"))
+	errorCount := int(results.GetMetric("errorCount"))
+	bytesTransferred := results.GetMetric("bytesTransferred")
 
 	s.logger.Info("Repository replication completed", map[string]interface{}{
 		"source_repository":      sourceRepo,
@@ -561,13 +540,11 @@ func (s *ReplicationService) setupEncryptionManager(ctx context.Context, destReg
 	return nil, nil
 }
 
-// SecretsProvider represents an interface to a secrets management service
-type SecretsProvider interface {
-	// GetSecret retrieves a secret by name
-	GetSecret(ctx context.Context, name string) (string, error)
-}
+// Local type alias for secrets.Provider to avoid breaking existing code
+type SecretsProvider = secrets.Provider
 
 // awsSecretsProvider implements the SecretsProvider interface using AWS Secrets Manager
+// Note: This is a simplified implementation that should be replaced with pkg/secrets/aws
 type awsSecretsProvider struct {
 	client *secretsmanager.Client
 	logger *log.Logger
@@ -609,7 +586,36 @@ func (p *awsSecretsProvider) GetSecret(ctx context.Context, name string) (string
 	return secretValue, nil
 }
 
+// GetJSONSecret retrieves a JSON-formatted secret and unmarshal it into the provided struct
+func (p *awsSecretsProvider) GetJSONSecret(ctx context.Context, secretName string, v interface{}) error {
+	secretValue, err := p.GetSecret(ctx, secretName)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal([]byte(secretValue), v)
+}
+
+// PutSecret creates or updates a secret value
+func (p *awsSecretsProvider) PutSecret(ctx context.Context, secretName, secretValue string) error {
+	p.logger.Warn("PutSecret not implemented for awsSecretsProvider", nil)
+	return errors.NotImplementedf("PutSecret not implemented for awsSecretsProvider")
+}
+
+// PutJSONSecret marshals a struct to JSON and stores it as a secret
+func (p *awsSecretsProvider) PutJSONSecret(ctx context.Context, secretName string, v interface{}) error {
+	p.logger.Warn("PutJSONSecret not implemented for awsSecretsProvider", nil)
+	return errors.NotImplementedf("PutJSONSecret not implemented for awsSecretsProvider")
+}
+
+// DeleteSecret deletes a secret
+func (p *awsSecretsProvider) DeleteSecret(ctx context.Context, secretName string) error {
+	p.logger.Warn("DeleteSecret not implemented for awsSecretsProvider", nil)
+	return errors.NotImplementedf("DeleteSecret not implemented for awsSecretsProvider")
+}
+
 // gcpSecretsProvider implements the SecretsProvider interface using Google Secret Manager
+// Note: This is a simplified implementation that should be replaced with pkg/secrets/gcp
 type gcpSecretsProvider struct {
 	client  *secretmanager.Client
 	project string
@@ -635,6 +641,34 @@ func (p *gcpSecretsProvider) GetSecret(ctx context.Context, name string) (string
 	// Extract the payload data
 	secretValue := string(result.Payload.Data)
 	return secretValue, nil
+}
+
+// GetJSONSecret retrieves a JSON-formatted secret and unmarshal it into the provided struct
+func (p *gcpSecretsProvider) GetJSONSecret(ctx context.Context, secretName string, v interface{}) error {
+	secretValue, err := p.GetSecret(ctx, secretName)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal([]byte(secretValue), v)
+}
+
+// PutSecret creates or updates a secret value
+func (p *gcpSecretsProvider) PutSecret(ctx context.Context, secretName, secretValue string) error {
+	p.logger.Warn("PutSecret not implemented for gcpSecretsProvider", nil)
+	return errors.NotImplementedf("PutSecret not implemented for gcpSecretsProvider")
+}
+
+// PutJSONSecret marshals a struct to JSON and stores it as a secret
+func (p *gcpSecretsProvider) PutJSONSecret(ctx context.Context, secretName string, v interface{}) error {
+	p.logger.Warn("PutJSONSecret not implemented for gcpSecretsProvider", nil)
+	return errors.NotImplementedf("PutJSONSecret not implemented for gcpSecretsProvider")
+}
+
+// DeleteSecret deletes a secret
+func (p *gcpSecretsProvider) DeleteSecret(ctx context.Context, secretName string) error {
+	p.logger.Warn("DeleteSecret not implemented for gcpSecretsProvider", nil)
+	return errors.NotImplementedf("DeleteSecret not implemented for gcpSecretsProvider")
 }
 
 // RegistryCredentials contains credentials for different registry types
@@ -750,12 +784,12 @@ func (s *ReplicationService) initializeSecretsManager(ctx context.Context) (Secr
 // createAWSSecretsProvider creates an AWS Secrets Manager provider
 func (s *ReplicationService) createAWSSecretsProvider(ctx context.Context, region string) (SecretsProvider, error) {
 	// Configure AWS SDK options
-	configOpts := []func(*config.LoadOptions) error{
-		config.WithRegion(region),
+	configOpts := []func(*awsconfig.LoadOptions) error{
+		awsconfig.WithRegion(region),
 	}
 
 	// Load the default AWS configuration
-	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, configOpts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to load AWS config")
 	}
