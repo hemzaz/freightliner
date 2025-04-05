@@ -82,34 +82,37 @@ type STSServiceAPI interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
-// NewClient creates a new ECR client
-func NewClient(optsArg interface{}) (*Client, error) {
-	var opts ClientOptions
-
-	// Handle both ClientOptions and legacy Options
+// normalizeClientOptions normalizes different option types into a standard ClientOptions
+func normalizeClientOptions(optsArg interface{}) (ClientOptions, error) {
 	switch o := optsArg.(type) {
 	case ClientOptions:
-		opts = o
+		return o, nil
 	case LegacyClientOptions:
-		opts = ClientOptions{
+		return ClientOptions{
 			Region:    o.Region,
 			AccountID: o.AccountID,
 			Logger:    o.Logger,
-		}
-		// If using legacy Options, we would handle stsClient here, but we've removed this
-		// functionality to simplify the implementation
+		}, nil
 	default:
-		return nil, errors.InvalidInputf("invalid options type")
+		return ClientOptions{}, errors.InvalidInputf("invalid options type")
 	}
+}
+
+// validateClientOptions validates the client options
+func validateClientOptions(opts *ClientOptions) error {
 	if opts.Region == "" {
-		return nil, errors.InvalidInputf("AWS region is required")
+		return errors.InvalidInputf("AWS region is required")
 	}
 
 	if opts.Logger == nil {
 		opts.Logger = log.NewLogger(log.InfoLevel)
 	}
 
-	// Load AWS config
+	return nil
+}
+
+// createAWSConfig creates an AWS SDK config based on the provided options
+func createAWSConfig(ctx context.Context, opts *ClientOptions) (aws.Config, error) {
 	var configOpts []func(*config.LoadOptions) error
 	configOpts = append(configOpts, config.WithRegion(opts.Region))
 
@@ -118,33 +121,60 @@ func NewClient(optsArg interface{}) (*Client, error) {
 		configOpts = append(configOpts, config.WithSharedConfigProfile(opts.Profile))
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.Background(), configOpts...)
+	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to load AWS config")
+		return aws.Config{}, errors.Wrap(err, "failed to load AWS config")
 	}
 
-	var ecrClient *awsecr.Client
+	return cfg, nil
+}
 
-	// If a role ARN is provided, assume the role and create an ECR client with the assumed role credentials
-	if opts.RoleARN != "" {
-		// Create an STS client to assume the role
-		stsClient := sts.NewFromConfig(cfg)
-		provider := stscreds.NewAssumeRoleProvider(stsClient, opts.RoleARN)
-
-		// Create a new config with the role credentials
-		roleCfg := aws.Config{
-			Credentials: aws.NewCredentialsCache(provider),
-			Region:      cfg.Region,
-		}
-
-		// Create an ECR client with the assumed role credentials
-		ecrClient = awsecr.NewFromConfig(roleCfg)
-	} else {
+// createECRClient creates an ECR client with the provided AWS config, optionally assuming a role
+func createECRClient(cfg aws.Config, roleARN string) (*awsecr.Client, error) {
+	if roleARN == "" {
 		// Use default credentials
-		ecrClient = awsecr.NewFromConfig(cfg)
+		return awsecr.NewFromConfig(cfg), nil
 	}
 
-	// Create authenticator for ECR
+	// Create an STS client to assume the role
+	stsClient := sts.NewFromConfig(cfg)
+	provider := stscreds.NewAssumeRoleProvider(stsClient, roleARN)
+
+	// Create a new config with the role credentials
+	roleCfg := aws.Config{
+		Credentials: aws.NewCredentialsCache(provider),
+		Region:      cfg.Region,
+	}
+
+	// Create an ECR client with the assumed role credentials
+	return awsecr.NewFromConfig(roleCfg), nil
+}
+
+// NewClient creates a new ECR client
+func NewClient(optsArg interface{}) (*Client, error) {
+	// Normalize and validate options
+	opts, err := normalizeClientOptions(optsArg)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateClientOptions(&opts); err != nil {
+		return nil, err
+	}
+
+	// Create AWS config
+	cfg, err := createAWSConfig(context.Background(), &opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create ECR client
+	ecrClient, err := createECRClient(cfg, opts.RoleARN)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create authenticator
 	auth := NewECRAuthenticator(ecrClient, opts.Region)
 
 	// Create client

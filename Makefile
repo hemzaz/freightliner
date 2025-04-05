@@ -10,7 +10,11 @@ test:
 
 # Run linting
 lint:
-	golangci-lint run ./...
+	./scripts/lint.sh ./...
+
+# Run fast linting (critical linters only)
+lint-fast:
+	./scripts/lint.sh --fast ./...
 
 # Clean build artifacts
 clean:
@@ -27,16 +31,29 @@ imports:
 
 # Run go vet
 vet:
-	go vet ./...
+	./scripts/vet.sh ./...
 
 # Setup development environment
 setup:
 	go mod download
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
+	go install github.com/mvdan/interfacer/cmd/interfacer@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	cp scripts/pre-commit .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	@echo "Setup complete. Running initial checks..."
+	./scripts/lint.sh --fast
+	./scripts/vet.sh
+	./scripts/staticcheck.sh
+
+# Run staticcheck
+staticcheck:
+	./scripts/staticcheck.sh ./...
 
 # Run all quality checks
-check: fmt imports vet lint test
+check: fmt imports vet lint staticcheck test
 
 # Install hooks
 hooks:

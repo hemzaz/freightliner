@@ -62,3 +62,14 @@ jobs:
 
       - name: Run tests
         run: go test -v -race ./...
+
+      - name: Run enhanced go vet checks
+        run: |
+          go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
+          go install github.com/mvdan/interfacer/cmd/interfacer@latest
+          ./scripts/vet.sh
+          
+      - name: Run staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          ./scripts/staticcheck.sh

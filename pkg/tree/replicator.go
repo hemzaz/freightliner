@@ -3,16 +3,17 @@ package tree
 import (
 	"context"
 	"fmt"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/copy"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
-	"freightliner/pkg/tree/checkpoint"
 	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"freightliner/pkg/client/common"
+	"freightliner/pkg/copy"
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/tree/checkpoint"
 
 	"github.com/google/uuid"
 )
@@ -280,42 +281,52 @@ func (t *TreeReplicator) ReplicateTree(
 // filterTags applies tag filters using the optimized pattern caches
 // Returns tags that should be included (pass all filters)
 func (t *TreeReplicator) filterTags(tags []string) []string {
-	// If no filters defined, return all tags
+	// Skip filtering if no filters are defined
 	if len(t.filters.ExcludeTags) == 0 && len(t.filters.IncludeTags) == 0 {
 		return tags
 	}
 
-	// Quick size estimate for the result
+	// Pre-allocate result slice for better performance
+	estimatedSize := estimateFilteredSize(tags, len(t.filters.IncludeTags) > 0)
+	result := make([]string, 0, estimatedSize)
+
+	// Filter each tag
+	for _, tag := range tags {
+		if isTagIncluded(tag, t.excludeTagsCache, t.includeTagsCache, t.filters.IncludeTags) {
+			result = append(result, tag)
+		}
+	}
+
+	return result
+}
+
+// estimateFilteredSize estimates how many tags will pass filtering
+func estimateFilteredSize(tags []string, hasIncludeFilters bool) int {
 	estimatedSize := len(tags)
-	if len(t.filters.IncludeTags) > 0 {
+	if hasIncludeFilters {
 		// If we have include filters, we'll likely get fewer tags
 		estimatedSize = estimatedSize / 2
 	}
 	if estimatedSize < 10 {
 		estimatedSize = 10
 	}
+	return estimatedSize
+}
 
-	// Pre-allocate result slice for better performance
-	result := make([]string, 0, estimatedSize)
-
-	for _, tag := range tags {
-		// Skip excluded tags
-		if t.excludeTagsCache != nil && t.excludeTagsCache.matches(tag) {
-			continue
-		}
-
-		// If we have include patterns, tag must match at least one
-		if t.includeTagsCache != nil && len(t.filters.IncludeTags) > 0 {
-			if !t.includeTagsCache.matches(tag) {
-				continue
-			}
-		}
-
-		// Tag passes all filters
-		result = append(result, tag)
+// isTagIncluded determines if a tag should be included based on filters
+func isTagIncluded(tag string, excludeCache, includeCache *patternCache, includePatterns []string) bool {
+	// Check exclusion filters first (excluded tags are always removed)
+	if excludeCache != nil && excludeCache.matches(tag) {
+		return false
 	}
 
-	return result
+	// If there are no include patterns, all non-excluded tags are included
+	if len(includePatterns) == 0 {
+		return true
+	}
+
+	// If there are include patterns, tag must match at least one
+	return includeCache != nil && includeCache.matches(tag)
 }
 
 // listAndFilterRepositories gets repositories and applies filters
@@ -413,49 +424,70 @@ func newPatternCache(patterns []string) *patternCache {
 
 // matches returns true if the string matches any pattern in the cache
 func (pc *patternCache) matches(s string) bool {
+	// Handle empty case
 	if pc == nil {
 		return false
 	}
 
-	// Fast path - universal wildcard
+	// Check patterns in order of evaluation cost
+
+	// Universal wildcard - fastest check
 	if pc.hasWildcard {
 		return true
 	}
 
-	// Fast path - exact match
+	// Exact match - very fast
 	if _, ok := pc.exactMatches[s]; ok {
 		return true
 	}
 
-	// Check prefix matches
+	// Prefix, suffix, and contains checks - still relatively fast
+	if pc.matchesPrefix(s) || pc.matchesSuffix(s) || pc.matchesContains(s) {
+		return true
+	}
+
+	// Complex pattern matching - most expensive, do last
+	return pc.matchesComplex(s)
+}
+
+// matchesPrefix checks if the string matches any prefix pattern
+func (pc *patternCache) matchesPrefix(s string) bool {
 	for prefix := range pc.prefixMatches {
 		if strings.HasPrefix(s, prefix) {
 			return true
 		}
 	}
+	return false
+}
 
-	// Check suffix matches
+// matchesSuffix checks if the string matches any suffix pattern
+func (pc *patternCache) matchesSuffix(s string) bool {
 	for suffix := range pc.suffixMatches {
 		if strings.HasSuffix(s, suffix) {
 			return true
 		}
 	}
+	return false
+}
 
-	// Check contains matches
+// matchesContains checks if the string matches any contains pattern
+func (pc *patternCache) matchesContains(s string) bool {
 	for contains := range pc.containsMatches {
 		if strings.Contains(s, contains) {
 			return true
 		}
 	}
+	return false
+}
 
-	// Fall back to complex patterns
+// matchesComplex checks if the string matches any complex pattern
+func (pc *patternCache) matchesComplex(s string) bool {
 	for _, pattern := range pc.complexPatterns {
 		matched, _ := path.Match(pattern, s)
 		if matched {
 			return true
 		}
 	}
-
 	return false
 }
 

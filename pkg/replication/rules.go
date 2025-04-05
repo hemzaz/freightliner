@@ -39,39 +39,54 @@ func ShouldReplicate(rule ReplicationRule, repository, tag string) bool {
 
 // GetDestinationRepository determines the destination repository based on a rule
 func GetDestinationRepository(rule ReplicationRule, sourceRepository string) string {
-	// If the source and destination repository patterns are the same,
-	// use the source repository as is
+	// Case 1: Source and destination repository patterns are the same
 	if rule.SourceRepository == rule.DestinationRepository {
 		return sourceRepository
 	}
 
-	// If the source repository pattern has a wildcard and the destination doesn't,
-	// this is a many-to-one mapping, use the destination as is
-	if strings.Contains(rule.SourceRepository, "*") &&
-		!strings.Contains(rule.DestinationRepository, "*") {
+	// Case 2: Many-to-one mapping (source has wildcard, destination doesn't)
+	if isWildcardPattern(rule.SourceRepository) && !isWildcardPattern(rule.DestinationRepository) {
 		return rule.DestinationRepository
 	}
 
-	// If both patterns have wildcards, try to substitute
-	if strings.Contains(rule.SourceRepository, "*") &&
-		strings.Contains(rule.DestinationRepository, "*") {
-		// Find what matched the wildcard in the source
-		parts := strings.Split(rule.SourceRepository, "*")
-		if len(parts) == 2 {
-			prefix := parts[0]
-			suffix := parts[1]
-
-			if strings.HasPrefix(sourceRepository, prefix) &&
-				strings.HasSuffix(sourceRepository, suffix) {
-				// Extract the middle part that matched the wildcard
-				middle := sourceRepository[len(prefix) : len(sourceRepository)-len(suffix)]
-
-				// Replace the wildcard in the destination pattern
-				return strings.Replace(rule.DestinationRepository, "*", middle, 1)
-			}
+	// Case 3: Both patterns have wildcards, try to substitute
+	if isWildcardPattern(rule.SourceRepository) && isWildcardPattern(rule.DestinationRepository) {
+		substitutedRepo := substituteWildcard(rule.SourceRepository, rule.DestinationRepository, sourceRepository)
+		if substitutedRepo != "" {
+			return substitutedRepo
 		}
 	}
 
-	// If no special case applies, just use the destination as is
+	// Default case: Just use the destination as is
 	return rule.DestinationRepository
+}
+
+// isWildcardPattern checks if a pattern contains a wildcard
+func isWildcardPattern(pattern string) bool {
+	return strings.Contains(pattern, "*")
+}
+
+// substituteWildcard extracts the part matching the wildcard in the source pattern
+// and substitutes it into the destination pattern
+func substituteWildcard(sourcePattern, destPattern, sourceString string) string {
+	// Split the source pattern at the wildcard
+	parts := strings.Split(sourcePattern, "*")
+	if len(parts) != 2 {
+		// We only handle simple patterns with a single wildcard
+		return ""
+	}
+
+	prefix := parts[0]
+	suffix := parts[1]
+
+	// Check if the source string matches the pattern
+	if !strings.HasPrefix(sourceString, prefix) || !strings.HasSuffix(sourceString, suffix) {
+		return ""
+	}
+
+	// Extract the middle part that matched the wildcard
+	middle := sourceString[len(prefix) : len(sourceString)-len(suffix)]
+
+	// Replace the wildcard in the destination pattern
+	return strings.Replace(destPattern, "*", middle, 1)
 }

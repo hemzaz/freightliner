@@ -2,318 +2,121 @@ package common
 
 import (
 	"context"
-	"fmt"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
-	"io"
 	"net/http"
 	"sync"
-	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+
 	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 )
 
-// ClientOptions provides common options for creating registry clients
-type ClientOptions struct {
-	// Logger is the logger to use
-	Logger *log.Logger
-
-	// Registry is the registry hostname
-	Registry string
-
-	// Region is the AWS region/GCP location
-	Region string
-
-	// Project is the GCP project
-	Project string
-
-	// Account is the AWS account ID
-	Account string
-
-	// CustomTransport is an optional custom HTTP transport
-	CustomTransport http.RoundTripper
-
-	// AuthenticatorOverride is an optional authenticator override
-	AuthenticatorOverride RegistryAuthenticator
-}
-
-// BaseClient provides common functionality for registry clients
+// BaseClient implements common functionality for registry clients
 type BaseClient struct {
-	// Logger is the logger to use
-	Logger *log.Logger
+	registryName string
+	util         *RegistryUtil
+	logger       *log.Logger
 
-	// Registry is the registry hostname
-	Registry string
-
-	// Options contains client options
-	Options ClientOptions
-
-	// HTTPClient is the HTTP client to use
-	HTTPClient *http.Client
-
-	// Authenticator is the registry authenticator
-	Authenticator RegistryAuthenticator
-
-	// Auth cache for tokens
-	authCache      map[string]authCacheEntry
-	authCacheMutex sync.RWMutex
+	// Cache for repositories to avoid recreating them
+	repositoriesMutex sync.RWMutex
+	repositories      map[string]Repository
 }
 
-// authCacheEntry represents a cached authentication token
-type authCacheEntry struct {
-	Token     string
-	ExpiresAt time.Time
+// BaseClientOptions provides options for creating a base client
+type BaseClientOptions struct {
+	RegistryName string
+	Logger       *log.Logger
 }
 
-// NewBaseClient creates a new base client
-func NewBaseClient(options ClientOptions) *BaseClient {
-	// Default options
-	if options.Logger == nil {
-		options.Logger = log.NewLogger(log.InfoLevel)
-	}
-
-	// Create HTTP client
-	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	// Use custom transport if provided
-	if options.CustomTransport != nil {
-		httpClient.Transport = options.CustomTransport
+// NewBaseClient creates a new base client for registry operations
+func NewBaseClient(opts BaseClientOptions) *BaseClient {
+	if opts.Logger == nil {
+		opts.Logger = log.NewLogger(log.InfoLevel)
 	}
 
 	return &BaseClient{
-		Logger:     options.Logger,
-		Registry:   options.Registry,
-		Options:    options,
-		HTTPClient: httpClient,
-		authCache:  make(map[string]authCacheEntry),
+		registryName: opts.RegistryName,
+		util:         NewRegistryUtil(opts.Logger),
+		logger:       opts.Logger,
+		repositories: make(map[string]Repository),
 	}
 }
 
-// SetAuthenticator sets the registry authenticator
-func (c *BaseClient) SetAuthenticator(auth RegistryAuthenticator) {
-	c.Authenticator = auth
-}
-
-// ListRepositories lists all repositories in a registry with the given prefix
-func (c *BaseClient) ListRepositories(ctx context.Context, prefix string) ([]string, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	c.Logger.Debug("Listing repositories", map[string]interface{}{
-		"registry": c.Registry,
-		"prefix":   prefix,
-	})
-
-	// This is a placeholder implementation that specific clients should override
-	return nil, errors.NotImplementedf("method not implemented in base client")
-}
-
-// GetRepository returns a repository reference for the given name
-func (c *BaseClient) GetRepository(ctx context.Context, name string) (Repository, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	c.Logger.Debug("Getting repository", map[string]interface{}{
-		"registry": c.Registry,
-		"name":     name,
-	})
-
-	// This is a placeholder implementation that specific clients should override
-	return nil, errors.NotImplementedf("method not implemented in base client")
-}
-
-// GetRegistryName returns the name of the registry
+// GetRegistryName returns the registry endpoint
 func (c *BaseClient) GetRegistryName() string {
-	return c.Registry
+	return c.registryName
 }
 
-// GetAuthToken gets an authentication token for the registry
-func (c *BaseClient) GetAuthToken(ctx context.Context) (string, error) {
-	if c.Authenticator == nil {
-		return "", errors.NotImplementedf("authenticator not set")
+// GetRepository returns a repository by name with caching
+func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (Repository, error) {
+	if repoName == "" {
+		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}
 
-	// Check cache first
-	c.authCacheMutex.RLock()
-	if entry, ok := c.authCache[c.Registry]; ok {
-		if time.Now().Before(entry.ExpiresAt) {
-			token := entry.Token
-			c.authCacheMutex.RUnlock()
-			return token, nil
-		}
-	}
-	c.authCacheMutex.RUnlock()
+	// Check the cache first
+	c.repositoriesMutex.RLock()
+	repo, ok := c.repositories[repoName]
+	c.repositoriesMutex.RUnlock()
 
-	// Get new token
-	token, err := c.Authenticator.GetAuthToken(ctx, c.Registry)
+	if ok {
+		return repo, nil
+	}
+
+	// Create a proper repository reference
+	repository, err := c.util.CreateRepositoryReference(c.registryName, repoName)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get authentication token")
+		return nil, err
 	}
 
-	// Cache token with expiry (default 10 minutes)
-	c.authCacheMutex.Lock()
-	c.authCache[c.Registry] = authCacheEntry{
-		Token:     token,
-		ExpiresAt: time.Now().Add(10 * time.Minute),
-	}
-	c.authCacheMutex.Unlock()
-
-	return token, nil
+	// Repository creation would depend on the specific implementation
+	// This is a placeholder that should be overridden by specific implementations
+	return nil, errors.NotImplementedf("GetRepository must be implemented by specific registry clients")
 }
 
-// CreateTransport creates a transport for registry operations
-func (c *BaseClient) CreateTransport(ctx context.Context, repository string) (http.RoundTripper, error) {
-	if c.Authenticator == nil {
-		return nil, errors.NotImplementedf("authenticator not set")
+// GetCachedRepository gets a repository from the cache or creates a new one
+func (c *BaseClient) GetCachedRepository(ctx context.Context, repoName string, factory func(name.Repository) Repository) (Repository, error) {
+	if repoName == "" {
+		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}
 
-	// Get authenticator for registry
-	auth, err := c.Authenticator.GetAuthenticator(ctx, c.Registry)
+	// Check the cache first
+	c.repositoriesMutex.RLock()
+	repo, ok := c.repositories[repoName]
+	c.repositoriesMutex.RUnlock()
+
+	if ok {
+		return repo, nil
+	}
+
+	// Create a proper repository reference
+	repository, err := c.util.CreateRepositoryReference(c.registryName, repoName)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get authenticator")
+		return nil, err
 	}
 
-	// This ensures the authn import is used
-	var _ authn.Authenticator = auth
+	// Create the repository using the factory function
+	repo = factory(repository)
 
-	// Create registry reference
-	registry, err := name.NewRegistry(c.Registry)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create registry reference")
-	}
+	// Cache the repository
+	c.repositoriesMutex.Lock()
+	c.repositories[repoName] = repo
+	c.repositoriesMutex.Unlock()
 
-	// Create scope
-	scope := fmt.Sprintf("repository:%s:pull,push", repository)
-
-	// Create transport
-	rt, err := transport.New(
-		registry,
-		auth,
-		http.DefaultTransport,
-		[]string{scope},
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create transport")
-	}
-
-	return rt, nil
+	return repo, nil
 }
 
-// BaseRepository provides common functionality for repositories
-type BaseRepository struct {
-	// Client is the registry client
-	Client *BaseClient
-
-	// Name is the repository name
-	Name string
-
-	// ManifestMap is a cache of manifests
-	ManifestMap map[string]*Manifest
-
-	// ManifestMutex protects ManifestMap
-	ManifestMutex sync.RWMutex
+// GetRemoteOptions returns common options for the remote package
+func (c *BaseClient) GetRemoteOptions(transport http.RoundTripper) []remote.Option {
+	return c.util.GetRemoteOptions(transport)
 }
 
-// NewBaseRepository creates a new base repository
-func NewBaseRepository(client *BaseClient, name string) *BaseRepository {
-	return &BaseRepository{
-		Client:      client,
-		Name:        name,
-		ManifestMap: make(map[string]*Manifest),
-	}
+// ValidateRepositoryName checks if a repository name is valid
+func (c *BaseClient) ValidateRepositoryName(repoName string) error {
+	return c.util.ValidateRepositoryName(repoName)
 }
 
-// GetRepositoryName returns the name of the repository
-func (r *BaseRepository) GetRepositoryName() string {
-	return r.Name
-}
-
-// GetName is an alias for GetRepositoryName for backward compatibility
-func (r *BaseRepository) GetName() string {
-	return r.GetRepositoryName()
-}
-
-// ListTags returns all tags for the repository
-func (r *BaseRepository) ListTags() ([]string, error) {
-	// This is a placeholder implementation that specific clients should override
-	return nil, errors.NotImplementedf("method not implemented in base repository")
-}
-
-// GetManifest returns the manifest for the given tag
-func (r *BaseRepository) GetManifest(ctx context.Context, tag string) (*Manifest, error) {
-	// This is a placeholder implementation that specific clients should override
-	return nil, errors.NotImplementedf("method not implemented in base repository")
-}
-
-// PutManifest uploads a manifest with the given tag
-func (r *BaseRepository) PutManifest(ctx context.Context, tag string, manifest *Manifest) error {
-	// This is a placeholder implementation that specific clients should override
-	return errors.NotImplementedf("method not implemented in base repository")
-}
-
-// DeleteManifest deletes the manifest for the given tag
-func (r *BaseRepository) DeleteManifest(ctx context.Context, tag string) error {
-	// This is a placeholder implementation that specific clients should override
-	return errors.NotImplementedf("method not implemented in base repository")
-}
-
-// GetLayerReader returns a reader for the layer with the given digest
-func (r *BaseRepository) GetLayerReader(ctx context.Context, digest string) (io.ReadCloser, error) {
-	// This is a placeholder implementation that specific clients should override
-	return nil, errors.NotImplementedf("method not implemented in base repository")
-}
-
-// GetImageReference returns a name.Reference for the given tag
-func (r *BaseRepository) GetImageReference(tag string) (name.Reference, error) {
-	// Create the full reference based on whether a tag is provided
-	var fullRef string
-	if tag != "" {
-		fullRef = fmt.Sprintf("%s/%s:%s", r.Client.Registry, r.Name, tag)
-		tagRef, err := name.NewTag(fullRef)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create tag reference")
-		}
-		return tagRef, nil
-	} else {
-		fullRef = fmt.Sprintf("%s/%s", r.Client.Registry, r.Name)
-		refObj, err := name.ParseReference(fullRef)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create repository reference")
-		}
-		return refObj, nil
-	}
-}
-
-// GetRemoteOptions returns options for remote operations
-func (r *BaseRepository) GetRemoteOptions() ([]remote.Option, error) {
-	// Create transport
-	rt, err := r.Client.CreateTransport(context.Background(), r.Name)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create transport")
-	}
-
-	// Create options
-	return []remote.Option{
-		remote.WithTransport(rt),
-	}, nil
-}
-
-// GetImage retrieves the v1.Image for the given tag
-func (r *BaseRepository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
-	// This is a placeholder implementation that specific clients should override
-	return nil, errors.NotImplementedf("method not implemented in base repository")
-}
-
-// PutImage uploads a v1.Image with the given tag
-func (r *BaseRepository) PutImage(ctx context.Context, tag string, img v1.Image) error {
-	// This is a placeholder implementation that specific clients should override
-	return errors.NotImplementedf("method not implemented in base repository")
+// LogOperation logs a registry operation with consistent format
+func (c *BaseClient) LogOperation(ctx context.Context, operation, repository string, extraFields map[string]interface{}) {
+	c.util.LogRegistryOperation(ctx, operation, c.registryName, repository, extraFields)
 }
