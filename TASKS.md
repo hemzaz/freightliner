@@ -40,7 +40,7 @@ This document tracks tasks to improve the Freightliner codebase based on clean c
 | TST-004 | Testing | TODO | Add job management tests | 80% coverage | 🔴 |
 | TOOL-001 | Tooling | DONE | Configure `golangci-lint` | Integrated linting | 🟢 |
 | TOOL-002 | Tooling | DONE | Set up `go vet` checks | Interface checks | 🟢 |
-| FEAT-001 | Features | TODO | Complete config file support | Env var overrides | 🟡 |
+| FEAT-001 | Features | DONE | Complete config file support | Env var overrides | 🟢 |
 | FEAT-002 | Features | DONE | Implement repository replication | Full replication | 🟢 |
 
 ## High Priority Tasks (P1)
@@ -64,7 +64,7 @@ This document tracks tasks to improve the Freightliner codebase based on clean c
 | DOC-002 | Documentation | TODO | Document exported functions | 100% API coverage | 🔴 |
 | DOC-003 | Documentation | TODO | Standardize comment style | Consistent style | 🟡 |
 | DOC-006 | Documentation | TODO | Create architecture docs | System design docs | 🔴 |
-| DOC-007 | Documentation | TODO | Document YAML config format | Config documentation | 🔴 |
+| DOC-007 | Documentation | TODO | Document YAML config format | Config documentation | 🟢 |
 | INT-002 | Interfaces | DONE | Split `Repository` interface | Focused interfaces | 🟢 |
 | INT-003 | Interfaces | DONE | Consolidate interface definitions | No duplication | 🟢 |
 | INT-005 | Interfaces | DONE | Complete v1.Image implementation | All methods | 🟢 |
@@ -115,9 +115,9 @@ This document tracks tasks to improve the Freightliner codebase based on clean c
 
 ## Progress Summary
 - Total tasks: 69
-- Completed: 47 (68%)
-- P0 tasks completed: 14/19 (74%)
-- P1 tasks completed: 21/34 (62%)
+- Completed: 49 (71%)
+- P0 tasks completed: 15/19 (79%)
+- P1 tasks completed: 22/34 (65%)
 - P2 tasks completed: 11/18 (61%)
 - P3 tasks completed: 1/3 (33%)
 
@@ -126,11 +126,11 @@ This document tracks tasks to improve the Freightliner codebase based on clean c
 - Naming: 4 tasks (4 complete)
 - Functions: 7 tasks (7 complete)
 - Error Handling: 11 tasks (4 complete)
-- Documentation: 7 tasks (0 complete)
+- Documentation: 7 tasks (1 complete)
 - Interfaces: 6 tasks (6 complete)
 - Concurrency: 5 tasks (5 complete)
 - Testing: 9 tasks (0 complete)
 - Duplication: 4 tasks (4 complete)
 - Style: 5 tasks (5 complete)
 - Tooling: 3 tasks (3 complete)
-- Features: 6 tasks (3 complete)
+- Features: 6 tasks (4 complete)

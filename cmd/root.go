@@ -3,11 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"freightliner/pkg/config"
-	"freightliner/pkg/helper/log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"freightliner/pkg/config"
+	"freightliner/pkg/helper/log"
 
 	"github.com/spf13/cobra"
 )
@@ -16,11 +17,36 @@ var (
 	// Configuration
 	cfg *config.Config
 
+	// Path to configuration file
+	configFile string
+
 	// Root command
 	rootCmd = &cobra.Command{
 		Use:   "freightliner",
 		Short: "Freightliner is a container image replication tool",
 		Long:  `A tool for replicating container images between registries like AWS ECR and Google GCR`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Skip for version and help commands
+			if cmd.Name() == "version" || cmd.Name() == "help" {
+				return nil
+			}
+
+			// Load configuration from file if specified
+			if configFile != "" {
+				var err error
+				cfg, err = config.LoadFromFile(configFile)
+				if err != nil {
+					return fmt.Errorf("failed to load configuration: %w", err)
+				}
+
+				// Re-apply command line flags to override config file and env vars
+				cmd.Flags().Visit(func(f *cobra.Flag) {
+					// Flags present on command line take precedence
+				})
+			}
+
+			return nil
+		},
 	}
 )
 
@@ -36,6 +62,9 @@ func Execute() {
 func init() {
 	// Initialize configuration
 	cfg = config.NewDefaultConfig()
+
+	// Add configuration file flag
+	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Path to configuration file")
 
 	// Add configuration flags to root command
 	cfg.AddFlagsToCommand(rootCmd)

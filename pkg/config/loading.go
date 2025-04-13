@@ -1,11 +1,13 @@
 package config
 
 import (
-	"freightliner/pkg/helper/errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"freightliner/pkg/helper/errors"
 
 	"gopkg.in/yaml.v3"
 )
@@ -36,7 +38,7 @@ func LoadFromFile(configPath string) (*Config, error) {
 		}
 	}
 
-	// Load from environment variables
+	// Load from environment variables - these override file settings
 	if err := loadFromEnv(config); err != nil {
 		return nil, err
 	}
@@ -51,15 +53,70 @@ func LoadFromFile(configPath string) (*Config, error) {
 
 // loadFromEnv loads configuration from environment variables
 func loadFromEnv(config *Config) error {
+	// Process string configuration values
+	processStringEnvVars(config)
+
+	// Process boolean configuration values
+	processBooleanEnvVars(config)
+
+	// Process integer configuration values
+	processIntEnvVars(config)
+
+	// Process slice configuration values
+	processSliceEnvVars(config)
+
+	// Process duration configuration values
+	processDurationEnvVars(config)
+
+	return nil
+}
+
+// processStringEnvVars loads string configuration from environment variables
+func processStringEnvVars(config *Config) {
 	// Map of environment variables to configuration fields
 	envVars := map[string]*string{
-		"FREIGHTLINER_LOG_LEVEL":      &config.LogLevel,
+		// General configuration
+		"FREIGHTLINER_LOG_LEVEL": &config.LogLevel,
+
+		// ECR configuration
 		"FREIGHTLINER_ECR_REGION":     &config.ECR.Region,
 		"FREIGHTLINER_ECR_ACCOUNT_ID": &config.ECR.AccountID,
-		"FREIGHTLINER_GCR_PROJECT":    &config.GCR.Project,
-		"FREIGHTLINER_GCR_LOCATION":   &config.GCR.Location,
 
-		// Add more mappings as needed
+		// GCR configuration
+		"FREIGHTLINER_GCR_PROJECT":  &config.GCR.Project,
+		"FREIGHTLINER_GCR_LOCATION": &config.GCR.Location,
+
+		// Encryption configuration
+		"FREIGHTLINER_AWS_KMS_KEY_ID": &config.Encryption.AWSKMSKeyID,
+		"FREIGHTLINER_GCP_KMS_KEY_ID": &config.Encryption.GCPKMSKeyID,
+		"FREIGHTLINER_GCP_KEY_RING":   &config.Encryption.GCPKeyRing,
+		"FREIGHTLINER_GCP_KEY_NAME":   &config.Encryption.GCPKeyName,
+
+		// Secrets configuration
+		"FREIGHTLINER_SECRETS_MANAGER_TYPE":   &config.Secrets.SecretsManagerType,
+		"FREIGHTLINER_AWS_SECRET_REGION":      &config.Secrets.AWSSecretRegion,
+		"FREIGHTLINER_GCP_SECRET_PROJECT":     &config.Secrets.GCPSecretProject,
+		"FREIGHTLINER_GCP_CREDENTIALS_FILE":   &config.Secrets.GCPCredentialsFile,
+		"FREIGHTLINER_REGISTRY_CREDS_SECRET":  &config.Secrets.RegistryCredsSecret,
+		"FREIGHTLINER_ENCRYPTION_KEYS_SECRET": &config.Secrets.EncryptionKeysSecret,
+
+		// Server configuration
+		"FREIGHTLINER_TLS_CERT_FILE":       &config.Server.TLSCertFile,
+		"FREIGHTLINER_TLS_KEY_FILE":        &config.Server.TLSKeyFile,
+		"FREIGHTLINER_API_KEY":             &config.Server.APIKey,
+		"FREIGHTLINER_HEALTH_CHECK_PATH":   &config.Server.HealthCheckPath,
+		"FREIGHTLINER_METRICS_PATH":        &config.Server.MetricsPath,
+		"FREIGHTLINER_REPLICATE_PATH":      &config.Server.ReplicatePath,
+		"FREIGHTLINER_TREE_REPLICATE_PATH": &config.Server.TreeReplicatePath,
+		"FREIGHTLINER_STATUS_PATH":         &config.Server.StatusPath,
+
+		// Checkpoint configuration
+		"FREIGHTLINER_CHECKPOINT_DIRECTORY": &config.Checkpoint.Directory,
+		"FREIGHTLINER_CHECKPOINT_ID":        &config.Checkpoint.ID,
+
+		// Tree replication configuration
+		"FREIGHTLINER_TREE_CHECKPOINT_DIR": &config.TreeReplicate.CheckpointDir,
+		"FREIGHTLINER_TREE_RESUME_ID":      &config.TreeReplicate.ResumeID,
 	}
 
 	// Load environment variables
@@ -68,21 +125,120 @@ func loadFromEnv(config *Config) error {
 			*field = value
 		}
 	}
+}
 
-	// Handle boolean and numeric environment variables
-	if value, exists := os.LookupEnv("FREIGHTLINER_ENCRYPTION_ENABLED"); exists {
-		config.Encryption.Enabled = strings.ToLower(value) == "true" || value == "1"
+// processBooleanEnvVars loads boolean configuration from environment variables
+func processBooleanEnvVars(config *Config) {
+	// Map of environment variables to configuration fields
+	envVars := map[string]*bool{
+		// Workers configuration
+		"FREIGHTLINER_AUTO_DETECT_WORKERS": &config.Workers.AutoDetect,
+
+		// Encryption configuration
+		"FREIGHTLINER_ENCRYPTION_ENABLED":    &config.Encryption.Enabled,
+		"FREIGHTLINER_CUSTOMER_MANAGED_KEYS": &config.Encryption.CustomerManagedKeys,
+		"FREIGHTLINER_ENVELOPE_ENCRYPTION":   &config.Encryption.EnvelopeEncryption,
+
+		// Secrets configuration
+		"FREIGHTLINER_USE_SECRETS_MANAGER": &config.Secrets.UseSecretsManager,
+
+		// Server configuration
+		"FREIGHTLINER_TLS_ENABLED":  &config.Server.TLSEnabled,
+		"FREIGHTLINER_API_KEY_AUTH": &config.Server.APIKeyAuth,
+
+		// Tree replication configuration
+		"FREIGHTLINER_TREE_DRY_RUN":           &config.TreeReplicate.DryRun,
+		"FREIGHTLINER_TREE_FORCE":             &config.TreeReplicate.Force,
+		"FREIGHTLINER_TREE_ENABLE_CHECKPOINT": &config.TreeReplicate.EnableCheckpoint,
+		"FREIGHTLINER_TREE_SKIP_COMPLETED":    &config.TreeReplicate.SkipCompleted,
+		"FREIGHTLINER_TREE_RETRY_FAILED":      &config.TreeReplicate.RetryFailed,
+
+		// Replication configuration
+		"FREIGHTLINER_REPLICATE_FORCE":   &config.Replicate.Force,
+		"FREIGHTLINER_REPLICATE_DRY_RUN": &config.Replicate.DryRun,
 	}
 
-	if value, exists := os.LookupEnv("FREIGHTLINER_REPLICATE_WORKERS"); exists {
-		if n, err := strconv.Atoi(value); err == nil {
-			config.Workers.ReplicateWorkers = n
+	// Load environment variables
+	for env, field := range envVars {
+		if value, exists := os.LookupEnv(env); exists {
+			*field = strings.ToLower(value) == "true" || value == "1" || value == "yes" || value == "y"
 		}
 	}
+}
 
-	// More boolean and numeric environment variables can be handled here
+// processIntEnvVars loads integer configuration from environment variables
+func processIntEnvVars(config *Config) {
+	// Map of environment variables to configuration fields
+	envVars := map[string]*int{
+		// Workers configuration
+		"FREIGHTLINER_REPLICATE_WORKERS": &config.Workers.ReplicateWorkers,
+		"FREIGHTLINER_SERVE_WORKERS":     &config.Workers.ServeWorkers,
 
-	return nil
+		// Server configuration
+		"FREIGHTLINER_SERVER_PORT": &config.Server.Port,
+
+		// Tree replication configuration
+		"FREIGHTLINER_TREE_WORKERS": &config.TreeReplicate.Workers,
+	}
+
+	// Load environment variables
+	for env, field := range envVars {
+		if value, exists := os.LookupEnv(env); exists && value != "" {
+			if n, err := strconv.Atoi(value); err == nil {
+				*field = n
+			}
+		}
+	}
+}
+
+// processSliceEnvVars loads slice configuration from environment variables
+func processSliceEnvVars(config *Config) {
+	// Process string slice environment variables
+	stringSliceEnvs := map[string]*[]string{
+		"FREIGHTLINER_SERVER_ALLOWED_ORIGINS": &config.Server.AllowedOrigins,
+		"FREIGHTLINER_TREE_EXCLUDE_REPOS":     &config.TreeReplicate.ExcludeRepos,
+		"FREIGHTLINER_TREE_EXCLUDE_TAGS":      &config.TreeReplicate.ExcludeTags,
+		"FREIGHTLINER_TREE_INCLUDE_TAGS":      &config.TreeReplicate.IncludeTags,
+		"FREIGHTLINER_REPLICATE_TAGS":         &config.Replicate.Tags,
+	}
+
+	for env, field := range stringSliceEnvs {
+		if value, exists := os.LookupEnv(env); exists && value != "" {
+			// Split by comma, trim whitespace
+			values := strings.Split(value, ",")
+			trimmedValues := make([]string, 0, len(values))
+
+			for _, v := range values {
+				trimmed := strings.TrimSpace(v)
+				if trimmed != "" {
+					trimmedValues = append(trimmedValues, trimmed)
+				}
+			}
+
+			if len(trimmedValues) > 0 {
+				*field = trimmedValues
+			}
+		}
+	}
+}
+
+// processDurationEnvVars loads time.Duration configuration from environment variables
+func processDurationEnvVars(config *Config) {
+	// Map of environment variables to configuration fields
+	envVars := map[string]*time.Duration{
+		"FREIGHTLINER_SERVER_READ_TIMEOUT":     &config.Server.ReadTimeout,
+		"FREIGHTLINER_SERVER_WRITE_TIMEOUT":    &config.Server.WriteTimeout,
+		"FREIGHTLINER_SERVER_SHUTDOWN_TIMEOUT": &config.Server.ShutdownTimeout,
+	}
+
+	// Load environment variables
+	for env, field := range envVars {
+		if value, exists := os.LookupEnv(env); exists && value != "" {
+			if duration, err := time.ParseDuration(value); err == nil {
+				*field = duration
+			}
+		}
+	}
 }
 
 // SaveToFile saves the configuration to a file
@@ -104,6 +260,7 @@ func (c *Config) SaveToFile(filePath string) error {
 
 	// Create encoder and encode config
 	encoder := yaml.NewEncoder(file)
+	encoder.SetIndent(2) // Makes the output more readable
 	if err := encoder.Encode(c); err != nil {
 		return errors.Wrap(err, "failed to encode configuration")
 	}
