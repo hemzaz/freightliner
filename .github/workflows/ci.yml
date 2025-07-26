@@ -34,7 +34,7 @@ jobs:
         run: go mod download
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.3.0
           args: --timeout=5m
