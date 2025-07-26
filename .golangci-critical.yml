@@ -1,0 +1,23 @@
+# Critical issues only configuration for golangci-lint
+version: 2
+
+run:
+  timeout: 2m
+  tests: true
+  skip-dirs:
+    - vendor
+    - test/mocks
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck     # Critical: unchecked errors
+    - gosec        # Critical: security issues
+
+issues:
+  max-same-issues: 0

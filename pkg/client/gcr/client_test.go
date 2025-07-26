@@ -3,9 +3,10 @@ package gcr
 import (
 	"context"
 	"errors"
-	freightliner_log "freightliner/pkg/helper/log"
 	"net/http"
 	"testing"
+
+	freightliner_log "freightliner/pkg/helper/log"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/google"

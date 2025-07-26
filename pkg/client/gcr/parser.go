@@ -1,8 +1,9 @@
 package gcr
 
 import (
-	"freightliner/pkg/helper/errors"
 	"strings"
+
+	"freightliner/pkg/helper/errors"
 
 	"github.com/google/go-containerregistry/pkg/name"
 )

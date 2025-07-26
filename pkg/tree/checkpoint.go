@@ -3,10 +3,11 @@ package tree
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/tree/checkpoint"
-	"time"
 
 	"github.com/google/uuid"
 )

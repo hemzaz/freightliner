@@ -223,7 +223,9 @@ func (s *CheckpointService) ExportCheckpoint(ctx context.Context, id string, fil
 	if err != nil {
 		return errors.Wrap(err, "failed to create export file")
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Marshal to JSON
 	encoder := json.NewEncoder(file)
@@ -259,7 +261,9 @@ func (s *CheckpointService) ImportCheckpoint(ctx context.Context, filePath strin
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to open import file")
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Unmarshal from JSON
 	var info CheckpointInfo

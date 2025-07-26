@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
-	"freightliner/pkg/helper/errors"
 	"io"
+
+	"freightliner/pkg/helper/errors"
 )
 
 // CompressionType represents the type of compression to use

@@ -3,9 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"freightliner/pkg/service"
 	"sync"
 	"time"
+
+	"freightliner/pkg/service"
 
 	"github.com/google/uuid"
 )

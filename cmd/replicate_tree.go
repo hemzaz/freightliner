@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"freightliner/pkg/service"
 	"os"
+
+	"freightliner/pkg/service"
 
 	"github.com/spf13/cobra"
 )

@@ -2,9 +2,10 @@ package common
 
 import (
 	"fmt"
+	"net/http"
+
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
-	"net/http"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"

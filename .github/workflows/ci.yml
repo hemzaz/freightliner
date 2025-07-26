@@ -12,64 +12,119 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.24'
           check-latest: true
 
-      - name: Install golangci-lint
-        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.52.2
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+          --health-start-period 10s
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.24'
           check-latest: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
       - name: Download dependencies
         run: go mod download
 
       - name: Format check
-        run: |
-          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
-            gofmt -d .
-            echo "Code is not formatted with gofmt. Run 'make fmt' to fix."
-            exit 1
-          fi
+        run: make fmt-check
 
       - name: Import organization check
-        run: |
-          go install golang.org/x/tools/cmd/goimports@latest
-          GOIMPORTS_OUTPUT=$(goimports -l -local freightliner .)
-          if [ -n "$GOIMPORTS_OUTPUT" ]; then
-            echo "Imports not properly organized. Run 'make imports' to fix."
-            echo "$GOIMPORTS_OUTPUT"
-            exit 1
-          fi
+        run: make imports-check
+
+      - name: Run enhanced go vet checks
+        run: make vet
+
+      - name: Run staticcheck
+        run: make staticcheck
 
       - name: Run tests
         run: go test -v -race ./...
+        env:
+          REGISTRY_HOST: localhost:5100
 
-      - name: Run enhanced go vet checks
-        run: |
-          go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
-          go install github.com/mvdan/interfacer/cmd/interfacer@latest
-          ./scripts/vet.sh
-          
-      - name: Run staticcheck
-        run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
-          ./scripts/staticcheck.sh
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build application
+        run: make build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: freightliner-binary
+          path: bin/
+          retention-days: 7

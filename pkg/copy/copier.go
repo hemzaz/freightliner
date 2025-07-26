@@ -412,7 +412,9 @@ func (c *Copier) transferBlob(
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to get layer reader")
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close()
+	}()
 
 	// Apply compression if needed
 	processedReader := reader
@@ -421,7 +423,9 @@ func (c *Copier) transferBlob(
 		if err != nil {
 			return 0, errors.Wrap(err, "failed to compress stream")
 		}
-		defer processedReader.Close()
+		defer func() {
+			_ = processedReader.Close()
+		}()
 	}
 
 	// Apply encryption if configured
@@ -430,7 +434,9 @@ func (c *Copier) transferBlob(
 		if err != nil {
 			return 0, errors.Wrap(err, "failed to encrypt blob")
 		}
-		defer processedReader.Close()
+		defer func() {
+			_ = processedReader.Close()
+		}()
 	}
 
 	// Upload blob to destination
@@ -485,8 +491,12 @@ func (c *Copier) compressStream(reader io.ReadCloser) (io.ReadCloser, error) {
 
 	// Start compression in a goroutine
 	go func() {
-		defer pw.Close()
-		defer reader.Close()
+		defer func() {
+			_ = pw.Close()
+		}()
+		defer func() {
+			_ = reader.Close()
+		}()
 
 		// Create compressing writer
 		compressor, err := network.NewCompressingWriter(pw, opts)
@@ -494,7 +504,9 @@ func (c *Copier) compressStream(reader io.ReadCloser) (io.ReadCloser, error) {
 			pw.CloseWithError(errors.Wrap(err, "failed to create compressor"))
 			return
 		}
-		defer compressor.Close()
+		defer func() {
+			_ = compressor.Close()
+		}()
 
 		// Copy data through compressor
 		if _, err := io.Copy(compressor, reader); err != nil {

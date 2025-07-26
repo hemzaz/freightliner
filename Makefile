@@ -25,9 +25,27 @@ clean:
 fmt:
 	go fmt ./...
 
+# Check if code is formatted
+fmt-check:
+	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
+		echo "Code is not formatted with gofmt. Run 'make fmt' to fix."; \
+		gofmt -d .; \
+		exit 1; \
+	fi
+
 # Organize imports
 imports:
 	./scripts/organize_imports.sh
+
+# Check if imports are organized
+imports-check:
+	@go install golang.org/x/tools/cmd/goimports@latest
+	@GOIMPORTS_OUTPUT=$$(goimports -l -local freightliner .); \
+	if [ -n "$$GOIMPORTS_OUTPUT" ]; then \
+		echo "Imports not properly organized. Run 'make imports' to fix."; \
+		echo "$$GOIMPORTS_OUTPUT"; \
+		exit 1; \
+	fi
 
 # Run go vet
 vet:

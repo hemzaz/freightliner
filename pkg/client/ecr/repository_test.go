@@ -3,8 +3,9 @@ package ecr
 import (
 	"context"
 	"errors"
-	"freightliner/pkg/helper/log"
 	"testing"
+
+	"freightliner/pkg/helper/log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"

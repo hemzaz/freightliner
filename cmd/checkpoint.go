@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"freightliner/pkg/service"
 	"os"
+
+	"freightliner/pkg/service"
 
 	"github.com/spf13/cobra"
 )
@@ -266,6 +267,8 @@ func newCheckpointImportCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&inputPath, "input", "i", "", "Input file path")
-	cmd.MarkFlagRequired("input")
+	if err := cmd.MarkFlagRequired("input"); err != nil {
+		panic(fmt.Sprintf("failed to mark flag as required: %v", err))
+	}
 	return cmd
 }

@@ -320,7 +320,9 @@ func (repo *Repository) DeleteImage(ctx context.Context, tag string) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to send delete request")
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// Check response
 	if resp.StatusCode == http.StatusNotFound {

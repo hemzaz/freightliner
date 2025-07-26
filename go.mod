@@ -1,6 +1,8 @@
 module freightliner
 
-go 1.24.1
+go 1.23.0
+
+toolchain go1.24.5
 
 require (
 	cloud.google.com/go/kms v1.21.1

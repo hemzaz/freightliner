@@ -256,7 +256,9 @@ func (c *Config) SaveToFile(filePath string) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create file")
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Create encoder and encode config
 	encoder := yaml.NewEncoder(file)

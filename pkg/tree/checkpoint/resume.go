@@ -1,8 +1,9 @@
 package checkpoint
 
 import (
-	"freightliner/pkg/helper/errors"
 	"time"
+
+	"freightliner/pkg/helper/errors"
 )
 
 // ResumableCheckpoint contains information about a checkpoint that can be resumed

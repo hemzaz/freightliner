@@ -1100,11 +1100,17 @@ func (s *ReplicationService) loadRegistryCredentials(ctx context.Context, provid
 func (s *ReplicationService) applyRegistryCredentials(creds RegistryCredentials) {
 	// Apply AWS credentials if provided
 	if creds.ECR.AccessKey != "" && creds.ECR.SecretKey != "" {
-		os.Setenv("AWS_ACCESS_KEY_ID", creds.ECR.AccessKey)
-		os.Setenv("AWS_SECRET_ACCESS_KEY", creds.ECR.SecretKey)
+		if err := os.Setenv("AWS_ACCESS_KEY_ID", creds.ECR.AccessKey); err != nil {
+			s.logger.Warn("Failed to set AWS_ACCESS_KEY_ID environment variable", map[string]interface{}{"error": err.Error()})
+		}
+		if err := os.Setenv("AWS_SECRET_ACCESS_KEY", creds.ECR.SecretKey); err != nil {
+			s.logger.Warn("Failed to set AWS_SECRET_ACCESS_KEY environment variable", map[string]interface{}{"error": err.Error()})
+		}
 
 		if creds.ECR.SessionToken != "" {
-			os.Setenv("AWS_SESSION_TOKEN", creds.ECR.SessionToken)
+			if err := os.Setenv("AWS_SESSION_TOKEN", creds.ECR.SessionToken); err != nil {
+				s.logger.Warn("Failed to set AWS_SESSION_TOKEN environment variable", map[string]interface{}{"error": err.Error()})
+			}
 		}
 	}
 
@@ -1132,15 +1138,17 @@ func (s *ReplicationService) applyRegistryCredentials(creds RegistryCredentials)
 		if err == nil {
 			tmpFilePath := tmpFile.Name()
 			defer func() {
-				tmpFile.Close()
-				os.Remove(tmpFilePath) // Clean up when done
+				_ = tmpFile.Close()
+				_ = os.Remove(tmpFilePath) // Clean up when done
 			}()
 
 			// Decode and write credentials to file
 			decoded, err := base64.StdEncoding.DecodeString(creds.GCR.Credentials)
 			if err == nil {
 				if _, err := tmpFile.Write(decoded); err == nil {
-					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFilePath)
+					if setEnvErr := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFilePath); setEnvErr != nil {
+						s.logger.Warn("Failed to set GOOGLE_APPLICATION_CREDENTIALS environment variable", map[string]interface{}{"error": setEnvErr.Error()})
+					}
 				}
 			}
 		}

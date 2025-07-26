@@ -3,10 +3,11 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
+	"os"
+
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/secrets"
-	"os"
 )
 
 // Configuration options for secrets management
@@ -185,11 +186,11 @@ func loadEncryptionKeys(ctx context.Context, provider secrets.Provider) (*Encryp
 func applyRegistryCredentials(creds *RegistryCredentials) {
 	// Set environment variables for AWS credentials
 	if creds.ECR.AccessKey != "" && creds.ECR.SecretKey != "" {
-		os.Setenv("AWS_ACCESS_KEY_ID", creds.ECR.AccessKey)
-		os.Setenv("AWS_SECRET_ACCESS_KEY", creds.ECR.SecretKey)
+		_ = os.Setenv("AWS_ACCESS_KEY_ID", creds.ECR.AccessKey)
+		_ = os.Setenv("AWS_SECRET_ACCESS_KEY", creds.ECR.SecretKey)
 
 		if creds.ECR.SessionToken != "" {
-			os.Setenv("AWS_SESSION_TOKEN", creds.ECR.SessionToken)
+			_ = os.Setenv("AWS_SESSION_TOKEN", creds.ECR.SessionToken)
 		}
 	}
 
@@ -218,8 +219,8 @@ func applyRegistryCredentials(creds *RegistryCredentials) {
 			// Ensure file is closed and deleted when function returns
 			tmpFilePath := tmpFile.Name()
 			defer func() {
-				tmpFile.Close()
-				os.Remove(tmpFilePath) // Securely delete the file when done
+				_ = tmpFile.Close()
+				_ = os.Remove(tmpFilePath) // Securely delete the file when done
 			}()
 
 			// Decode and write credentials to the temp file
@@ -227,7 +228,7 @@ func applyRegistryCredentials(creds *RegistryCredentials) {
 			if err == nil {
 				if _, err := tmpFile.Write(decoded); err == nil {
 					// Set environment variable to use this credentials file
-					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFilePath)
+					_ = os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFilePath)
 				}
 			}
 		}

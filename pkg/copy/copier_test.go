@@ -2,11 +2,12 @@ package copy
 
 import (
 	"context"
-	"freightliner/pkg/helper/log"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"freightliner/pkg/helper/log"
 )
 
 // MockRepository is a mock implementation of the common.Repository interface
