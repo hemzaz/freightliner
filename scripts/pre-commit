@@ -18,7 +18,7 @@ if ! command -v goimports &> /dev/null; then
 fi
 
 if ! command -v golangci-lint &> /dev/null; then
-  echo "Error: golangci-lint is not installed. Install it with 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0'"
+  echo "Error: golangci-lint is not installed. Install it with 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.3.0'"
   exit 1
 fi
 

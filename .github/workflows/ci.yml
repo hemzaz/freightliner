@@ -36,7 +36,7 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61.0
+          version: v2.3.0
           args: --timeout=5m
         continue-on-error: true
         id: golangci-lint-action
@@ -44,7 +44,7 @@ jobs:
       - name: Fallback golangci-lint installation
         if: steps.golangci-lint-action.outcome == 'failure'
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.3.0
           $(go env GOPATH)/bin/golangci-lint run --timeout=5m
 
   test:
@@ -98,6 +98,9 @@ jobs:
 
       - name: Import organization check
         run: make imports-check
+        env:
+          GO111MODULE: on
+          GOFLAGS: -mod=mod
 
       - name: Install go tools
         run: |
@@ -105,20 +108,31 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
       - name: Run enhanced go vet checks
-        run: make vet
+        run: |
+          echo "=== Debugging Go module setup ==="
+          echo "PWD: $(pwd)"
+          echo "GO111MODULE: $GO111MODULE"
+          echo "GOFLAGS: $GOFLAGS" 
+          echo "GOROOT: $GOROOT"
+          echo "GOPATH: $GOPATH"
+          echo "Go version: $(go version)"
+          echo "Go env GOMOD: $(go env GOMOD)"
+          echo "Go list -m: $(go list -m)"
+          echo "=== Running make vet ==="
+          make vet
         env:
           GO111MODULE: on
-          GOFLAGS: -mod=readonly
+          GOFLAGS: -mod=mod
           GOROOT: ${{ steps.setup-go.outputs.go-root }}
-          GOPATH: ${{ steps.setup-go.outputs.go-path }}
+          GOPATH: ""
 
       - name: Run staticcheck
         run: make staticcheck
         env:
           GO111MODULE: on
-          GOFLAGS: -mod=readonly
+          GOFLAGS: -mod=mod
           GOROOT: ${{ steps.setup-go.outputs.go-root }}
-          GOPATH: ${{ steps.setup-go.outputs.go-path }}
+          GOPATH: ""
 
       - name: Run tests
         run: go test -v -race ./...

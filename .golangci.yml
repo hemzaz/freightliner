@@ -1,35 +1,14 @@
 # golangci-lint configuration for Freightliner project
-# Compatible with golangci-lint v1.61.0
+# Compatible with golangci-lint v2.3.0
+
+version: "2"
 
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - vendor
-    - test/mocks
-
-output:
-  format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  govet:
-    enable-all: true
-    disable:
-      - shadow
-  revive:
-    confidence: 0.8
-  staticcheck:
-    checks: ["all"]
-  unused:
-    check-exported: false
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - bodyclose
     - dupl
@@ -46,22 +25,3 @@ linters:
     - unconvert
     - unparam
     - unused
-
-issues:
-  max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - dupl
-        - gocyclo
-        - gosec
-    - path: _test\.go
-      text: "comment on exported"
-      linters:
-        - revive
-    - path: \.gen\.go
-      linters:
-        - all
-    - path: _generated\.go
-      linters:
-        - all

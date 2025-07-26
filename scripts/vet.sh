@@ -33,11 +33,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Ensure we're in module root directory
+if [ ! -f "go.mod" ]; then
+  echo -e "${RED}Error: go.mod not found in current directory. Make sure you're in the module root.${NC}"
+  exit 1
+fi
+
 # Debug module setup
 echo -e "${YELLOW}Debugging module setup...${NC}"
 echo "Working directory: $(pwd)"
+echo "GO111MODULE: ${GO111MODULE:-default}"
+echo "GOFLAGS: ${GOFLAGS:-none}"
 echo "Go module: $(go list -m 2>/dev/null || echo 'No module found')"
 echo "Go version: $(go version)"
+echo "GOMOD path: $(go env GOMOD 2>/dev/null || echo 'No go.mod found')"
+
+# Ensure module mode is enabled
+export GO111MODULE=on
 
 # Run standard go vet
 echo -e "${YELLOW}Running standard go vet checks...${NC}"
