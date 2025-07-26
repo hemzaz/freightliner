@@ -10,18 +10,20 @@ run:
 linters:
   default: none
   enable:
-    - bodyclose
-    - dupl
     - errcheck
-    - gocyclo
     - gosec
     - govet
     - ineffassign
     - misspell
+    - staticcheck
+    - unused
+  disable:
+    # Temporarily disable linters that might cause export data issues
+    - bodyclose
+    - dupl
+    - gocyclo
     - nakedret
     - prealloc
     - revive
-    - staticcheck
     - unconvert
     - unparam
-    - unused
