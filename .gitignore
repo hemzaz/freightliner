@@ -39,12 +39,5 @@ secrets/
 *.key
 *.log
 
-GUIDELINES.md
-PROJECT_STRUCTURE.md
-REUSE_STRATEGY.md
-TOFIX.md
 test_output_full.txt
 GOTEST_OUTPUT.md
-.claude/
-.claude
-CLAUDE.md

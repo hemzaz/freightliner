@@ -167,9 +167,130 @@ go test ./...
 go build -o bin/freightliner cmd/freightliner/main.go
 ```
 
+## Production Readiness Status
+
+⚠️ **IMPORTANT: NOT PRODUCTION READY** ⚠️
+
+This project is currently in **active development** and has **47 critical blockers** that prevent production deployment. 
+
+### Current Status
+- **Development Phase**: Feature development with comprehensive testing infrastructure
+- **Security**: Multiple critical vulnerabilities requiring immediate attention
+- **Reliability**: Concurrency issues and resource management problems
+- **Performance**: Scalability limitations and optimization needs
+- **Operations**: Missing monitoring, health checks, and deployment infrastructure
+
+### Production Readiness Roadmap
+
+#### P0 Blockers (Must Fix Before ANY Deployment)
+- [ ] Fix timing attack vulnerability in API key authentication
+- [ ] Add panic recovery middleware for all HTTP handlers  
+- [ ] Implement functional Prometheus metrics collection
+- [ ] Add checksum validation for all image transfers
+- [ ] Implement high availability for checkpoint storage
+
+#### P1 Blockers (Critical for Production)
+- [ ] Implement comprehensive rate limiting and input validation
+- [ ] Fix goroutine leaks in worker pool management
+- [ ] Design and implement horizontal scaling architecture
+- [ ] Add comprehensive configuration validation
+
+#### P2 Blockers (Important for Production)
+- [ ] Secure CORS configuration with origin allowlists
+- [ ] Implement streaming for large image transfers
+- [ ] Add structured logging with correlation IDs
+
+**Estimated Effort**: 14-20 weeks for full production readiness
+
+For detailed analysis of all production blockers, see [Development Infrastructure Specifications](.claude/specs/development-infrastructure/).
+
+### Development Infrastructure
+
+The project includes comprehensive development tooling:
+
+#### Available Make Targets
+```bash
+make setup          # Install all required development tools
+make build          # Build the application
+make test           # Run all tests
+make test-race      # Run tests with race detection
+make test-coverage  # Generate test coverage report
+make lint           # Run linting with golangci-lint
+make fmt            # Format code with gofmt
+make vet            # Run go vet
+make staticcheck    # Run staticcheck analysis
+make imports        # Organize imports with goimports
+make check          # Run all quality checks
+make clean          # Clean build artifacts
+```
+
+#### Quality Assurance
+- **Comprehensive linting** with golangci-lint and custom rules
+- **Static analysis** with staticcheck and go vet
+- **Race condition detection** in all tests
+- **Pre-commit hooks** for automated quality checks
+- **Test coverage tracking** with detailed reporting
+
+#### Local Testing Infrastructure
+```bash
+# Set up local Docker registries for testing
+./scripts/setup-test-registries.sh
+
+# Run integration tests
+make test-integration
+
+# Clean up test environment
+./scripts/setup-test-registries.sh --cleanup
+```
+
+The local testing setup provides:
+- **Source registry**: `localhost:5100` with populated test data
+- **Destination registry**: `localhost:5101` for replication testing
+- **4 test repositories** with realistic container images
+- **Automated cleanup** for consistent test environments
+
+### Development Workflow
+
+1. **Setup**: Run `make setup` to install all development tools
+2. **Development**: Use `make check` to run all quality checks locally
+3. **Testing**: Use local registry setup for integration testing
+4. **Quality**: Pre-commit hooks ensure code quality standards
+
+### Concurrency Issues Identified
+
+Critical concurrency problems have been identified and documented:
+- **Race conditions** in counter operations and metrics collection
+- **Goroutine leaks** in worker pool management
+- **Channel management** issues with double-close vulnerabilities
+- **Resource management** problems with connection and memory leaks
+
+See [Concurrency Analysis](.claude/specs/development-infrastructure/design.md#7-concurrency-issues-analysis) for detailed technical analysis.
+
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+⚠️ **Before Contributing**: Please review the [Production Readiness Analysis](.claude/specs/development-infrastructure/design.md#8-production-readiness-blockers) to understand current limitations.
+
+### Development Setup
+1. Fork and clone the repository
+2. Run `make setup` to install development tools
+3. Set up local testing infrastructure: `./scripts/setup-test-registries.sh`
+4. Make changes and run `make check` before committing
+5. Submit pull requests with comprehensive tests
+
+### Priority Areas for Contribution
+1. **P0 Security Fixes**: Authentication timing attacks, rate limiting
+2. **P0 Reliability**: Panic recovery, goroutine leak fixes
+3. **P0 Operations**: Functional metrics collection, health checks
+4. **Test Coverage**: Currently at 44%, target is 80%
+5. **Integration Testing**: End-to-end workflow validation
+
+### Quality Standards
+- All code must pass `make check` (linting, testing, static analysis)
+- New features require comprehensive tests
+- Security-related changes require extra scrutiny
+- Performance changes require benchmarking
+
+Contributions are welcome! Please focus on production readiness blockers and follow the established development infrastructure patterns.
 
 ## License
 
