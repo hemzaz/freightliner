@@ -161,8 +161,8 @@ func NewClient(optsArg interface{}) (*Client, error) {
 		return nil, err
 	}
 
-	if err := validateClientOptions(&opts); err != nil {
-		return nil, err
+	if validateErr := validateClientOptions(&opts); validateErr != nil {
+		return nil, validateErr
 	}
 
 	// Create AWS config

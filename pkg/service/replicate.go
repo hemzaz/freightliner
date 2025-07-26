@@ -108,8 +108,8 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	}
 
 	// Initialize credentials if using secrets manager
-	if err := s.initializeCredentials(ctx); err != nil {
-		return nil, err
+	if initErr := s.initializeCredentials(ctx); initErr != nil {
+		return nil, initErr
 	}
 
 	// Get source repository
@@ -171,15 +171,15 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 
 		for _, tagName := range options.Tags {
 			// Parse source and destination references
-			srcRef, err := name.NewTag(sourceRepository.GetName() + ":" + tagName)
-			if err != nil {
-				copyErrors = append(copyErrors, fmt.Sprintf("invalid source tag %s: %s", tagName, err))
+			srcRef, srcErr := name.NewTag(sourceRepository.GetName() + ":" + tagName)
+			if srcErr != nil {
+				copyErrors = append(copyErrors, fmt.Sprintf("invalid source tag %s: %s", tagName, srcErr))
 				continue
 			}
 
-			destRef, err := name.NewTag(destRepository.GetName() + ":" + tagName)
-			if err != nil {
-				copyErrors = append(copyErrors, fmt.Sprintf("invalid destination tag %s: %s", tagName, err))
+			destRef, destErr := name.NewTag(destRepository.GetName() + ":" + tagName)
+			if destErr != nil {
+				copyErrors = append(copyErrors, fmt.Sprintf("invalid destination tag %s: %s", tagName, destErr))
 				continue
 			}
 
@@ -192,9 +192,9 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			}
 
 			// Execute the copy
-			result, err := copier.CopyImage(ctx, srcRef, destRef, nil, nil, copyOpts)
-			if err != nil {
-				copyErrors = append(copyErrors, fmt.Sprintf("failed to copy tag %s: %s", tagName, err))
+			result, copyErr := copier.CopyImage(ctx, srcRef, destRef, nil, nil, copyOpts)
+			if copyErr != nil {
+				copyErrors = append(copyErrors, fmt.Sprintf("failed to copy tag %s: %s", tagName, copyErr))
 			} else if result.Success {
 				tagsCopied++
 			}
@@ -276,11 +276,11 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 
 			// Check if tag already exists at destination and has same digest
 			if !options.ForceOverwrite {
-				skipTag, err := s.shouldSkipTag(ctx, currentTag, sourceRepository, destRepository)
-				if err != nil {
+				skipTag, skipErr := s.shouldSkipTag(ctx, currentTag, sourceRepository, destRepository)
+				if skipErr != nil {
 					s.logger.Warn("Error checking if tag should be skipped, will attempt to copy", map[string]interface{}{
 						"tag":   currentTag,
-						"error": err.Error(),
+						"error": skipErr.Error(),
 					})
 				} else if skipTag {
 					results.AddMetric("tagsSkipped", 1)

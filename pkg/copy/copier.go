@@ -127,8 +127,8 @@ func (c *Copier) CopyImage(
 	}
 
 	// 2. Check if destination exists and handle overwrite policy
-	if err := c.checkDestinationExists(ctx, destRef, destOpts, options.ForceOverwrite); err != nil {
-		return result, err
+	if checkErr := c.checkDestinationExists(ctx, destRef, destOpts, options.ForceOverwrite); checkErr != nil {
+		return result, checkErr
 	}
 
 	// 3. Process the manifest and copy layers

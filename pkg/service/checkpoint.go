@@ -3,14 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"freightliner/pkg/config"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
-	"freightliner/pkg/tree/checkpoint"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"freightliner/pkg/config"
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/tree/checkpoint"
 )
 
 // CheckpointService handles checkpoint operations
@@ -87,8 +88,8 @@ func (s *CheckpointService) initStore(ctx context.Context) error {
 		})
 
 		// Fix permissions
-		if err := os.Chmod(dir, 0700); err != nil {
-			return errors.Wrap(err, "failed to fix checkpoint directory permissions")
+		if chmodErr := os.Chmod(dir, 0700); chmodErr != nil {
+			return errors.Wrap(chmodErr, "failed to fix checkpoint directory permissions")
 		}
 	}
 
@@ -213,8 +214,8 @@ func (s *CheckpointService) ExportCheckpoint(ctx context.Context, id string, fil
 
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return errors.Wrap(err, "failed to create directory for export file")
+	if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+		return errors.Wrap(mkdirErr, "failed to create directory for export file")
 	}
 
 	// Create file

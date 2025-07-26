@@ -108,9 +108,9 @@ func TestResumableCheckpoints(t *testing.T) {
 
 	// Save all checkpoints
 	for _, cp := range checkpoints {
-		err := store.SaveCheckpoint(cp)
-		if err != nil {
-			t.Fatalf("Failed to save checkpoint %s: %v", cp.ID, err)
+		saveErr := store.SaveCheckpoint(cp)
+		if saveErr != nil {
+			t.Fatalf("Failed to save checkpoint %s: %v", cp.ID, saveErr)
 		}
 	}
 

@@ -138,9 +138,9 @@ func (m *Manager) DecryptData(ctx context.Context, data []byte, opts *DecryptOpt
 
 	// If not an envelope or envelope encryption is disabled, try direct decryption
 	if err != nil || !m.config.EnvelopeEncryption {
-		provider, err := m.resolveProvider(opts)
-		if err != nil {
-			return nil, err
+		provider, providerErr := m.resolveProvider(opts)
+		if providerErr != nil {
+			return nil, providerErr
 		}
 
 		return provider.Decrypt(ctx, data)
@@ -236,11 +236,11 @@ func (m *Manager) EncryptStream(ctx context.Context, src io.Reader, dst io.Write
 	}
 
 	// Write header length and header
-	if _, err := dst.Write(headerLenBytes); err != nil {
-		return errors.Wrap(err, "failed to write header length")
+	if _, writeErr := dst.Write(headerLenBytes); writeErr != nil {
+		return errors.Wrap(writeErr, "failed to write header length")
 	}
-	if _, err := dst.Write(headerBytes); err != nil {
-		return errors.Wrap(err, "failed to write header")
+	if _, writeErr := dst.Write(headerBytes); writeErr != nil {
+		return errors.Wrap(writeErr, "failed to write header")
 	}
 
 	// Create cipher block
@@ -282,13 +282,13 @@ func (m *Manager) EncryptStream(ctx context.Context, src io.Reader, dst io.Write
 				byte(chunkLen >> 8),
 				byte(chunkLen),
 			}
-			if _, err := dst.Write(chunkLenBytes); err != nil {
-				return errors.Wrap(err, "failed to write chunk length")
+			if _, writeErr := dst.Write(chunkLenBytes); writeErr != nil {
+				return errors.Wrap(writeErr, "failed to write chunk length")
 			}
 
 			// Write encrypted chunk
-			if _, err := dst.Write(encryptedChunk); err != nil {
-				return errors.Wrap(err, "failed to write encrypted chunk")
+			if _, writeErr := dst.Write(encryptedChunk); writeErr != nil {
+				return errors.Wrap(writeErr, "failed to write encrypted chunk")
 			}
 		}
 
@@ -391,8 +391,8 @@ func (m *Manager) DecryptStream(ctx context.Context, src io.Reader, dst io.Write
 
 		// Read encrypted chunk
 		encryptedChunk := make([]byte, chunkLen)
-		if _, err := io.ReadFull(src, encryptedChunk); err != nil {
-			return errors.Wrap(err, "failed to read encrypted chunk")
+		if _, readErr := io.ReadFull(src, encryptedChunk); readErr != nil {
+			return errors.Wrap(readErr, "failed to read encrypted chunk")
 		}
 
 		// Decrypt chunk

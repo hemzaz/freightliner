@@ -197,7 +197,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		allowOrigin := "*"
 
 		if len(s.cfg.Server.AllowedOrigins) > 0 && s.cfg.Server.AllowedOrigins[0] != "*" {
-			allowOrigin := ""
+			allowOrigin = ""
 			for _, allowed := range s.cfg.Server.AllowedOrigins {
 				if allowed == origin {
 					allowOrigin = origin

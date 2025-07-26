@@ -110,8 +110,8 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 	}
 
 	// Initialize credentials if using secrets manager
-	if err := s.replicationService.initializeCredentials(ctx); err != nil {
-		return nil, err
+	if initErr := s.replicationService.initializeCredentials(ctx); initErr != nil {
+		return nil, initErr
 	}
 
 	// Get source and destination clients

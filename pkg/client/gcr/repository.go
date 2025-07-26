@@ -266,13 +266,13 @@ func (repo *Repository) DeleteImage(ctx context.Context, tag string) error {
 
 		// Delete the version using Artifact Registry API
 		deleteReq := repo.client.arClient.Projects.Locations.Repositories.Packages.Versions.Delete(resourceName)
-		resp, err := deleteReq.Context(ctx).Do()
-		if err != nil {
+		resp, deleteErr := deleteReq.Context(ctx).Do()
+		if deleteErr != nil {
 			// Check specific error messages to provide better diagnostics
-			if strings.Contains(err.Error(), "404") {
+			if strings.Contains(deleteErr.Error(), "404") {
 				return errors.NotFoundf("image %s:%s not found or already deleted", repo.name, tag)
 			}
-			return errors.Wrap(err, "failed to delete image via Artifact Registry API")
+			return errors.Wrap(deleteErr, "failed to delete image via Artifact Registry API")
 		}
 
 		// Check response

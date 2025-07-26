@@ -44,14 +44,16 @@ VET_RESULT=$?
 
 # Additional checks - interfaces
 echo -e "${YELLOW}Running interface check...${NC}"
+IFACE_RESULT=0
 go vet -vettool=$(which ifacecheck) $PACKAGES 2>/dev/null || IFACE_RESULT=$?
 
 # Additional checks - shadow variables
 echo -e "${YELLOW}Running shadow check...${NC}"
+SHADOW_RESULT=0
 go vet -vettool=$(which shadow) $PACKAGES 2>/dev/null || SHADOW_RESULT=$?
 
 # Install missing tools if needed
-if [ $IFACE_RESULT -eq 127 ] || [ $SHADOW_RESULT -eq 127 ]; then
+if [ "${IFACE_RESULT}" -eq 127 ] || [ "${SHADOW_RESULT}" -eq 127 ]; then
   echo -e "${YELLOW}Installing additional vet tools...${NC}"
   go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
   go install github.com/mvdan/interfacer/cmd/interfacer@latest
@@ -65,8 +67,8 @@ if [ $IFACE_RESULT -eq 127 ] || [ $SHADOW_RESULT -eq 127 ]; then
 fi
 
 # Simplify results for reporting
-if [ $IFACE_RESULT -eq 127 ]; then IFACE_RESULT=0; fi
-if [ $SHADOW_RESULT -eq 127 ]; then SHADOW_RESULT=0; fi
+if [ "${IFACE_RESULT}" -eq 127 ]; then IFACE_RESULT=0; fi
+if [ "${SHADOW_RESULT}" -eq 127 ]; then SHADOW_RESULT=0; fi
 
 # Determine final result
 RESULT=$((VET_RESULT + IFACE_RESULT + SHADOW_RESULT))

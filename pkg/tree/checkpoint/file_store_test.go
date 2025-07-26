@@ -70,7 +70,7 @@ func TestFileStore(t *testing.T) {
 
 	// Verify the file was created
 	filePath := filepath.Join(tempDir, "test-id.json")
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(filePath); os.IsNotExist(statErr) {
 		t.Errorf("Checkpoint file was not created at %s", filePath)
 	}
 
@@ -118,7 +118,7 @@ func TestFileStore(t *testing.T) {
 	}
 
 	// Verify the file was deleted
-	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+	if _, statErr := os.Stat(filePath); !os.IsNotExist(statErr) {
 		t.Errorf("Checkpoint file was not deleted at %s", filePath)
 	}
 
@@ -168,9 +168,9 @@ func TestFileStoreConcurrency(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		go func(idx int) {
 			// Update the checkpoint
-			cp, err := store.LoadCheckpoint("test-concurrent")
-			if err != nil {
-				t.Errorf("LoadCheckpoint failed in goroutine %d: %v", idx, err)
+			cp, loadErr := store.LoadCheckpoint("test-concurrent")
+			if loadErr != nil {
+				t.Errorf("LoadCheckpoint failed in goroutine %d: %v", idx, loadErr)
 				done <- true
 				return
 			}
