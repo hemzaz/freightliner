@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Global environment variables for all jobs
+env:
+  GO111MODULE: on
+  GOFLAGS: -mod=mod
+  GOPATH: ""
+
 jobs:
   lint:
     name: Lint
@@ -33,53 +39,14 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Clean module cache and rebuild
-        run: |
-          go clean -modcache
-          go mod download
-          go build ./...
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
-          GOPATH: ""
+      - name: Build packages for linting
+        run: go build ./...
 
-      - name: Debug Go module state before linting
-        run: |
-          echo "=== Go module information ==="
-          echo "GOMOD: $(go env GOMOD)"
-          echo "GOROOT: $(go env GOROOT)"
-          echo "GOPATH: $(go env GOPATH)"
-          echo "Module: $(go list -m)"
-          echo "Module dir: $(go list -m -f '{{.Dir}}')"
-          echo "=== Checking secrets package ==="
-          go list freightliner/pkg/secrets
-          go list -deps freightliner/pkg/secrets
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
-          GOPATH: ""
-
-      - name: Install golangci-lint
+      - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.3.0
-          args: --timeout=5m --verbose
-        continue-on-error: true
-        id: golangci-lint-action
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
-          GOPATH: ""
-
-      - name: Fallback golangci-lint installation
-        if: steps.golangci-lint-action.outcome == 'failure'
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.3.0
-          $(go env GOPATH)/bin/golangci-lint run --timeout=5m
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
-          GOPATH: ""
+          args: --timeout=5m
 
   test:
     name: Test
@@ -118,55 +85,25 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Verify module setup
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Go module: $(go list -m)"
-          echo "Go version: $(go version)"
-          echo "GOPATH: $GOPATH"
-          echo "GOROOT: $GOROOT"
-          go mod verify
+      - name: Verify module integrity
+        run: go mod verify
 
       - name: Format check
         run: make fmt-check
 
       - name: Import organization check
         run: make imports-check
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
 
       - name: Install go tools
         run: |
           go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0
           go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
-      - name: Run enhanced go vet checks
-        run: |
-          echo "=== Debugging Go module setup ==="
-          echo "PWD: $(pwd)"
-          echo "GO111MODULE: $GO111MODULE"
-          echo "GOFLAGS: $GOFLAGS" 
-          echo "GOROOT: $GOROOT"
-          echo "GOPATH: $GOPATH"
-          echo "Go version: $(go version)"
-          echo "Go env GOMOD: $(go env GOMOD)"
-          echo "Go list -m: $(go list -m)"
-          echo "=== Running make vet ==="
-          make vet
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
-          GOROOT: ${{ steps.setup-go.outputs.go-root }}
-          GOPATH: ""
+      - name: Run go vet
+        run: make vet
 
       - name: Run staticcheck
         run: make staticcheck
-        env:
-          GO111MODULE: on
-          GOFLAGS: -mod=mod
-          GOROOT: ${{ steps.setup-go.outputs.go-root }}
-          GOPATH: ""
 
       - name: Run tests
         run: go test -v -race ./...
@@ -176,6 +113,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    # Run in parallel with other jobs
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -208,3 +146,21 @@ jobs:
           name: freightliner-binary
           path: bin/
           retention-days: 7
+
+  # Optional: Add a final status check job that depends on all others
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [lint, test, build]
+    if: always()
+    steps:
+      - name: Check all jobs success
+        run: |
+          if [[ "${{ needs.lint.result }}" == "success" && 
+                "${{ needs.test.result }}" == "success" && 
+                "${{ needs.build.result }}" == "success" ]]; then
+            echo "All CI jobs passed successfully!"
+          else
+            echo "Some CI jobs failed"
+            exit 1
+          fi

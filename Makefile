@@ -2,11 +2,11 @@
 
 # Build the application
 build:
-	go build -o bin/freightliner main.go
+	GO111MODULE=on GOFLAGS=-mod=mod go build -o bin/freightliner main.go
 
 # Run all tests
 test:
-	go test -v ./...
+	GO111MODULE=on GOFLAGS=-mod=mod go test -v ./...
 
 # Run linting
 lint:
@@ -19,11 +19,11 @@ lint-fast:
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	go clean
+	GO111MODULE=on go clean
 
 # Format code with gofmt
 fmt:
-	go fmt ./...
+	GO111MODULE=on go fmt ./...
 
 # Check if code is formatted
 fmt-check:
@@ -60,7 +60,7 @@ STATICCHECK_VERSION = 2025.1.1
 
 # Setup development environment
 setup:
-	go mod download
+	GO111MODULE=on go mod download
 	go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@$(SHADOW_VERSION)
