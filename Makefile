@@ -1,4 +1,4 @@
-.PHONY: build test lint clean fmt imports vet
+.PHONY: build test lint clean fmt imports vet test-setup test-validate test-cleanup test-full
 
 # Build the application
 build:
@@ -60,3 +60,32 @@ hooks:
 	cp .git/hooks/pre-commit .git/hooks/pre-commit.backup 2>/dev/null || true
 	cp scripts/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
+
+# Test registry setup and management
+test-setup:
+	@echo "Setting up test registries for Freightliner..."
+	./scripts/setup-test-registries.sh
+
+test-validate:
+	@echo "Validating test registry setup..."
+	./scripts/test-registry-setup.sh
+
+test-cleanup:
+	@echo "Cleaning up test registries..."
+	./scripts/setup-test-registries.sh --cleanup
+
+# Run complete test cycle with registries
+test-full: test-setup
+	@echo "Running tests with local registries..."
+	sleep 5  # Give registries time to fully initialize
+	go test ./pkg/tree/ -v -timeout=300s
+	go test ./pkg/service/ -v -timeout=300s  
+	go test ./pkg/copy/ -v -timeout=300s
+	@echo "Tests complete. Use 'make test-cleanup' to remove registries."
+
+# Quick test run (assumes registries are already running)
+test-quick:
+	@echo "Running quick tests (registries must be running)..."
+	go test ./pkg/tree/ -v -timeout=300s
+	go test ./pkg/service/ -v -timeout=300s
+	go test ./pkg/copy/ -v -timeout=300s

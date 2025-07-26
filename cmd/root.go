@@ -11,6 +11,7 @@ import (
 	"freightliner/pkg/helper/log"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -40,7 +41,7 @@ var (
 				}
 
 				// Re-apply command line flags to override config file and env vars
-				cmd.Flags().Visit(func(f *cobra.Flag) {
+				cmd.Flags().Visit(func(f *pflag.Flag) {
 					// Flags present on command line take precedence
 				})
 			}

@@ -45,3 +45,6 @@ REUSE_STRATEGY.md
 TOFIX.md
 test_output_full.txt
 GOTEST_OUTPUT.md
+.claude/
+.claude
+CLAUDE.md

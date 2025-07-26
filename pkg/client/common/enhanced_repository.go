@@ -81,14 +81,83 @@ func NewEnhancedRepository(opts EnhancedRepositoryOptions) *EnhancedRepository {
 
 // RefreshTags refreshes the tag list
 func (r *EnhancedRepository) RefreshTags(ctx context.Context) error {
-	// This method should be implemented by derived repositories
-	return errors.NotImplementedf("RefreshTags must be implemented by specific repository implementations")
+	r.logger.Debug("Refreshing tags for repository", map[string]interface{}{
+		"repository": r.GetName(),
+	})
+
+	// Clear the tags cache to force a fresh fetch
+	func() {
+		r.tagsMutex.Lock()
+		defer r.tagsMutex.Unlock()
+		r.tags = nil
+	}()
+
+	// Fetch fresh tags using the base implementation
+	tags, err := r.ListTags(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to refresh tags")
+	}
+
+	r.logger.Info("Successfully refreshed tags", map[string]interface{}{
+		"repository": r.GetName(),
+		"tag_count":  len(tags),
+	})
+
+	return nil
 }
 
 // RefreshImages refreshes the image cache
 func (r *EnhancedRepository) RefreshImages(ctx context.Context, tags []string) error {
-	// This method should be implemented by derived repositories
-	return errors.NotImplementedf("RefreshImages must be implemented by specific repository implementations")
+	if len(tags) == 0 {
+		// If no tags specified, get all tags
+		allTags, err := r.ListTags(ctx)
+		if err != nil {
+			return errors.Wrap(err, "failed to list tags for refresh")
+		}
+		tags = allTags
+	}
+
+	r.logger.Debug("Refreshing image cache", map[string]interface{}{
+		"repository": r.GetName(),
+		"tag_count":  len(tags),
+	})
+
+	// Clear existing image cache
+	r.ClearCache()
+
+	// Pre-fetch images for the specified tags
+	for i, tag := range tags {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		r.logger.Debug("Refreshing image", map[string]interface{}{
+			"repository": r.GetName(),
+			"tag":        tag,
+			"progress":   fmt.Sprintf("%d/%d", i+1, len(tags)),
+		})
+
+		// Fetch the image (this will cache it)
+		_, err := r.GetTag(ctx, tag)
+		if err != nil {
+			r.logger.Warn("Failed to refresh image", map[string]interface{}{
+				"repository": r.GetName(),
+				"tag":        tag,
+				"error":      err.Error(),
+			})
+			// Continue with other images rather than failing completely
+			continue
+		}
+	}
+
+	r.logger.Info("Successfully refreshed image cache", map[string]interface{}{
+		"repository": r.GetName(),
+		"tag_count":  len(tags),
+	})
+
+	return nil
 }
 
 // GetImageSummary returns a summary of image information
@@ -165,8 +234,71 @@ func (r *EnhancedRepository) GetImageSummary(ctx context.Context, reference stri
 
 // ListImageManifests lists all manifests in the repository
 func (r *EnhancedRepository) ListImageManifests(ctx context.Context) ([]string, error) {
-	// This method should be implemented by derived repositories
-	return nil, errors.NotImplementedf("ListImageManifests must be implemented by specific repository implementations")
+	r.logger.Debug("Listing image manifests for repository", map[string]interface{}{
+		"repository": r.GetName(),
+	})
+
+	// Get all tags first
+	tags, err := r.ListTags(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list tags")
+	}
+
+	manifests := make([]string, 0, len(tags))
+
+	// For each tag, get the image and extract manifest digest
+	for _, tag := range tags {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		// Get the image for this tag
+		img, err := r.GetTag(ctx, tag)
+		if err != nil {
+			r.logger.Warn("Failed to get image for manifest listing", map[string]interface{}{
+				"repository": r.GetName(),
+				"tag":        tag,
+				"error":      err.Error(),
+			})
+			continue
+		}
+
+		// Get the manifest digest
+		digest, err := img.Digest()
+		if err != nil {
+			r.logger.Warn("Failed to get digest for manifest listing", map[string]interface{}{
+				"repository": r.GetName(),
+				"tag":        tag,
+				"error":      err.Error(),
+			})
+			continue
+		}
+
+		manifestDigest := digest.String()
+
+		// Check if we already have this manifest (avoid duplicates)
+		found := false
+		for _, existing := range manifests {
+			if existing == manifestDigest {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			manifests = append(manifests, manifestDigest)
+		}
+	}
+
+	r.logger.Debug("Successfully listed image manifests", map[string]interface{}{
+		"repository":     r.GetName(),
+		"tag_count":      len(tags),
+		"manifest_count": len(manifests),
+	})
+
+	return manifests, nil
 }
 
 // CopyTag copies a tag from another repository

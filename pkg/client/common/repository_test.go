@@ -148,7 +148,7 @@ func (r *testMockRepository) PutImage(ctx context.Context, tag string, img v1.Im
 
 // testMockRegistry is a mock implementation of the RegistryClient interface for testing
 type testMockRegistry struct {
-	repositories map[string]Repository
+	repositories map[string]interfaces.Repository
 	listError    error
 	getError     error
 }
@@ -168,7 +168,7 @@ func (r *testMockRegistry) ListRepositories(ctx context.Context, prefix string) 
 	return result, nil
 }
 
-func (r *testMockRegistry) GetRepository(ctx context.Context, name string) (Repository, error) {
+func (r *testMockRegistry) GetRepository(ctx context.Context, name string) (interfaces.Repository, error) {
 	if r.getError != nil {
 		return nil, r.getError
 	}
@@ -197,7 +197,7 @@ func TestMockRegistry(t *testing.T) {
 	}
 
 	registry := &testMockRegistry{
-		repositories: map[string]Repository{
+		repositories: map[string]interfaces.Repository{
 			"repo1": repo1,
 			"repo2": repo2,
 		},

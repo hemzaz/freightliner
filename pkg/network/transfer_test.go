@@ -2,13 +2,14 @@ package network
 
 import (
 	"context"
-	"freightliner/pkg/client/common"
-	"freightliner/pkg/helper/errors"
-	"freightliner/pkg/helper/log"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"freightliner/pkg/helper/errors"
+	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -50,19 +51,19 @@ func (m *TransferMockRepository) GetImage(ctx context.Context, tag string) (v1.I
 	return nil, errors.NotImplementedf("GetImage not implemented in tests")
 }
 
-func (m *TransferMockRepository) GetManifest(ctx context.Context, tag string) (*common.Manifest, error) {
+func (m *TransferMockRepository) GetManifest(ctx context.Context, tag string) (*interfaces.Manifest, error) {
 	manifest, ok := m.tags[tag]
 	if !ok {
 		return nil, nil
 	}
-	return &common.Manifest{
+	return &interfaces.Manifest{
 		Content:   manifest,
 		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
 		Digest:    "sha256:" + tag,
 	}, nil
 }
 
-func (m *TransferMockRepository) PutManifest(ctx context.Context, tag string, manifest *common.Manifest) error {
+func (m *TransferMockRepository) PutManifest(ctx context.Context, tag string, manifest *interfaces.Manifest) error {
 	m.tags[tag] = manifest.Content
 	return nil
 }
@@ -77,7 +78,8 @@ func (m *TransferMockRepository) GetLayerReader(ctx context.Context, digest stri
 }
 
 func (m *TransferMockRepository) GetImageReference(tag string) (name.Reference, error) {
-	return name.NewTag("example.com/repo:" + tag)
+	// Use correct local registry port for testing
+	return name.NewTag("localhost:5100/" + m.name + ":" + tag)
 }
 
 func (m *TransferMockRepository) GetRemoteOptions() ([]remote.Option, error) {
@@ -173,7 +175,7 @@ func TestTransferImage(t *testing.T) {
 	// Add a manifest to the source
 	manifest := []byte(`{"schemaVersion":2,"config":{"digest":"sha256:abc"},"layers":[{"digest":"layer1"},{"digest":"layer2"}]}`)
 	ctx := context.Background()
-	sourceRepo.PutManifest(ctx, "latest", &common.Manifest{
+	sourceRepo.PutManifest(ctx, "latest", &interfaces.Manifest{
 		Content:   manifest,
 		MediaType: "application/json",
 		Digest:    "sha256:latest",

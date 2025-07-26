@@ -155,7 +155,8 @@ func (m *mockRepository) GetLayerReader(ctx context.Context, digest string) (io.
 }
 
 func (m *mockRepository) GetImageReference(tag string) (name.Reference, error) {
-	return name.NewTag("example.com/repo:" + tag)
+	// Use local registry for testing instead of external example.com
+	return name.NewTag("localhost:5100/" + m.name + ":" + tag)
 }
 
 func (m *mockRepository) GetRemoteOptions() ([]remote.Option, error) {
@@ -435,12 +436,13 @@ func TestReconcileRepository(t *testing.T) {
 				return copyError
 			})
 
-			// Create reconciler
+			// Create reconciler with DryRun mode to prevent real network calls
 			metrics := &mockMetrics{}
 			reconciler := NewReconciler(ReconcilerOptions{
 				Logger:  logger,
 				Metrics: metrics,
 				Copier:  copier, // Initialize copier to avoid nil pointer dereference
+				DryRun:  true,   // Use DryRun mode for unit tests
 			})
 
 			// Run reconcileRepository

@@ -59,8 +59,38 @@ func (r *BaseRepository) GetURI() string {
 
 // ListTags returns all tags in the repository
 func (r *BaseRepository) ListTags(ctx context.Context) ([]string, error) {
-	// This is a placeholder that should be overridden by specific implementations
-	return nil, errors.NotImplementedf("ListTags must be implemented by specific repository implementations")
+	// Check cache first
+	r.tagsMutex.RLock()
+	if r.tags != nil {
+		cachedTags := make([]string, len(r.tags))
+		copy(cachedTags, r.tags)
+		r.tagsMutex.RUnlock()
+		return cachedTags, nil
+	}
+	r.tagsMutex.RUnlock()
+
+	r.logger.Debug("Listing tags for repository", map[string]interface{}{
+		"repository": r.name,
+	})
+
+	// List tags using go-containerregistry
+	tags, err := remote.List(r.repository)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list tags from repository")
+	}
+
+	// Cache the results
+	r.tagsMutex.Lock()
+	r.tags = make([]string, len(tags))
+	copy(r.tags, tags)
+	r.tagsMutex.Unlock()
+
+	r.logger.Debug("Successfully listed tags", map[string]interface{}{
+		"repository": r.name,
+		"tag_count":  len(tags),
+	})
+
+	return tags, nil
 }
 
 // GetTag returns a tagged image from the repository
@@ -82,8 +112,32 @@ func (r *BaseRepository) GetTag(ctx context.Context, tagName string) (v1.Image, 
 		return img, nil
 	}
 
-	// This is a placeholder that should be overridden by specific implementations
-	return nil, errors.NotImplementedf("GetTag must be implemented by specific repository implementations")
+	// Create tag reference
+	tagRef, err := r.CreateTagReference(tagName)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create tag reference")
+	}
+
+	r.logger.Debug("Getting tagged image", map[string]interface{}{
+		"repository": r.name,
+		"tag":        tagName,
+	})
+
+	// Get the image using remote.Image
+	img, err = remote.Image(tagRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get image from registry")
+	}
+
+	// Cache the image
+	r.CacheImage(tagName, img)
+
+	r.logger.Debug("Successfully retrieved tagged image", map[string]interface{}{
+		"repository": r.name,
+		"tag":        tagName,
+	})
+
+	return img, nil
 }
 
 // GetImage returns an image by digest
@@ -92,8 +146,29 @@ func (r *BaseRepository) GetImage(ctx context.Context, digest string) (v1.Image,
 		return nil, errors.InvalidInputf("digest cannot be empty")
 	}
 
-	// This is a placeholder that should be overridden by specific implementations
-	return nil, errors.NotImplementedf("GetImage must be implemented by specific repository implementations")
+	r.logger.Debug("Getting image by digest", map[string]interface{}{
+		"repository": r.name,
+		"digest":     digest,
+	})
+
+	// Create digest reference
+	digestRef, err := name.NewDigest(r.repository.String() + "@" + digest)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create digest reference")
+	}
+
+	// Get the image using remote.Image
+	img, err := remote.Image(digestRef)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get image by digest from registry")
+	}
+
+	r.logger.Debug("Successfully retrieved image by digest", map[string]interface{}{
+		"repository": r.name,
+		"digest":     digest,
+	})
+
+	return img, nil
 }
 
 // DeleteTag removes a tag from the repository
@@ -102,8 +177,43 @@ func (r *BaseRepository) DeleteTag(ctx context.Context, tagName string) error {
 		return errors.InvalidInputf("tag name cannot be empty")
 	}
 
-	// This is a placeholder that should be overridden by specific implementations
-	return errors.NotImplementedf("DeleteTag must be implemented by specific repository implementations")
+	r.logger.Debug("Deleting tag from repository", map[string]interface{}{
+		"repository": r.name,
+		"tag":        tagName,
+	})
+
+	// Create tag reference
+	tagRef, err := r.CreateTagReference(tagName)
+	if err != nil {
+		return errors.Wrap(err, "failed to create tag reference")
+	}
+
+	// Delete the tag using remote.Delete
+	err = remote.Delete(tagRef)
+	if err != nil {
+		return errors.Wrap(err, "failed to delete tag from registry")
+	}
+
+	// Remove from cache
+	func() {
+		r.imagesMutex.Lock()
+		defer r.imagesMutex.Unlock()
+		delete(r.images, tagName)
+	}()
+
+	// Clear tags cache to force refresh
+	func() {
+		r.tagsMutex.Lock()
+		defer r.tagsMutex.Unlock()
+		r.tags = nil
+	}()
+
+	r.logger.Info("Successfully deleted tag", map[string]interface{}{
+		"repository": r.name,
+		"tag":        tagName,
+	})
+
+	return nil
 }
 
 // PutImage adds an image to the repository
@@ -116,8 +226,39 @@ func (r *BaseRepository) PutImage(ctx context.Context, img v1.Image, tagName str
 		return errors.InvalidInputf("tag name cannot be empty")
 	}
 
-	// This is a placeholder that should be overridden by specific implementations
-	return errors.NotImplementedf("PutImage must be implemented by specific repository implementations")
+	r.logger.Debug("Putting image to repository", map[string]interface{}{
+		"repository": r.name,
+		"tag":        tagName,
+	})
+
+	// Create tag reference
+	tagRef, err := r.CreateTagReference(tagName)
+	if err != nil {
+		return errors.Wrap(err, "failed to create tag reference")
+	}
+
+	// Push the image using remote.Write
+	err = remote.Write(tagRef, img)
+	if err != nil {
+		return errors.Wrap(err, "failed to push image to registry")
+	}
+
+	// Cache the image
+	r.CacheImage(tagName, img)
+
+	// Clear tags cache to force refresh
+	func() {
+		r.tagsMutex.Lock()
+		defer r.tagsMutex.Unlock()
+		r.tags = nil
+	}()
+
+	r.logger.Info("Successfully pushed image", map[string]interface{}{
+		"repository": r.name,
+		"tag":        tagName,
+	})
+
+	return nil
 }
 
 // CreateTagReference creates a tag reference for the repository

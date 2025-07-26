@@ -134,6 +134,51 @@ func (c *Client) GetRepository(ctx context.Context, repoName string) (interfaces
 	return repo, nil
 }
 
+// CreateRepository creates a new repository in GCR - implements interfaces.RepositoryCreator
+// Note: In GCR/Artifact Registry, repositories are created automatically when the first image is pushed
+// This method essentially validates the repository name and returns a repository reference
+func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map[string]string) (interfaces.Repository, error) {
+	// Input validation
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	if repoName == "" {
+		return nil, errors.InvalidInputf("repository name cannot be empty")
+	}
+
+	c.logger.Info("Creating repository in GCR", map[string]interface{}{
+		"repository": repoName,
+		"project":    c.project,
+		"location":   c.location,
+	})
+
+	// Create the GCR repository reference
+	registry := fmt.Sprintf("gcr.io/%s", c.project)
+	repository, err := name.NewRepository(fmt.Sprintf("%s/%s", registry, repoName))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create repository reference")
+	}
+
+	// For GCR/Artifact Registry, repositories are automatically created when the first image is pushed
+	// We don't need to make any API calls to "create" the repository
+	// Just validate that the repository name is valid and return a repository object
+
+	// Create and return the repository object
+	repo := &Repository{
+		client:     c,
+		name:       repoName,
+		repository: repository,
+	}
+
+	c.logger.Info("Repository reference created (repository will be created automatically on first push)", map[string]interface{}{
+		"repository": repoName,
+		"registry":   registry,
+	})
+
+	return repo, nil
+}
+
 // ListRepositories lists all repositories in the registry with the given prefix
 func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string, error) {
 	// Input validation

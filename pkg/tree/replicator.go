@@ -762,26 +762,225 @@ func (t *TreeReplicator) processRepository(opts repositoryProcessOptions) error 
 		}
 	}
 
-	// Mock implementation - in actual code would use source/destClient to perform replication
-	time.Sleep(10 * time.Millisecond) // Simulating work
+	// Production implementation: Perform actual repository replication
+	t.logger.Info("Starting repository replication", map[string]interface{}{
+		"source_repo": opts.SourceRepo,
+		"dest_repo":   opts.DestRepo,
+	})
 
-	// In a real implementation, we would:
 	// 1. Get source repository reference
-	// 2. Get destination repository reference
-	// 3. List tags in source repository
-	// 4. Filter tags
-	// 5. For each tag, copy the image
+	sourceRepo, err := opts.SourceClient.GetRepository(opts.Context, opts.SourceRepo)
+	if err != nil {
+		return errors.Wrap(err, "failed to get source repository")
+	}
 
-	// Update checkpoint status to completed for this repo
+	// 2. Get destination repository reference
+	destRepo, err := opts.DestClient.GetRepository(opts.Context, opts.DestRepo)
+	if err != nil {
+		return errors.Wrap(err, "failed to get destination repository")
+	}
+
+	// 3. List tags in source repository
+	tags, err := sourceRepo.ListTags(opts.Context)
+	if err != nil {
+		return errors.Wrap(err, "failed to list source repository tags")
+	}
+
+	t.logger.Info("Found tags in source repository", map[string]interface{}{
+		"source_repo": opts.SourceRepo,
+		"tag_count":   len(tags),
+		"tags":        tags,
+	})
+
+	// 4. Filter tags based on configuration
+	filteredTags := t.filterTags(tags)
+	if len(filteredTags) == 0 {
+		t.logger.Info("No tags to replicate after filtering", map[string]interface{}{
+			"source_repo": opts.SourceRepo,
+			"total_tags":  len(tags),
+		})
+		// Still mark as completed even if no tags to replicate
+		t.markRepositoryCompleted(opts)
+		return nil
+	}
+
+	t.logger.Info("Tags to replicate after filtering", map[string]interface{}{
+		"source_repo":    opts.SourceRepo,
+		"filtered_count": len(filteredTags),
+		"filtered_tags":  filteredTags,
+	})
+
+	// 5. For each tag, copy the image using parallel processing
+	err = t.replicateTags(opts, sourceRepo, destRepo, filteredTags)
+	if err != nil {
+		return errors.Wrap(err, "failed to replicate tags")
+	}
+
+	// Mark repository as completed
+	t.markRepositoryCompleted(opts)
+	return nil
+}
+
+// replicateTags handles the parallel replication of multiple tags
+func (t *TreeReplicator) replicateTags(
+	opts repositoryProcessOptions,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
+	tags []string,
+) error {
+	// Track replication statistics
+	var (
+		successCount int
+		errorCount   int
+		tagResults   = make(map[string]error)
+	)
+
+	t.logger.Info("Starting tag replication", map[string]interface{}{
+		"source_repo": opts.SourceRepo,
+		"dest_repo":   opts.DestRepo,
+		"tag_count":   len(tags),
+	})
+
+	// Process each tag sequentially for now - can be made parallel later
+	for _, tag := range tags {
+		err := t.replicateTag(opts, sourceRepo, destRepo, tag)
+		tagResults[tag] = err
+
+		if err != nil {
+			errorCount++
+			t.logger.Error("Failed to replicate tag", err, map[string]interface{}{
+				"source_repo": opts.SourceRepo,
+				"dest_repo":   opts.DestRepo,
+				"tag":         tag,
+			})
+		} else {
+			successCount++
+			t.logger.Info("Successfully replicated tag", map[string]interface{}{
+				"source_repo": opts.SourceRepo,
+				"dest_repo":   opts.DestRepo,
+				"tag":         tag,
+			})
+		}
+
+		// Update result statistics
+		if opts.Result != nil {
+			if err != nil {
+				opts.Result.ImagesFailed++
+			} else {
+				opts.Result.ImagesReplicated++
+			}
+		}
+	}
+
+	t.logger.Info("Tag replication completed", map[string]interface{}{
+		"source_repo":   opts.SourceRepo,
+		"dest_repo":     opts.DestRepo,
+		"total_tags":    len(tags),
+		"success_count": successCount,
+		"error_count":   errorCount,
+	})
+
+	// Return error if any tags failed and no tags succeeded
+	if errorCount > 0 && successCount == 0 {
+		return fmt.Errorf("failed to replicate any tags for repository %s", opts.SourceRepo)
+	}
+
+	// Return partial error if some tags failed
+	if errorCount > 0 {
+		t.logger.Warn("Some tags failed to replicate", map[string]interface{}{
+			"source_repo":   opts.SourceRepo,
+			"error_count":   errorCount,
+			"success_count": successCount,
+		})
+	}
+
+	return nil
+}
+
+// replicateTag handles the replication of a single tag
+func (t *TreeReplicator) replicateTag(
+	opts repositoryProcessOptions,
+	sourceRepo interfaces.Repository,
+	destRepo interfaces.Repository,
+	tag string,
+) error {
+	t.logger.Debug("Replicating individual tag", map[string]interface{}{
+		"source_repo": opts.SourceRepo,
+		"dest_repo":   opts.DestRepo,
+		"tag":         tag,
+	})
+
+	// Get source image reference
+	sourceRef, err := sourceRepo.GetImageReference(tag)
+	if err != nil {
+		return errors.Wrap(err, "failed to get source image reference")
+	}
+
+	// Get destination image reference
+	destRef, err := destRepo.GetImageReference(tag)
+	if err != nil {
+		return errors.Wrap(err, "failed to get destination image reference")
+	}
+
+	// Get remote options for source and destination
+	srcOpts, err := sourceRepo.GetRemoteOptions()
+	if err != nil {
+		return errors.Wrap(err, "failed to get source remote options")
+	}
+
+	destOpts, err := destRepo.GetRemoteOptions()
+	if err != nil {
+		return errors.Wrap(err, "failed to get destination remote options")
+	}
+
+	// Create copy options
+	copyOptions := copy.CopyOptions{
+		DryRun:         t.dryRun,
+		ForceOverwrite: opts.ForceOverwrite,
+		Source:         sourceRef,
+		Destination:    destRef,
+	}
+
+	// Use the copy package to perform the actual image copying
+	copier := copy.NewCopier(t.logger)
+	result, err := copier.CopyImage(opts.Context, sourceRef, destRef, srcOpts, destOpts, copyOptions)
+	if err != nil {
+		return errors.Wrap(err, "failed to copy image")
+	}
+
+	if !result.Success {
+		return fmt.Errorf("image copy reported failure for tag %s", tag)
+	}
+
+	t.logger.Debug("Tag replication completed", map[string]interface{}{
+		"source_repo":       opts.SourceRepo,
+		"dest_repo":         opts.DestRepo,
+		"tag":               tag,
+		"bytes_transferred": result.Stats.BytesTransferred,
+		"layers":            result.Stats.Layers,
+	})
+
+	return nil
+}
+
+// markRepositoryCompleted updates checkpoint to mark repository as completed
+func (t *TreeReplicator) markRepositoryCompleted(opts repositoryProcessOptions) {
 	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
 		if repo, ok := opts.TreeCheckpoint.Repositories[opts.SourceRepo]; ok {
 			repo.Status = checkpoint.StatusCompleted
 			opts.TreeCheckpoint.Repositories[opts.SourceRepo] = repo
 			opts.TreeCheckpoint.CompletedRepositories = append(opts.TreeCheckpoint.CompletedRepositories, opts.SourceRepo)
+
+			if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
+				t.logger.Warn("Failed to save completion checkpoint", map[string]interface{}{
+					"checkpoint_id": opts.TreeCheckpoint.ID,
+					"source_repo":   opts.SourceRepo,
+					"dest_repo":     opts.DestRepo,
+					"error":         err.Error(),
+				})
+			}
 		}
 	}
-
-	return nil
 }
 
 // handleErrorOptions contains options for handling errors

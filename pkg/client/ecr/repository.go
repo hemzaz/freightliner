@@ -264,6 +264,30 @@ func (repo *Repository) GetRemoteOptions() ([]remote.Option, error) {
 	return repo.client.GetRemoteOptions(), nil
 }
 
+// PutImage uploads an image with the given tag - implements interfaces.Repository
+func (repo *Repository) PutImage(ctx context.Context, tag string, img v1.Image) error {
+	if tag == "" {
+		return errors.InvalidInputf("tag cannot be empty")
+	}
+
+	if img == nil {
+		return errors.InvalidInputf("image cannot be nil")
+	}
+
+	// Create a tagged reference
+	taggedRef, err := name.NewTag(fmt.Sprintf("%s:%s", repo.repository.String(), tag))
+	if err != nil {
+		return errors.Wrap(err, "failed to create tag reference")
+	}
+
+	// Push the image using go-containerregistry
+	if err := remote.Write(taggedRef, img, repo.client.GetRemoteOptions()...); err != nil {
+		return errors.Wrap(err, "failed to write image to ECR")
+	}
+
+	return nil
+}
+
 // mockRemoteImage is a complete implementation of the v1.Image interface for pushing manifests
 // It's primarily used for manifest operations and doesn't need to implement all
 // image operations fully, but it should return reasonable values for all methods

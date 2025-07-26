@@ -67,15 +67,38 @@ func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (interf
 		return repo, nil
 	}
 
+	c.logger.Debug("Creating repository reference", map[string]interface{}{
+		"registry":   c.registryName,
+		"repository": repoName,
+	})
+
 	// Create a proper repository reference
-	_, err := c.util.CreateRepositoryReference(c.registryName, repoName)
+	repoRef, err := c.util.CreateRepositoryReference(c.registryName, repoName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Repository creation would depend on the specific implementation
-	// This is a placeholder that should be overridden by specific implementations
-	return nil, errors.NotImplementedf("GetRepository must be implemented by specific registry clients")
+	// Create a base repository implementation
+	repo = NewBaseRepository(BaseRepositoryOptions{
+		Name:       repoName,
+		Repository: repoRef,
+		Logger:     c.logger,
+	})
+
+	// Cache the repository
+	func() {
+		c.repositoriesMutex.Lock()
+		defer c.repositoriesMutex.Unlock()
+		c.repositories[repoName] = repo
+	}()
+
+	c.logger.Debug("Successfully created repository", map[string]interface{}{
+		"registry":   c.registryName,
+		"repository": repoName,
+		"uri":        repoRef.String(),
+	})
+
+	return repo, nil
 }
 
 // GetCachedRepository gets a repository from the cache or creates a new one

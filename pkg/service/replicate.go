@@ -15,6 +15,7 @@ import (
 	"freightliner/pkg/helper/errors"
 	"freightliner/pkg/helper/log"
 	"freightliner/pkg/helper/util"
+	"freightliner/pkg/helper/validation"
 	"freightliner/pkg/replication"
 	"freightliner/pkg/secrets"
 	"freightliner/pkg/security/encryption"
@@ -546,8 +547,9 @@ type SecretsProvider = secrets.Provider
 // awsSecretsProvider implements the SecretsProvider interface using AWS Secrets Manager
 // Note: This is a simplified implementation that should be replaced with pkg/secrets/aws
 type awsSecretsProvider struct {
-	client *secretsmanager.Client
-	logger *log.Logger
+	client    *secretsmanager.Client
+	logger    *log.Logger
+	validator *validation.SecretsValidator
 }
 
 // GetSecret retrieves a secret from AWS Secrets Manager
@@ -598,28 +600,139 @@ func (p *awsSecretsProvider) GetJSONSecret(ctx context.Context, secretName strin
 
 // PutSecret creates or updates a secret value
 func (p *awsSecretsProvider) PutSecret(ctx context.Context, secretName, secretValue string) error {
-	p.logger.Warn("PutSecret not implemented for awsSecretsProvider", nil)
-	return errors.NotImplementedf("PutSecret not implemented for awsSecretsProvider")
+	// Validate the secret operation using the comprehensive validation framework
+	if err := p.validator.ValidateSecretOperation("create", "aws", secretName, secretValue, nil); err != nil {
+		p.logger.Error("AWS secret validation failed", err, map[string]interface{}{
+			"secret_name": secretName,
+		})
+		return err
+	}
+
+	// First try to create the secret
+	createInput := &secretsmanager.CreateSecretInput{
+		Name:         aws.String(secretName),
+		SecretString: aws.String(secretValue),
+		Description:  aws.String("Secret managed by Freightliner"),
+	}
+
+	_, err := p.client.CreateSecret(ctx, createInput)
+	if err != nil {
+		// If secret already exists, update it instead
+		var resourceExists *types.ResourceExistsException
+		if errors.As(err, &resourceExists) {
+			updateInput := &secretsmanager.UpdateSecretInput{
+				SecretId:     aws.String(secretName),
+				SecretString: aws.String(secretValue),
+			}
+
+			_, updateErr := p.client.UpdateSecret(ctx, updateInput)
+			if updateErr != nil {
+				p.logger.Error("failed to update AWS secret", err, map[string]interface{}{
+					"secret_name": secretName,
+					"error":       updateErr.Error(),
+				})
+				return errors.Wrap(updateErr, "failed to update secret in AWS Secrets Manager")
+			}
+
+			p.logger.Info("successfully updated AWS secret", map[string]interface{}{
+				"secret_name": secretName,
+			})
+			return nil
+		}
+
+		// Handle permission errors
+		var accessDenied *types.InvalidRequestException
+		if errors.As(err, &accessDenied) {
+			return errors.Forbiddenf("insufficient permissions to create secret %s: %v", secretName, err)
+		}
+
+		p.logger.Error("failed to create AWS secret", err, map[string]interface{}{
+			"secret_name": secretName,
+			"error":       err.Error(),
+		})
+		return errors.Wrap(err, "failed to create secret in AWS Secrets Manager")
+	}
+
+	p.logger.Info("successfully created AWS secret", map[string]interface{}{
+		"secret_name": secretName,
+	})
+	return nil
 }
 
 // PutJSONSecret marshals a struct to JSON and stores it as a secret
 func (p *awsSecretsProvider) PutJSONSecret(ctx context.Context, secretName string, v interface{}) error {
-	p.logger.Warn("PutJSONSecret not implemented for awsSecretsProvider", nil)
-	return errors.NotImplementedf("PutJSONSecret not implemented for awsSecretsProvider")
+	// Validate the JSON secret using the comprehensive validation framework
+	if err := p.validator.ValidateJSONSecret("aws", secretName, v, nil); err != nil {
+		p.logger.Error("AWS JSON secret validation failed", err, map[string]interface{}{
+			"secret_name": secretName,
+			"error":       err.Error(),
+		})
+		return err
+	}
+
+	// Marshal the struct to JSON (validation already checked this will succeed)
+	jsonData, err := json.Marshal(v)
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal struct to JSON")
+	}
+
+	// Store the JSON as a secret
+	return p.PutSecret(ctx, secretName, string(jsonData))
 }
 
 // DeleteSecret deletes a secret
 func (p *awsSecretsProvider) DeleteSecret(ctx context.Context, secretName string) error {
-	p.logger.Warn("DeleteSecret not implemented for awsSecretsProvider", nil)
-	return errors.NotImplementedf("DeleteSecret not implemented for awsSecretsProvider")
+	// Validate the delete operation using the comprehensive validation framework
+	if err := p.validator.ValidateSecretOperation("delete", "aws", secretName, "", nil); err != nil {
+		p.logger.Error("AWS secret delete validation failed", err, map[string]interface{}{
+			"secret_name": secretName,
+			"error":       err.Error(),
+		})
+		return err
+	}
+
+	// Delete the secret with immediate deletion (no recovery window)
+	deleteInput := &secretsmanager.DeleteSecretInput{
+		SecretId:                   aws.String(secretName),
+		ForceDeleteWithoutRecovery: aws.Bool(true),
+	}
+
+	_, err := p.client.DeleteSecret(ctx, deleteInput)
+	if err != nil {
+		var resourceNotFound *types.ResourceNotFoundException
+		if errors.As(err, &resourceNotFound) {
+			p.logger.Warn("attempted to delete non-existent AWS secret", map[string]interface{}{
+				"secret_name": secretName,
+			})
+			return errors.NotFoundf("secret not found: %s", secretName)
+		}
+
+		// Handle permission errors
+		var accessDenied *types.InvalidRequestException
+		if errors.As(err, &accessDenied) {
+			return errors.Forbiddenf("insufficient permissions to delete secret %s: %v", secretName, err)
+		}
+
+		p.logger.Error("failed to delete AWS secret", err, map[string]interface{}{
+			"secret_name": secretName,
+			"error":       err.Error(),
+		})
+		return errors.Wrap(err, "failed to delete secret from AWS Secrets Manager")
+	}
+
+	p.logger.Info("successfully deleted AWS secret", map[string]interface{}{
+		"secret_name": secretName,
+	})
+	return nil
 }
 
 // gcpSecretsProvider implements the SecretsProvider interface using Google Secret Manager
 // Note: This is a simplified implementation that should be replaced with pkg/secrets/gcp
 type gcpSecretsProvider struct {
-	client  *secretmanager.Client
-	project string
-	logger  *log.Logger
+	client    *secretmanager.Client
+	project   string
+	logger    *log.Logger
+	validator *validation.SecretsValidator
 }
 
 // GetSecret retrieves a secret from Google Secret Manager
@@ -655,20 +768,149 @@ func (p *gcpSecretsProvider) GetJSONSecret(ctx context.Context, secretName strin
 
 // PutSecret creates or updates a secret value
 func (p *gcpSecretsProvider) PutSecret(ctx context.Context, secretName, secretValue string) error {
-	p.logger.Warn("PutSecret not implemented for gcpSecretsProvider", nil)
-	return errors.NotImplementedf("PutSecret not implemented for gcpSecretsProvider")
+	// Validate the secret operation using the comprehensive validation framework
+	if err := p.validator.ValidateSecretOperation("create", "gcp", secretName, secretValue, nil); err != nil {
+		p.logger.Error("GCP secret validation failed", err, map[string]interface{}{
+			"secret_name": secretName,
+			"project":     p.project,
+			"error":       err.Error(),
+		})
+		return err
+	}
+
+	// Check if secret exists first
+	fullSecretName := fmt.Sprintf("projects/%s/secrets/%s", p.project, secretName)
+
+	// Try to get secret metadata to see if it exists
+	getReq := &secretmanagerpb.GetSecretRequest{
+		Name: fullSecretName,
+	}
+
+	_, err := p.client.GetSecret(ctx, getReq)
+	if err != nil {
+		// Secret doesn't exist, create it
+		createReq := &secretmanagerpb.CreateSecretRequest{
+			Parent:   fmt.Sprintf("projects/%s", p.project),
+			SecretId: secretName,
+			Secret: &secretmanagerpb.Secret{
+				Replication: &secretmanagerpb.Replication{
+					Replication: &secretmanagerpb.Replication_Automatic_{
+						Automatic: &secretmanagerpb.Replication_Automatic{},
+					},
+				},
+				Labels: map[string]string{
+					"managed-by": "freightliner",
+				},
+			},
+		}
+
+		_, createErr := p.client.CreateSecret(ctx, createReq)
+		if createErr != nil {
+			p.logger.Error("failed to create GCP secret", err, map[string]interface{}{
+				"secret_name": secretName,
+				"project":     p.project,
+				"error":       createErr.Error(),
+			})
+			return errors.Wrap(createErr, "failed to create secret in Google Secret Manager")
+		}
+	}
+
+	// Add secret version with the provided value
+	addVersionReq := &secretmanagerpb.AddSecretVersionRequest{
+		Parent: fullSecretName,
+		Payload: &secretmanagerpb.SecretPayload{
+			Data: []byte(secretValue),
+		},
+	}
+
+	_, err = p.client.AddSecretVersion(ctx, addVersionReq)
+	if err != nil {
+		p.logger.Error("failed to add secret version in GCP", err, map[string]interface{}{
+			"secret_name": secretName,
+			"project":     p.project,
+			"error":       err.Error(),
+		})
+		return errors.Wrap(err, "failed to add secret version in Google Secret Manager")
+	}
+
+	p.logger.Info("successfully created/updated GCP secret", map[string]interface{}{
+		"secret_name": secretName,
+		"project":     p.project,
+	})
+	return nil
 }
 
 // PutJSONSecret marshals a struct to JSON and stores it as a secret
 func (p *gcpSecretsProvider) PutJSONSecret(ctx context.Context, secretName string, v interface{}) error {
-	p.logger.Warn("PutJSONSecret not implemented for gcpSecretsProvider", nil)
-	return errors.NotImplementedf("PutJSONSecret not implemented for gcpSecretsProvider")
+	// Validate the JSON secret using the comprehensive validation framework
+	if err := p.validator.ValidateJSONSecret("gcp", secretName, v, nil); err != nil {
+		p.logger.Error("GCP JSON secret validation failed", err, map[string]interface{}{
+			"secret_name": secretName,
+			"project":     p.project,
+			"error":       err.Error(),
+		})
+		return err
+	}
+
+	// Marshal the struct to JSON (validation already checked this will succeed)
+	jsonData, err := json.Marshal(v)
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal struct to JSON")
+	}
+
+	// Store the JSON as a secret
+	return p.PutSecret(ctx, secretName, string(jsonData))
 }
 
 // DeleteSecret deletes a secret
 func (p *gcpSecretsProvider) DeleteSecret(ctx context.Context, secretName string) error {
-	p.logger.Warn("DeleteSecret not implemented for gcpSecretsProvider", nil)
-	return errors.NotImplementedf("DeleteSecret not implemented for gcpSecretsProvider")
+	// Validate the delete operation using the comprehensive validation framework
+	if err := p.validator.ValidateSecretOperation("delete", "gcp", secretName, "", nil); err != nil {
+		p.logger.Error("GCP secret delete validation failed", err, map[string]interface{}{
+			"secret_name": secretName,
+			"project":     p.project,
+			"error":       err.Error(),
+		})
+		return err
+	}
+
+	// Construct the full resource name for the secret
+	fullSecretName := fmt.Sprintf("projects/%s/secrets/%s", p.project, secretName)
+
+	// Delete the secret
+	deleteReq := &secretmanagerpb.DeleteSecretRequest{
+		Name: fullSecretName,
+	}
+
+	err := p.client.DeleteSecret(ctx, deleteReq)
+	if err != nil {
+		// Check if the secret doesn't exist
+		if strings.Contains(err.Error(), "not found") {
+			p.logger.Warn("attempted to delete non-existent GCP secret", map[string]interface{}{
+				"secret_name": secretName,
+				"project":     p.project,
+			})
+			return errors.NotFoundf("secret not found: %s", secretName)
+		}
+
+		// Check for permission errors
+		if strings.Contains(err.Error(), "permission denied") {
+			return errors.Forbiddenf("insufficient permissions to delete secret %s: %v", secretName, err)
+		}
+
+		p.logger.Error("failed to delete GCP secret", err, map[string]interface{}{
+			"secret_name": secretName,
+			"project":     p.project,
+			"error":       err.Error(),
+		})
+		return errors.Wrap(err, "failed to delete secret from Google Secret Manager")
+	}
+
+	p.logger.Info("successfully deleted GCP secret", map[string]interface{}{
+		"secret_name": secretName,
+		"project":     p.project,
+	})
+	return nil
 }
 
 // RegistryCredentials contains credentials for different registry types
@@ -799,8 +1041,9 @@ func (s *ReplicationService) createAWSSecretsProvider(ctx context.Context, regio
 
 	// Return the AWS secrets provider implementation
 	return &awsSecretsProvider{
-		client: client,
-		logger: s.logger,
+		client:    client,
+		logger:    s.logger,
+		validator: validation.NewSecretsValidator(),
 	}, nil
 }
 
@@ -820,9 +1063,10 @@ func (s *ReplicationService) createGCPSecretsProvider(ctx context.Context, proje
 
 	// Return the GCP secrets provider implementation
 	return &gcpSecretsProvider{
-		client:  client,
-		project: project,
-		logger:  s.logger,
+		client:    client,
+		project:   project,
+		logger:    s.logger,
+		validator: validation.NewSecretsValidator(),
 	}, nil
 }
 

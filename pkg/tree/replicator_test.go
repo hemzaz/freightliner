@@ -123,7 +123,8 @@ func (m *MockRepository) ListTags(ctx context.Context) ([]string, error) {
 
 // GetImageReference returns a reference for the given tag
 func (m *MockRepository) GetImageReference(tag string) (name.Reference, error) {
-	ref, err := name.NewTag("localhost:5000/" + m.Name + ":" + tag)
+	// Use correct registry port for local testing (5100 for source registry)
+	ref, err := name.NewTag("localhost:5100/" + m.Name + ":" + tag)
 	return ref, err
 }
 
