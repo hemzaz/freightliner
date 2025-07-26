@@ -1,6 +1,6 @@
 module freightliner
 
-go 1.23.0
+go 1.24
 
 toolchain go1.24.5
 
@@ -21,8 +21,10 @@ require (
 	github.com/prometheus/client_golang v1.21.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.9.1
+	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/oauth2 v0.28.0
+	golang.org/x/sync v0.12.0
 	google.golang.org/api v0.228.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -69,7 +71,6 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/vbatts/tar-split v0.11.6 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -80,7 +81,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.34.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.11.0 // indirect

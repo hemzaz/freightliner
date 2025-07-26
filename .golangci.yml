@@ -1,94 +1,64 @@
-# golangci-lint configuration for the Freightliner project
-# See https://golangci-lint.run/usage/configuration/ for details
-
-version: 2
+# golangci-lint configuration for Freightliner project
+# Compatible with golangci-lint v1.61.0
 
 run:
-  # Timeout for running linters, default is 1m
   timeout: 5m
-  # Include test files in analysis
   tests: true
-  # Don't use cache to get more accurate results
   skip-dirs:
     - vendor
     - test/mocks
 
-# Output configuration options
 output:
-  # Make output more readable
   format: colored-line-number
-  # Show line number in output
   print-issued-lines: true
-  # Show the file paths relative to the root of the project
   print-linter-name: true
 
-# Configuration of specific linters
 linters-settings:
   errcheck:
-    # Report about not checking error in type assertions: `a := b.(MyStruct)`
     check-type-assertions: true
-    # Report about assignment of errors to blank identifier: `num, _ := strconv.Atoi(numStr)`
     check-blank: true
   govet:
-    # Enable all analyzers
     enable-all: true
-    # Disable specific analyzers
     disable:
       - shadow
   revive:
-    # Max reports per package
-    max-open-files: 2048
-    # Minimal confidence for issues
     confidence: 0.8
   staticcheck:
-    # Filter out issues
     checks: ["all"]
   unused:
-    # Treat code as a program (not a library)
     check-exported: false
 
-# Enabled linters
 linters:
-  # Disable all linters, then enable specific ones
   disable-all: true
   enable:
-    - bodyclose     # Checks whether HTTP response bodies are closed
-    - dupl          # Code clone detection
-    - errcheck      # Checks for unchecked errors
-    - gocyclo       # Computes and checks cyclomatic complexity
-    - gosec         # Inspects source code for security problems
-    - govet         # Reports suspicious constructs
-    - ineffassign   # Detects ineffectual assignments
-    - misspell      # Finds commonly misspelled English words
-    - nakedret      # Finds naked returns
-    - prealloc      # Finds slice declarations that could potentially be preallocated
-    - revive        # Replacement for golint
-    - staticcheck   # Advanced static analysis
-    - unconvert     # Removes unnecessary conversions
-    - unparam       # Reports unused function parameters
-    - unused        # Checks for unused constants, variables, functions and types
+    - bodyclose
+    - dupl
+    - errcheck
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
 
-# Linter issues configuration
 issues:
-  # Don't hide multiple similar issues
   max-same-issues: 0
-  
-  # Exclude issues that match the specified patterns
   exclude-rules:
-    # Exclude some linters from running on tests files
     - path: _test\.go
       linters:
         - dupl
         - gocyclo
         - gosec
-        
-    # Skip "missing comments" issues in test files
     - path: _test\.go
       text: "comment on exported"
       linters:
         - revive
-    
-    # Skip issues in auto-generated files
     - path: \.gen\.go
       linters:
         - all

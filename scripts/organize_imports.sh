@@ -8,7 +8,7 @@ echo "Organizing imports in Go files..."
 # Check if goimports is installed
 if ! command -v goimports &> /dev/null; then
     echo "goimports is not installed. Installing..."
-    go install golang.org/x/tools/cmd/goimports@latest
+    go install golang.org/x/tools/cmd/goimports@v0.29.0
 fi
 
 # Define patterns to organize imports

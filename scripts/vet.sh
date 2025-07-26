@@ -33,6 +33,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Debug module setup
+echo -e "${YELLOW}Debugging module setup...${NC}"
+echo "Working directory: $(pwd)"
+echo "Go module: $(go list -m 2>/dev/null || echo 'No module found')"
+echo "Go version: $(go version)"
+
 # Run standard go vet
 echo -e "${YELLOW}Running standard go vet checks...${NC}"
 if [ "$VERBOSE" = true ]; then
@@ -55,8 +61,8 @@ go vet -vettool=$(which shadow) $PACKAGES 2>/dev/null || SHADOW_RESULT=$?
 # Install missing tools if needed
 if [ "${IFACE_RESULT}" -eq 127 ] || [ "${SHADOW_RESULT}" -eq 127 ]; then
   echo -e "${YELLOW}Installing additional vet tools...${NC}"
-  go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
-  go install github.com/mvdan/interfacer/cmd/interfacer@latest
+  go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0
+  go install github.com/mvdan/interfacer/cmd/interfacer@v0.0.0-20180902061238-70be1b28218b
   
   # Try again
   echo -e "${YELLOW}Running interface check...${NC}"

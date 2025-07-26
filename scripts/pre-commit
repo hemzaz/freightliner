@@ -13,12 +13,12 @@ echo "==> Running pre-commit checks on Go files..."
 
 # Check if required tools are installed
 if ! command -v goimports &> /dev/null; then
-  echo "Error: goimports is not installed. Install it with 'go install golang.org/x/tools/cmd/goimports@latest'"
+  echo "Error: goimports is not installed. Install it with 'go install golang.org/x/tools/cmd/goimports@v0.29.0'"
   exit 1
 fi
 
 if ! command -v golangci-lint &> /dev/null; then
-  echo "Error: golangci-lint is not installed. Install it with 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest'"
+  echo "Error: golangci-lint is not installed. Install it with 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0'"
   exit 1
 fi
 

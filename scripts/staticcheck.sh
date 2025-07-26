@@ -8,7 +8,7 @@ echo "Running staticcheck analysis..."
 # Check if staticcheck is installed
 if ! command -v staticcheck &> /dev/null; then
     echo "staticcheck is not installed. Installing..."
-    go install honnef.co/go/tools/cmd/staticcheck@latest
+    go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 fi
 
 # Define color codes

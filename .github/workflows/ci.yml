@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.5'
           check-latest: true
 
       - name: Cache dependencies
@@ -36,8 +36,16 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.61.0
           args: --timeout=5m
+        continue-on-error: true
+        id: golangci-lint-action
+
+      - name: Fallback golangci-lint installation
+        if: steps.golangci-lint-action.outcome == 'failure'
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0
+          $(go env GOPATH)/bin/golangci-lint run --timeout=5m
 
   test:
     name: Test
@@ -60,7 +68,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.5'
           check-latest: true
 
       - name: Cache dependencies
@@ -76,17 +84,41 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Verify module setup
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Go module: $(go list -m)"
+          echo "Go version: $(go version)"
+          echo "GOPATH: $GOPATH"
+          echo "GOROOT: $GOROOT"
+          go mod verify
+
       - name: Format check
         run: make fmt-check
 
       - name: Import organization check
         run: make imports-check
 
+      - name: Install go tools
+        run: |
+          go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0
+          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+
       - name: Run enhanced go vet checks
         run: make vet
+        env:
+          GO111MODULE: on
+          GOFLAGS: -mod=readonly
+          GOROOT: ${{ steps.setup-go.outputs.go-root }}
+          GOPATH: ${{ steps.setup-go.outputs.go-path }}
 
       - name: Run staticcheck
         run: make staticcheck
+        env:
+          GO111MODULE: on
+          GOFLAGS: -mod=readonly
+          GOROOT: ${{ steps.setup-go.outputs.go-root }}
+          GOPATH: ${{ steps.setup-go.outputs.go-path }}
 
       - name: Run tests
         run: go test -v -race ./...
@@ -103,7 +135,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.5'
           check-latest: true
 
       - name: Cache dependencies

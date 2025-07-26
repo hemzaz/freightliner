@@ -39,7 +39,7 @@ imports:
 
 # Check if imports are organized
 imports-check:
-	@go install golang.org/x/tools/cmd/goimports@latest
+	@go install golang.org/x/tools/cmd/goimports@v0.29.0
 	@GOIMPORTS_OUTPUT=$$(goimports -l -local freightliner .); \
 	if [ -n "$$GOIMPORTS_OUTPUT" ]; then \
 		echo "Imports not properly organized. Run 'make imports' to fix."; \
@@ -51,14 +51,21 @@ imports-check:
 vet:
 	./scripts/vet.sh ./...
 
+# Tool versions
+GOIMPORTS_VERSION = v0.29.0
+GOLANGCI_LINT_VERSION = v1.61.0
+SHADOW_VERSION = v0.29.0
+INTERFACER_VERSION = v0.0.0-20180902061238-70be1b28218b
+STATICCHECK_VERSION = 2025.1.1
+
 # Setup development environment
 setup:
 	go mod download
-	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
-	go install github.com/mvdan/interfacer/cmd/interfacer@latest
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@$(SHADOW_VERSION)
+	go install github.com/mvdan/interfacer/cmd/interfacer@$(INTERFACER_VERSION)
+	go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
 	cp scripts/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
 	@echo "Setup complete. Running initial checks..."
