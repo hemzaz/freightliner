@@ -31,6 +31,9 @@ RUN go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0 &
 
 # Build stage - verify all packages compile
 FROM builder AS build
+# Debug environment settings
+RUN echo "GO111MODULE=$GO111MODULE" && echo "GOFLAGS=$GOFLAGS" && echo "GOPATH=$GOPATH" && echo "PWD=$(pwd)" && ls -la
+RUN go env GOMOD && go env GO111MODULE && go env GOFLAGS
 RUN go build ./...
 RUN go build -o /tmp/freightliner main.go
 
