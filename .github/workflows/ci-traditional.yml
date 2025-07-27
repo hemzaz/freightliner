@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.5'
+          check-latest: true
+
+      # CRITICAL: Override GOPATH after setup-go action
+      - name: Force Go module mode
+        run: |
+          echo "GO111MODULE=on" >> $GITHUB_ENV
+          echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
+          echo "GOPATH=" >> $GITHUB_ENV
+          echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
+
+      - name: Verify Go environment
+        run: |
+          echo "GO111MODULE: $GO111MODULE"
+          echo "GOFLAGS: $GOFLAGS"
+          echo "GOPATH: '$GOPATH'"
+          echo "go env GOMOD: $(go env GOMOD)"
+          echo "go list -m: $(go list -m)"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go mod download
+
+      - name: Build packages
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go build ./...
+
+      - name: Install golangci-lint manually
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.3.0
+          export PATH=$PATH:$(go env GOPATH)/bin
+
+      - name: Run golangci-lint manually
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" golangci-lint run --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+          --health-start-period 10s
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.5'
+          check-latest: true
+
+      # CRITICAL: Override GOPATH after setup-go action
+      - name: Force Go module mode
+        run: |
+          echo "GO111MODULE=on" >> $GITHUB_ENV
+          echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
+          echo "GOPATH=" >> $GITHUB_ENV
+          echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go mod download
+
+      - name: Verify module integrity
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go mod verify
+
+      - name: Format check
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make fmt-check
+
+      - name: Import organization check
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make imports-check
+
+      - name: Install go tools
+        run: |
+          GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0
+          GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+
+      - name: Run go vet
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make vet
+
+      - name: Run staticcheck
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make staticcheck
+
+      - name: Run tests  
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go test -v -race ./...
+        env:
+          REGISTRY_HOST: localhost:5100
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.5'
+          check-latest: true
+
+      # CRITICAL: Override GOPATH after setup-go action
+      - name: Force Go module mode
+        run: |
+          echo "GO111MODULE=on" >> $GITHUB_ENV
+          echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
+          echo "GOPATH=" >> $GITHUB_ENV
+          echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go mod download
+
+      - name: Build application
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: freightliner-binary
+          path: bin/
+          retention-days: 7

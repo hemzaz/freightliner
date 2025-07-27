@@ -7,59 +7,8 @@ on:
     branches: [ main, master ]
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.5'
-          check-latest: true
-
-      # CRITICAL: Override GOPATH after setup-go action
-      - name: Force Go module mode
-        run: |
-          echo "GO111MODULE=on" >> $GITHUB_ENV
-          echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
-          echo "GOPATH=" >> $GITHUB_ENV
-          echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
-
-      - name: Verify Go environment
-        run: |
-          echo "GO111MODULE: $GO111MODULE"
-          echo "GOFLAGS: $GOFLAGS"
-          echo "GOPATH: '$GOPATH'"
-          echo "go env GOMOD: $(go env GOMOD)"
-          echo "go list -m: $(go list -m)"
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Build packages
-        run: go build ./...
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.3.0
-          args: --timeout=5m
-
-  test:
-    name: Test
+  docker-build:
+    name: Docker Build & Test
     runs-on: ubuntu-latest
     services:
       registry:
@@ -76,61 +25,51 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and verify all packages
+        uses: docker/build-push-action@v6
         with:
-          go-version: '1.24.5'
-          check-latest: true
+          context: .
+          file: ./Dockerfile.ci
+          target: build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # CRITICAL: Override GOPATH after setup-go action
-      - name: Force Go module mode
-        run: |
-          echo "GO111MODULE=on" >> $GITHUB_ENV
-          echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
-          echo "GOPATH=" >> $GITHUB_ENV
-          echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      - name: Run linting
+        uses: docker/build-push-action@v6
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          context: .
+          file: ./Dockerfile.ci
+          target: lint
+          cache-from: type=gha
 
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Verify module integrity
-        run: go mod verify
-
-      - name: Format check
-        run: make fmt-check
-
-      - name: Import organization check
-        run: make imports-check
-
-      - name: Install go tools
-        run: |
-          go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0
-          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
-
-      - name: Run go vet
-        run: make vet
-
-      - name: Run staticcheck
-        run: make staticcheck
+      - name: Run static analysis
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.ci
+          target: static
+          cache-from: type=gha
 
       - name: Run tests
-        run: go test -v -race ./...
-        env:
-          REGISTRY_HOST: localhost:5100
+        run: |
+          docker build --target test -t freightliner-test -f Dockerfile.ci .
+          docker run --rm --network host -e REGISTRY_HOST=localhost:5100 freightliner-test
 
-  build:
-    name: Build
+      - name: Verify module consistency
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.ci
+          target: verify
+          cache-from: type=gha
+
+  traditional-build:
+    name: Traditional Build (Fallback)
     runs-on: ubuntu-latest
+    if: failure()
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -139,31 +78,43 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.24.5'
-          check-latest: true
 
-      # CRITICAL: Override GOPATH after setup-go action
-      - name: Force Go module mode
+      - name: Force module mode
         run: |
           echo "GO111MODULE=on" >> $GITHUB_ENV
           echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
           echo "GOPATH=" >> $GITHUB_ENV
-          echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
 
       - name: Build application
-        run: make build
+        run: go build -o bin/freightliner main.go
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: freightliner-binary-fallback
+          path: bin/
+          retention-days: 7
+
+  build-artifacts:
+    name: Build Artifacts
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and extract binary
+        run: |
+          docker build --target build -t freightliner-build -f Dockerfile.ci .
+          docker create --name temp-container freightliner-build
+          docker cp temp-container:/tmp/freightliner ./freightliner
+          docker rm temp-container
+          mkdir -p bin/
+          mv freightliner bin/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
