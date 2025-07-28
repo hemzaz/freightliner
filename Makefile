@@ -1,11 +1,59 @@
-.PHONY: build test lint clean fmt imports vet test-setup test-validate test-cleanup test-full
+.PHONY: build test test-manifest test-ci test-local test-integration test-unit lint clean fmt imports vet test-setup test-validate test-cleanup test-full
 
 # Build the application
 build:
 	GO111MODULE=on GOFLAGS=-mod=mod go build -o bin/freightliner main.go
 
-# Run all tests
-test:
+# Build test manifest tool
+build-test-manifest:
+	@mkdir -p bin
+	GO111MODULE=on GOFLAGS=-mod=mod go build -o bin/test-manifest ./cmd/test-manifest
+
+# Run all tests (legacy - now uses manifest)
+test: test-manifest
+
+# Run tests with manifest-based filtering (auto-detect environment)
+test-manifest: build-test-manifest
+	@echo "Running tests with manifest-based filtering..."
+	./scripts/test-with-manifest.sh
+
+# Run tests optimized for CI environment
+test-ci: build-test-manifest
+	@echo "Running CI-optimized tests..."
+	./scripts/test-with-manifest.sh --env ci
+
+# Run tests for local development environment
+test-local: build-test-manifest
+	@echo "Running local development tests..."
+	./scripts/test-with-manifest.sh --env local
+
+# Run full integration tests
+test-integration: build-test-manifest
+	@echo "Running integration tests..."
+	./scripts/test-with-manifest.sh --env integration
+
+# Run only unit tests
+test-unit: build-test-manifest
+	@echo "Running unit tests only..."
+	./scripts/test-with-manifest.sh --categories unit
+
+# Run tests without external dependencies
+test-no-deps: build-test-manifest
+	@echo "Running tests without external dependencies..."
+	./scripts/test-with-manifest.sh --categories unit
+
+# Show test manifest summary
+test-summary: build-test-manifest
+	@echo "Test Manifest Summary:"
+	./scripts/test-with-manifest.sh --summary
+
+# Validate test manifest
+test-manifest-validate: build-test-manifest
+	@echo "Validating test manifest..."
+	./bin/test-manifest validate
+
+# Run legacy test command (without manifest filtering)
+test-legacy:
 	GO111MODULE=on GOFLAGS=-mod=mod go test -v ./...
 
 # Run linting
