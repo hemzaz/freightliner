@@ -141,7 +141,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			if backoffFactor > 20 { // Cap to prevent overflow
 				backoffFactor = 20
 			}
-			time.Sleep(time.Duration(1<<uint(backoffFactor)) * 100 * time.Millisecond)
+			time.Sleep(time.Duration(1<<uint(backoffFactor)) * 100 * time.Millisecond) // #nosec G115 - backoffFactor is capped at 20
 		}
 
 		resp, err = t.inner.RoundTrip(reqCopy)

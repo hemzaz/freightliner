@@ -7,40 +7,6 @@ import (
 	"testing"
 )
 
-type mockRegistry struct {
-	repositories map[string]interface{}
-	listError    error
-}
-
-func (m *mockRegistry) GetRepository(name string) (interface{}, error) {
-	if m.repositories == nil {
-		return nil, errors.New("mock registry not initialized")
-	}
-
-	repo, exists := m.repositories[name]
-	if !exists {
-		return nil, &RegistryError{Registry: "mock", Original: ErrNotFound}
-	}
-
-	return repo, nil
-}
-
-func (m *mockRegistry) ListRepositories() ([]string, error) {
-	if m.listError != nil {
-		return nil, m.listError
-	}
-
-	if m.repositories == nil {
-		return []string{}, nil
-	}
-
-	repos := make([]string, 0, len(m.repositories))
-	for name := range m.repositories {
-		repos = append(repos, name)
-	}
-	return repos, nil
-}
-
 type mockRepository struct {
 	name       string
 	tags       []string

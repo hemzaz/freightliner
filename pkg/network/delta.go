@@ -488,8 +488,8 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		// Create delta header
 		header := DeltaHeader{
 			Format:       BSDiffFormat,
-			SourceSize:   uint32(len(source)),
-			TargetSize:   uint32(len(target)),
+			SourceSize:   uint32(len(source)), // #nosec G115 - safe conversion, len() returns non-negative int
+			TargetSize:   uint32(len(target)), // #nosec G115 - safe conversion, len() returns non-negative int
 			SourceDigest: sourceDigest,
 			TargetDigest: targetDigest,
 		}
@@ -707,7 +707,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		// - Source chunk index to copy from (≥0)
 		// - -1 if no match (needs new chunk data)
 		for _, matchIdx := range chunkMatches {
-			if err := binary.Write(&delta, binary.BigEndian, int32(matchIdx)); err != nil {
+			if err := binary.Write(&delta, binary.BigEndian, int32(matchIdx)); err != nil { // #nosec G115 - safe conversion, matchIdx within bounds
 				return nil, errors.Wrap(err, "failed to write chunk match index")
 			}
 		}
@@ -985,7 +985,7 @@ func ApplyDelta(delta, source []byte, format string) ([]byte, error) {
 		chunkMap := make([]int32, header.ChunkCount)
 		for i := uint32(0); i < header.ChunkCount; i++ {
 			offset := i * 4
-			chunkMap[i] = int32(binary.BigEndian.Uint32(deltaData[offset : offset+4]))
+			chunkMap[i] = int32(binary.BigEndian.Uint32(deltaData[offset : offset+4])) // #nosec G115 - safe conversion, reading from validated data
 		}
 
 		// Get source chunks

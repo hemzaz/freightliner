@@ -1,3 +1,4 @@
+// Package cmd provides the command-line interface commands for freightliner.
 package cmd
 
 import (

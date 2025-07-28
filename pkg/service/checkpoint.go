@@ -214,7 +214,7 @@ func (s *CheckpointService) ExportCheckpoint(ctx context.Context, id string, fil
 
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(filePath)
-	if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+	if mkdirErr := os.MkdirAll(dir, 0750); mkdirErr != nil {
 		return errors.Wrap(mkdirErr, "failed to create directory for export file")
 	}
 

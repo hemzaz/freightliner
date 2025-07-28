@@ -13,7 +13,7 @@ func TestFileStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create the file store
 	store, err := NewFileStore(tempDir)
@@ -135,7 +135,7 @@ func TestFileStoreConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Create the file store
 	store, err := NewFileStore(tempDir)

@@ -121,13 +121,13 @@ func (c *BaseClient) GetCachedRepository(ctx context.Context, repoName string, f
 	}
 
 	// Create a proper repository reference
-	repo_ref, err := c.util.CreateRepositoryReference(c.registryName, repoName)
+	repoRef, err := c.util.CreateRepositoryReference(c.registryName, repoName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create the repository using the factory function
-	repo = factory(repo_ref)
+	repo = factory(repoRef)
 
 	// Cache the repository
 	func() {
