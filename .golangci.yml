@@ -1,44 +1,22 @@
-# golangci-lint configuration for Freightliner project
+# golangci-lint v2 configuration for Freightliner project
 # Focus on actual bugs and security issues, not style noise
+
+version: "2"
 
 run:
   timeout: 5m
   tests: true
 
 linters:
+  default: none
   enable:
     - errcheck      # Check for unchecked errors (important for reliability)
     - govet         # Standard Go vet checks (catches real bugs)
     - ineffassign   # Detect ineffectual assignments (potential bugs)
     - misspell      # Fix common spelling mistakes
-  disable:
-    - gosec         # Disabled: too many false positives for safe operations
-    - staticcheck   # Disabled: too pedantic about style over substance
-    - unused        # Disabled: flags test helpers and future-use code unnecessarily
 
 linters-settings:
-  errcheck:
-    # Don't require checking errors from these functions (common safe ignores)
-    ignore: fmt:.*,io/ioutil:^Read.*
-    
   govet:
-    # Only enable the most important vet checks
-    enable:
-      - assign
-      - atomic
-      - bools
-      - buildtag
-      - copylocks
-      - httpresponse
-      - loopclosure
-      - lostcancel
-      - nilfunc
-      - printf
-      - shift
-      - stdmethods
-      - structtag
-      - tests
-      - unreachable
-      - unsafeptr
+    # Only enable the most important vet checks, disable noisy ones
     disable:
       - shadow    # Too noisy, context shadowing is often intentional
