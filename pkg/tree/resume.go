@@ -172,8 +172,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 	results := make(chan repoResult, len(remainingRepos))
 
 	// Set up context with cancellation for handling interruptions
-	ctx, cancel := context.WithCancel(ctx)
+	newCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	ctx = newCtx
 
 	// Process each repository
 	for _, repo := range remainingRepos {

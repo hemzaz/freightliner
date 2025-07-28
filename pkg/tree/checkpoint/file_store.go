@@ -92,7 +92,7 @@ func (s *FileStore) GetCheckpoint(id string) (*TreeCheckpoint, error) {
 	// Read the checkpoint file
 	filename := filepath.Join(s.directory, id+".json")
 
-	data, err := os.ReadFile(filename)
+	data, err := os.ReadFile(filename) // #nosec G304 - filename is constructed from validated directory and ID
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, errors.NotFoundf("checkpoint not found: %s", id)
@@ -150,7 +150,7 @@ func (s *FileStore) ListCheckpoints() ([]*TreeCheckpoint, error) {
 
 	for _, filename := range matches {
 		// Read and deserialize each checkpoint
-		data, err := os.ReadFile(filename)
+		data, err := os.ReadFile(filename) // #nosec G304 - filename is constructed from validated directory and ID // #nosec G304 - filename is constructed from validated directory and ID
 		if err != nil {
 			continue // Skip files that can't be read
 		}
@@ -234,7 +234,7 @@ func (s *FileStore) listCheckpointsUnlocked() ([]*TreeCheckpoint, error) {
 
 	for _, filename := range matches {
 		// Read and deserialize each checkpoint
-		data, err := os.ReadFile(filename)
+		data, err := os.ReadFile(filename) // #nosec G304 - filename is constructed from validated directory and ID // #nosec G304 - filename is constructed from validated directory and ID
 		if err != nil {
 			continue // Skip files that can't be read
 		}

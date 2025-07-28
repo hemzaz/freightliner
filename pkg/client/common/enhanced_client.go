@@ -168,19 +168,19 @@ func (c *EnhancedClient) GetTransport(repositoryName string) (http.RoundTripper,
 	}
 
 	// Add logging if enabled
-	var loggingTransport http.RoundTripper = authTransport
+	loggingTransport := authTransport
 	if c.options.EnableLogging {
 		loggingTransport = c.baseTransport.LoggingTransport(authTransport)
 	}
 
 	// Add retries if enabled
-	var retryTransport http.RoundTripper = loggingTransport
+	retryTransport := loggingTransport
 	if c.options.EnableRetries {
 		retryTransport = c.baseTransport.RetryTransport(loggingTransport, c.options.MaxRetries, c.retryPolicy)
 	}
 
 	// Add timeout if specified
-	var timeoutTransport http.RoundTripper = retryTransport
+	timeoutTransport := retryTransport
 	if c.options.RequestTimeout > 0 {
 		timeoutTransport = c.baseTransport.TimeoutTransport(retryTransport, c.options.RequestTimeout)
 	}

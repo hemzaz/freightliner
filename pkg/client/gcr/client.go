@@ -1,3 +1,4 @@
+// Package gcr provides Google Container Registry client functionality.
 package gcr
 
 import (

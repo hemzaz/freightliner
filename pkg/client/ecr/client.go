@@ -1,3 +1,4 @@
+// Package ecr provides AWS Elastic Container Registry client functionality.
 package ecr
 
 import (
