@@ -575,11 +575,11 @@ func TestOptimizeTransfer(t *testing.T) {
 	// Create source repository with a manifest
 	sourceRepo := NewMockRepository()
 	manifest := []byte(`{"schemaVersion":2,"config":{"digest":"sha256:abc"},"layers":[{"digest":"layer1"},{"digest":"layer2"}]}`)
-	sourceRepo.PutManifest2("sha256:manifest1", manifest, "application/json")
+	_ = sourceRepo.PutManifest2("sha256:manifest1", manifest, "application/json")
 
 	// Create destination repository with the same data
 	destRepo := NewMockRepository()
-	destRepo.PutManifest2("sha256:manifest1", manifest, "application/json")
+	_ = destRepo.PutManifest2("sha256:manifest1", manifest, "application/json")
 
 	// Test identical data - should skip transfer
 	summary, wasOptimized, err := manager.OptimizeTransfer(sourceRepo, destRepo, "sha256:manifest1", "application/json")
@@ -600,7 +600,7 @@ func TestOptimizeTransfer(t *testing.T) {
 	"layers":[{"digest":"layer1"},{"digest":"layer3"},
 	          {"digest":"layer4"},{"digest":"layer5"},
 	          {"digest":"layer6"},{"digest":"layer7"}]}`)
-	sourceRepo.PutManifest2("sha256:manifest2", manifest2, "application/json")
+	_ = sourceRepo.PutManifest2("sha256:manifest2", manifest2, "application/json")
 
 	// Test delta transfer - should optimize
 	summary, wasOptimized, err = manager.OptimizeTransfer(sourceRepo, destRepo, "sha256:manifest2", "application/json")
@@ -644,7 +644,7 @@ func TestNoDelta(t *testing.T) {
 
 	// Create a small manifest (below threshold)
 	manifest := []byte(`{"schemaVersion":2,"config":{"digest":"sha256:abc"},"layers":[{"digest":"layer1"}]}`)
-	sourceRepo.PutManifest2("sha256:smallmanifest", manifest, "application/json")
+	_ = sourceRepo.PutManifest2("sha256:smallmanifest", manifest, "application/json")
 
 	// Test - should not use delta due to disabling delta via MaxDeltaRatio=0
 	summary, wasOptimized, err := manager.OptimizeTransfer(sourceRepo, destRepo, "sha256:smallmanifest", "application/json")

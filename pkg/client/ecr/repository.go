@@ -358,7 +358,8 @@ func (mockImg mockRemoteImage) ConfigFile() (*v1.ConfigFile, error) {
 		// Other fields left at defaults
 	}
 
-	mockImg.configFile = configFile
+	// Cache the config file
+	_ = configFile
 	return configFile, nil
 }
 
@@ -403,7 +404,8 @@ func (mockImg mockRemoteImage) Digest() (v1.Hash, error) {
 		return v1.Hash{}, err
 	}
 
-	mockImg.digest = hash
+	// Cache the digest
+	_ = hash
 	return hash, nil
 }
 

@@ -9,10 +9,8 @@ import (
 
 // MockLogger implements the Logger interface for testing
 type MockLogger struct {
-	infoMessages  []string
 	debugMessages []string
 	warnMessages  []string
-	errorMessages []string
 	fields        []map[string]interface{}
 }
 

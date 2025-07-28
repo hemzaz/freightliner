@@ -326,7 +326,8 @@ func (c *Client) GetTransport(repositoryName string) (http.RoundTripper, error) 
 	}
 
 	// Create the transport
-	rt, err := transport.New(
+	rt, err := transport.NewWithContext(
+		context.Background(),
 		repository.Registry,
 		auth,
 		http.DefaultTransport,

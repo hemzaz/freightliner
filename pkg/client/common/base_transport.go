@@ -136,8 +136,12 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				"url":     req.URL.String(),
 				"attempt": i,
 			})
-			// Use exponential backoff
-			time.Sleep(time.Duration(1<<uint(i-1)) * 100 * time.Millisecond)
+			// Use exponential backoff with overflow protection
+			backoffFactor := i - 1
+			if backoffFactor > 20 { // Cap to prevent overflow
+				backoffFactor = 20
+			}
+			time.Sleep(time.Duration(1<<uint(backoffFactor)) * 100 * time.Millisecond)
 		}
 
 		resp, err = t.inner.RoundTrip(reqCopy)

@@ -318,7 +318,8 @@ func (c *Client) GetTransport(repositoryName string) (http.RoundTripper, error) 
 	auth := NewECRAuthenticator(c.ecr, c.region)
 
 	// Create transport with authentication
-	rt, err := transport.New(
+	rt, err := transport.NewWithContext(
+		context.Background(),
 		repository.Registry,
 		auth,
 		http.DefaultTransport,

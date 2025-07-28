@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -20,7 +21,8 @@ func CreateTransport(registry name.Registry, auth authn.Authenticator, logger *l
 	}
 
 	// Create transport with authentication and scopes
-	rt, err := transport.New(
+	rt, err := transport.NewWithContext(
+		context.Background(),
 		registry,
 		auth,
 		http.DefaultTransport,

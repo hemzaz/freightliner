@@ -23,14 +23,14 @@ func captureOutput(f func()) string {
 	f()
 
 	// Close the write end of the pipe
-	w.Close()
+	_ = w.Close()
 
 	// Restore original stdout
 	os.Stdout = originalStdout
 
 	// Read captured output
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 
 	return buf.String()
 }

@@ -34,7 +34,6 @@ Thumbs.db
 
 # Application specific files
 config.yaml
-secrets/
 *.pem
 *.key
 *.log

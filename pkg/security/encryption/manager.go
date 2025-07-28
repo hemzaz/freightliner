@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"math"
 	"sync"
 
 	"freightliner/pkg/helper/errors"
@@ -227,6 +228,9 @@ func (m *Manager) EncryptStream(ctx context.Context, src io.Reader, dst io.Write
 	}
 
 	// Write header length as 4 bytes
+	if len(headerBytes) > math.MaxUint32 {
+		return errors.InvalidInputf("header too large: %d bytes", len(headerBytes))
+	}
 	headerLen := uint32(len(headerBytes))
 	headerLenBytes := []byte{
 		byte(headerLen >> 24),
@@ -275,6 +279,9 @@ func (m *Manager) EncryptStream(ctx context.Context, src io.Reader, dst io.Write
 			encryptedChunk := gcm.Seal(nil, nonce, buf[:n], nil)
 
 			// Write chunk length
+			if len(encryptedChunk) > math.MaxUint32 {
+				return errors.InvalidInputf("encrypted chunk too large: %d bytes", len(encryptedChunk))
+			}
 			chunkLen := uint32(len(encryptedChunk))
 			chunkLenBytes := []byte{
 				byte(chunkLen >> 24),

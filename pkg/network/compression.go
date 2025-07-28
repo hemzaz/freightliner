@@ -159,7 +159,11 @@ func Decompress(data []byte, compType CompressionType) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create decompressing reader")
 	}
-	defer r.Close()
+	defer func() {
+		if closeErr := r.Close(); closeErr != nil {
+			// Log the close error but don't override the main error
+		}
+	}()
 
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, r); err != nil {

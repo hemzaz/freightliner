@@ -65,7 +65,7 @@ func (s *FileStore) SaveCheckpoint(checkpoint *TreeCheckpoint) error {
 	filename := filepath.Join(s.directory, checkpoint.ID+".json")
 
 	// Create or overwrite the file
-	err = os.WriteFile(filename, data, 0644)
+	err = os.WriteFile(filename, data, 0600)
 	if err != nil {
 		return errors.Wrap(err, "failed to write checkpoint file")
 	}

@@ -175,7 +175,7 @@ func TestTransferImage(t *testing.T) {
 	// Add a manifest to the source
 	manifest := []byte(`{"schemaVersion":2,"config":{"digest":"sha256:abc"},"layers":[{"digest":"layer1"},{"digest":"layer2"}]}`)
 	ctx := context.Background()
-	sourceRepo.PutManifest(ctx, "latest", &interfaces.Manifest{
+	_ = sourceRepo.PutManifest(ctx, "latest", &interfaces.Manifest{
 		Content:   manifest,
 		MediaType: "application/json",
 		Digest:    "sha256:latest",

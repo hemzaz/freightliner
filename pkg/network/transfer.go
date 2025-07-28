@@ -131,7 +131,11 @@ func (t *TransferManager) transferBlobInternal(
 	if err != nil {
 		return errors.Wrap(err, "failed to get source layer reader")
 	}
-	defer reader.Close()
+	defer func() {
+		if closeErr := reader.Close(); closeErr != nil {
+			// Log the close error but don't override the main error
+		}
+	}()
 
 	// Apply compression if enabled
 	if t.options.EnableCompression {

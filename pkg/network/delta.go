@@ -217,7 +217,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 				if err == nil && header.ChunkCount > 0 {
 					// Each chunk map entry is 4 bytes
 					chunkMapSize := header.ChunkCount * 4
-					if uint32(len(delta)) > 4+headerSize+chunkMapSize {
+					if len(delta) > int(4+headerSize+chunkMapSize) {
 						// Count how many chunks were modified (have -1 in the chunk map)
 						modifiedChunks := 0
 						deltaData := delta[4+headerSize:]
@@ -225,7 +225,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 						for i := uint32(0); i < header.ChunkCount; i++ {
 							offset := i * 4
 							if offset+4 <= uint32(len(deltaData)) {
-								chunkRef := int32(binary.BigEndian.Uint32(deltaData[offset : offset+4]))
+								chunkRef := int32(binary.BigEndian.Uint32(deltaData[offset : offset+4])) // #nosec G115 - safe conversion within bounds
 								if chunkRef == -1 {
 									modifiedChunks++
 								}
@@ -502,7 +502,9 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
-		binary.Write(&delta, binary.BigEndian, headerSize)
+		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
+			return nil, errors.Wrap(err, "failed to write header size")
+		}
 
 		// Write header
 		delta.Write(headerBytes)
@@ -536,8 +538,12 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		// - Prefix length (uint32)
 		// - Suffix length (uint32)
 		// - Middle data (the differing part)
-		binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen))
-		binary.Write(&delta, binary.BigEndian, uint32(commonSuffixLen))
+		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil {
+			return nil, errors.Wrap(err, "failed to write prefix length")
+		}
+		if err := binary.Write(&delta, binary.BigEndian, uint32(commonSuffixLen)); err != nil {
+			return nil, errors.Wrap(err, "failed to write suffix length")
+		}
 
 		// Write the different middle section
 		middleStart := commonPrefixLen
@@ -574,7 +580,9 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
-		binary.Write(&delta, binary.BigEndian, headerSize)
+		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
+			return nil, errors.Wrap(err, "failed to write header size")
+		}
 
 		// Write header
 		delta.Write(headerBytes)
@@ -605,10 +613,14 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		}
 
 		// Write the common prefix length as uint32
-		binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen))
+		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil {
+			return nil, errors.Wrap(err, "failed to write prefix length")
+		}
 
 		// Write the common suffix length as uint32
-		binary.Write(&delta, binary.BigEndian, uint32(suffixLen))
+		if err := binary.Write(&delta, binary.BigEndian, uint32(suffixLen)); err != nil {
+			return nil, errors.Wrap(err, "failed to write suffix length")
+		}
 
 		// Write only the middle different part
 		middleStart := commonPrefixLen
@@ -684,7 +696,9 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
-		binary.Write(&delta, binary.BigEndian, headerSize)
+		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
+			return nil, errors.Wrap(err, "failed to write header size")
+		}
 
 		// Write header
 		delta.Write(headerBytes)
@@ -693,7 +707,9 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		// - Source chunk index to copy from (≥0)
 		// - -1 if no match (needs new chunk data)
 		for _, matchIdx := range chunkMatches {
-			binary.Write(&delta, binary.BigEndian, int32(matchIdx))
+			if err := binary.Write(&delta, binary.BigEndian, int32(matchIdx)); err != nil {
+				return nil, errors.Wrap(err, "failed to write chunk match index")
+			}
 		}
 
 		// Write new chunk data for non-matching chunks
@@ -731,7 +747,9 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 
 		// Write header size as uint32 (4 bytes)
 		headerSize := uint32(len(headerBytes))
-		binary.Write(&delta, binary.BigEndian, headerSize)
+		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
+			return nil, errors.Wrap(err, "failed to write header size")
+		}
 
 		// Write header
 		delta.Write(headerBytes)
@@ -768,7 +786,10 @@ func createIdenticalDelta(source []byte) []byte {
 
 	// Write header size as uint32 (4 bytes)
 	headerSize := uint32(len(headerBytes))
-	binary.Write(&delta, binary.BigEndian, headerSize)
+	if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
+		// Return original delta on write error
+		return delta.Bytes()
+	}
 
 	// Write header
 	delta.Write(headerBytes)
@@ -1127,63 +1148,4 @@ func ChunkData(data []byte, chunkSize int) ([][]byte, error) {
 	}
 
 	return chunks, nil
-}
-
-// splitIntoChunks splits data into chunks of the specified size and returns ChunkInfo slices
-// This is used for delta calculations
-func splitIntoChunks(data []byte, chunkSize int) []ChunkInfo {
-	if len(data) == 0 {
-		return []ChunkInfo{}
-	}
-
-	var chunks []ChunkInfo
-	var offset int64
-
-	for i := 0; i < len(data); i += chunkSize {
-		end := i + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
-
-		chunkData := data[i:end]
-		h := sha256.New()
-		h.Write(chunkData)
-		checksum := fmt.Sprintf("sha256:%x", h.Sum(nil))
-
-		chunks = append(chunks, ChunkInfo{
-			Offset:   offset,
-			Size:     len(chunkData),
-			Checksum: checksum,
-		})
-
-		offset += int64(len(chunkData))
-	}
-
-	return chunks
-}
-
-// compareChunks compares two sets of chunks and returns the indices of chunks that differ
-// and the total number of chunks in the source
-func compareChunks(source, dest []ChunkInfo) ([]int, int) {
-	var changedIndices []int
-
-	// Find common length to compare
-	commonLength := len(source)
-	if len(dest) < commonLength {
-		commonLength = len(dest)
-	}
-
-	// Compare chunks that exist in both source and destination
-	for i := 0; i < commonLength; i++ {
-		if source[i].Checksum != dest[i].Checksum {
-			changedIndices = append(changedIndices, i)
-		}
-	}
-
-	// If source has more chunks than destination, mark the extras as changed
-	for i := commonLength; i < len(source); i++ {
-		changedIndices = append(changedIndices, i)
-	}
-
-	return changedIndices, len(source)
 }

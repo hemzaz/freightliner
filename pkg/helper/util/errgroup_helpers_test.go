@@ -318,7 +318,7 @@ func TestLimitedErrGroup_RaceConditions(t *testing.T) {
 	}
 
 	// Wait for all tasks to complete
-	g.Wait()
+	_ = g.Wait()
 
 	// Make sure all tasks ran
 	if counter.Load() != 100 {

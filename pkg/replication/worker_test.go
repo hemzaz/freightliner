@@ -68,7 +68,7 @@ func TestWorkerPoolPriority(t *testing.T) {
 	wg.Add(10)
 
 	// Create a variable to track the order of completion
-	var completionOrder []int32
+	var completionOrder []int
 	var orderMutex sync.Mutex
 
 	// Submit 10 jobs with different priorities
@@ -80,7 +80,7 @@ func TestWorkerPoolPriority(t *testing.T) {
 			defer wg.Done()
 			// Record completion order
 			orderMutex.Lock()
-			completionOrder = append(completionOrder, int32(i))
+			completionOrder = append(completionOrder, i)
 			orderMutex.Unlock()
 			return nil
 		}, priority)
@@ -266,7 +266,7 @@ func TestResultsChannel(t *testing.T) {
 	// Even-numbered jobs succeed, odd-numbered jobs fail
 	for i := 0; i < 10; i++ {
 		i := i // Capture for closure
-		pool.Submit(fmt.Sprintf("job-%d", i), func(ctx context.Context) error {
+		_ = pool.Submit(fmt.Sprintf("job-%d", i), func(ctx context.Context) error {
 			if i%2 == 0 {
 				return nil // Success
 			} else {
