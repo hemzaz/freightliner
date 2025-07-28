@@ -191,15 +191,71 @@ The system automatically detects the environment:
 
 ### GitHub Actions Integration
 
-```yaml
-# .github/workflows/test.yml
-- name: Run CI Tests  
-  run: make test-ci
+The test manifest system is fully integrated with GitHub Actions through multiple workflows:
 
-- name: Run Integration Tests (if credentials available)
-  run: make test-integration
-  if: ${{ env.AWS_ACCESS_KEY_ID && env.GOOGLE_APPLICATION_CREDENTIALS }}
+#### Primary CI Workflows
+
+**Traditional CI** (`.github/workflows/ci-traditional.yml`):
+```yaml
+- name: Show test manifest configuration
+  run: make test-summary
+  env:
+    CI: true
+    GITHUB_ACTIONS: true
+
+- name: Run tests with manifest filtering
+  run: make test-ci
+  env:
+    REGISTRY_HOST: localhost:5100
+    CI: true
+    GITHUB_ACTIONS: true
 ```
+
+**Docker Buildx CI** (`.github/workflows/ci.yml`):
+```yaml
+# Dockerfile.buildx test stage
+FROM base AS test
+ENV CI=true
+ENV GITHUB_ACTIONS=true
+RUN make test-ci
+```
+
+#### Advanced Workflows
+
+**Integration Tests** (`.github/workflows/integration-tests.yml`):
+- Runs daily via cron schedule
+- Triggered by master branch pushes
+- Triggered by PR label `run-integration-tests`
+- Supports external dependency testing with AWS/GCP credentials
+- Includes flaky test detection with multiple runs
+
+**Test Matrix** (`.github/workflows/test-matrix.yml`):
+- Parallel execution of different test categories
+- Matrix includes: unit/ci, unit/local, timing_sensitive/local, integration/integration
+- Package-specific testing for critical components
+- Triggered by master pushes or PR label `run-test-matrix`
+
+**Manifest Validation** (`.github/workflows/test-manifest-validation.yml`):
+- Validates manifest syntax and completeness
+- Tests environment detection and category filtering
+- Measures manifest coverage of actual tests
+- Triggers on manifest file changes
+
+#### Workflow Triggers and Labels
+
+**PR Labels for Enhanced Testing**:
+- `run-integration-tests` - Triggers full integration test suite on PR
+- `run-test-matrix` - Runs comprehensive test matrix on PR
+
+**Automatic Triggers**:
+- **Push to master**: Runs all workflows (traditional CI, matrix, integration)
+- **Pull requests**: Runs traditional CI only (fast feedback)
+- **Daily cron**: Runs integration tests and flaky test detection
+- **Manifest changes**: Triggers manifest validation workflow
+
+**Manual Triggers**:
+- Integration tests support `workflow_dispatch` with external dependency options
+- All workflows can be manually triggered from GitHub Actions UI
 
 ### Local Development Workflow
 

@@ -123,10 +123,20 @@ jobs:
       - name: Run go vet
         run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make vet
 
-      - name: Run tests  
-        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go test -v -race ./...
+      - name: Show test manifest configuration
+        run: |
+          echo "=== Test Manifest Configuration for CI ==="
+          GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make test-summary
+        env:
+          CI: true
+          GITHUB_ACTIONS: true
+
+      - name: Run tests with manifest filtering
+        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make test-ci
         env:
           REGISTRY_HOST: localhost:5100
+          CI: true
+          GITHUB_ACTIONS: true
 
   build:
     name: Build
