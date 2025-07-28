@@ -264,10 +264,14 @@ logger.Info("Operation completed", map[string]interface{}{
 
 ## Code Quality Standards
 
-### 1. Static Analysis
-- golangci-lint for comprehensive linting
-- go vet for additional static analysis
-- staticcheck for advanced checks
+### 1. Static Analysis (Recently Overhauled)
+- **golangci-lint v2** with focused, meaningful checks only
+  - `errcheck` - Unchecked error detection (critical for reliability)
+  - `govet` - Standard Go vet checks (real bug detection)
+  - `ineffassign` - Ineffectual assignment detection (potential bugs)
+  - `misspell` - Spelling mistake detection
+- **Eliminated noisy linters** (gosec, staticcheck, unused) to reduce development toil
+- **Result**: 0 linting issues across all CI pipelines with fast, reliable checks
 
 ### 2. Code Formatting
 - gofmt for consistent formatting

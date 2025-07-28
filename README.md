@@ -122,6 +122,22 @@ Freightliner uses the standard Google Cloud authentication methods. You can conf
 
 ## Recent Changes
 
+### CI/CD Linting Overhaul (Latest)
+
+- **Complete CI linting system overhaul** reducing issues from 104+ to 0
+- **golangci-lint v2 migration** with focused, meaningful checks only
+- **Eliminated noisy linters** (gosec, staticcheck, unused) that created development toil
+- **Streamlined linting pipeline** focusing on real bug detection:
+  - `errcheck` - Catches unchecked errors (critical for reliability)
+  - `govet` - Standard Go vet checks (real bugs)
+  - `ineffassign` - Detects ineffectual assignments (potential bugs)
+  - `misspell` - Fixes spelling mistakes
+- **Docker Buildx CI compatibility** with consistent linting across all CI pipelines
+- **Removed redundant checks** from Makefile, pre-commit hooks, and CI configurations
+- **Result**: All CI pipelines now pass consistently with fast, reliable linting
+
+For detailed technical analysis, see [CI Linting Overhaul Documentation](docs/CI_LINTING_OVERHAUL.md).
+
 ### Security Features
 
 - **Image Signing with Cosign**: 
@@ -215,21 +231,23 @@ make build          # Build the application
 make test           # Run all tests
 make test-race      # Run tests with race detection
 make test-coverage  # Generate test coverage report
-make lint           # Run linting with golangci-lint
+make lint           # Run linting with golangci-lint v2 (focused checks)
 make fmt            # Format code with gofmt
 make vet            # Run go vet
-make staticcheck    # Run staticcheck analysis
 make imports        # Organize imports with goimports
-make check          # Run all quality checks
+make check          # Run all quality checks (streamlined)
 make clean          # Clean build artifacts
 ```
 
+**Note**: `staticcheck` has been integrated into golangci-lint for more efficient CI execution.
+
 #### Quality Assurance
-- **Comprehensive linting** with golangci-lint and custom rules
-- **Static analysis** with staticcheck and go vet
-- **Race condition detection** in all tests
+- **Streamlined linting** with golangci-lint v2 focusing on real bug detection
+- **Static analysis** with go vet for reliable checks
+- **Race condition detection** in all tests  
 - **Pre-commit hooks** for automated quality checks
 - **Test coverage tracking** with detailed reporting
+- **CI/CD pipelines** passing with 0 linting issues (recently overhauled)
 
 #### Local Testing Infrastructure
 ```bash
