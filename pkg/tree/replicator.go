@@ -206,8 +206,7 @@ func (t *TreeReplicator) initReplication(ctx context.Context) (*TreeReplicationR
 	}
 
 	// Setup context with cancellation
-	newCtx, cancel := context.WithCancel(ctx)
-	result.ctx = newCtx
+	_, cancel := context.WithCancel(ctx)
 	return result, cancel
 }
 
