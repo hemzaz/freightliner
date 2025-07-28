@@ -88,7 +88,7 @@ func (s *CheckpointService) initStore(ctx context.Context) error {
 		})
 
 		// Fix permissions
-		if chmodErr := os.Chmod(dir, 0700); chmodErr != nil {
+		if chmodErr := os.Chmod(dir, 0700); chmodErr != nil { // #nosec G302 - directory needs executable bit for access
 			return errors.Wrap(chmodErr, "failed to fix checkpoint directory permissions")
 		}
 	}

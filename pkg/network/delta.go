@@ -224,7 +224,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 
 						for i := uint32(0); i < header.ChunkCount; i++ {
 							offset := i * 4
-							if offset+4 <= uint32(len(deltaData)) {
+							if offset+4 <= uint32(len(deltaData)) { // #nosec G115 - safe conversion, len() returns non-negative int
 								chunkRef := int32(binary.BigEndian.Uint32(deltaData[offset : offset+4])) // #nosec G115 - safe conversion within bounds
 								if chunkRef == -1 {
 									modifiedChunks++
@@ -501,7 +501,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		}
 
 		// Write header size as uint32 (4 bytes)
-		headerSize := uint32(len(headerBytes))
+		headerSize := uint32(len(headerBytes)) // #nosec G115 - safe conversion, len() returns non-negative int
 		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
 			return nil, errors.Wrap(err, "failed to write header size")
 		}
@@ -538,7 +538,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		// - Prefix length (uint32)
 		// - Suffix length (uint32)
 		// - Middle data (the differing part)
-		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil {
+		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil { // #nosec G115 - safe conversion, commonPrefixLen is bounded
 			return nil, errors.Wrap(err, "failed to write prefix length")
 		}
 		if err := binary.Write(&delta, binary.BigEndian, uint32(commonSuffixLen)); err != nil {
@@ -579,7 +579,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		}
 
 		// Write header size as uint32 (4 bytes)
-		headerSize := uint32(len(headerBytes))
+		headerSize := uint32(len(headerBytes)) // #nosec G115 - safe conversion, len() returns non-negative int
 		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
 			return nil, errors.Wrap(err, "failed to write header size")
 		}
@@ -613,7 +613,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		}
 
 		// Write the common prefix length as uint32
-		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil {
+		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil { // #nosec G115 - safe conversion, commonPrefixLen is bounded
 			return nil, errors.Wrap(err, "failed to write prefix length")
 		}
 
@@ -695,7 +695,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		}
 
 		// Write header size as uint32 (4 bytes)
-		headerSize := uint32(len(headerBytes))
+		headerSize := uint32(len(headerBytes)) // #nosec G115 - safe conversion, len() returns non-negative int
 		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
 			return nil, errors.Wrap(err, "failed to write header size")
 		}
@@ -746,7 +746,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		}
 
 		// Write header size as uint32 (4 bytes)
-		headerSize := uint32(len(headerBytes))
+		headerSize := uint32(len(headerBytes)) // #nosec G115 - safe conversion, len() returns non-negative int
 		if err := binary.Write(&delta, binary.BigEndian, headerSize); err != nil {
 			return nil, errors.Wrap(err, "failed to write header size")
 		}
