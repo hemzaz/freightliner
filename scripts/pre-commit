@@ -47,15 +47,16 @@ if [ $? -ne 0 ]; then
   VET_RESULT=1
 fi
 
-# Run staticcheck on staged files (if installed)
-echo "Running staticcheck on staged files..."
-STATICCHECK_RESULT=0
-if command -v staticcheck &> /dev/null; then
-  staticcheck $STAGED_GO_FILES || STATICCHECK_RESULT=1
-fi
+# Staticcheck is now handled by golangci-lint, so we skip it here
+# echo "Running staticcheck on staged files..."
+# STATICCHECK_RESULT=0
+# if command -v staticcheck &> /dev/null; then
+#   staticcheck $STAGED_GO_FILES || STATICCHECK_RESULT=1
+# fi
+STATICCHECK_RESULT=0  # Always pass since golangci-lint handles this
 
-# Exit with error if any check failed
-if [ $LINT_RESULT -ne 0 ] || [ $VET_RESULT -ne 0 ] || [ $STATICCHECK_RESULT -ne 0 ]; then
+# Exit with error if any check failed (staticcheck now handled by golangci-lint)
+if [ $LINT_RESULT -ne 0 ] || [ $VET_RESULT -ne 0 ]; then
   echo "Error: Pre-commit checks failed. Please fix the issues before committing."
   exit 1
 fi

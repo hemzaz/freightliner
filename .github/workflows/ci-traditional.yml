@@ -119,13 +119,9 @@ jobs:
       - name: Install go tools
         run: |
           GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0
-          GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
       - name: Run go vet
         run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make vet
-
-      - name: Run staticcheck
-        run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" make staticcheck
 
       - name: Run tests  
         run: GO111MODULE=on GOFLAGS=-mod=mod GOPATH="" go test -v -race ./...

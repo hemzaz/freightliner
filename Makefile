@@ -65,20 +65,20 @@ setup:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@$(SHADOW_VERSION)
 	go install github.com/mvdan/interfacer/cmd/interfacer@$(INTERFACER_VERSION)
-	go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+	# go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)  # Now handled by golangci-lint
 	cp scripts/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
 	@echo "Setup complete. Running initial checks..."
 	./scripts/lint.sh --fast
 	./scripts/vet.sh
-	./scripts/staticcheck.sh
+	# ./scripts/staticcheck.sh  # Now handled by golangci-lint
 
-# Run staticcheck
-staticcheck:
-	./scripts/staticcheck.sh ./...
+# Run staticcheck - DISABLED: now handled by golangci-lint
+# staticcheck:
+#	./scripts/staticcheck.sh ./...
 
 # Run all quality checks
-check: fmt imports vet lint staticcheck test
+check: fmt imports vet lint test
 
 # Install hooks
 hooks:

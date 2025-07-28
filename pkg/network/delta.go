@@ -224,7 +224,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 
 						for i := uint32(0); i < header.ChunkCount; i++ {
 							offset := i * 4
-							if offset+4 <= uint32(len(deltaData)) { // #nosec G115 - safe conversion, len() returns non-negative int
+							if offset+4 <= uint32(len(deltaData)) { // nolint:gosec // safe conversion, len() returns non-negative int
 								chunkRef := int32(binary.BigEndian.Uint32(deltaData[offset : offset+4])) // #nosec G115 - safe conversion within bounds
 								if chunkRef == -1 {
 									modifiedChunks++
