@@ -27,7 +27,6 @@ RUN go mod verify
 
 # Install development tools with pinned versions
 RUN go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0 && \
-    go install honnef.co/go/tools/cmd/staticcheck@2025.1.1 && \
     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin v2.3.0
 
 # Build stage - verify all packages compile
@@ -46,7 +45,7 @@ RUN golangci-lint run --timeout=5m
 # Static analysis stage
 FROM base AS static
 RUN make vet
-RUN staticcheck ./...
+# staticcheck is now handled by golangci-lint in the lint stage
 
 # Final verification stage
 FROM base AS verify
