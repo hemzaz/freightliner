@@ -541,7 +541,7 @@ func CreateDelta(source, target []byte, format string) ([]byte, error) {
 		if err := binary.Write(&delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil { // #nosec G115 - safe conversion, commonPrefixLen is bounded
 			return nil, errors.Wrap(err, "failed to write prefix length")
 		}
-		if err := binary.Write(&delta, binary.BigEndian, uint32(commonSuffixLen)); err != nil {
+		if err := binary.Write(&delta, binary.BigEndian, uint32(commonSuffixLen)); err != nil { // #nosec G115 - safe conversion, commonSuffixLen is bounded
 			return nil, errors.Wrap(err, "failed to write suffix length")
 		}
 
