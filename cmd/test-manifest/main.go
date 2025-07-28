@@ -57,7 +57,10 @@ func main() {
 	)
 
 	// Parse flags starting from the command
-	flag.CommandLine.Parse(os.Args[2:])
+	if err := flag.CommandLine.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Load manifest
 	manifest, err := testing.LoadTestManifest(*manifestPath)
