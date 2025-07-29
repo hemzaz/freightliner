@@ -351,11 +351,11 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
 
-  # Manifest validation - runs on manifest changes
+  # Manifest validation - runs when manually triggered or for comprehensive validation
   manifest-validation:
     name: Manifest Validation
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.modified, 'test-manifest.yaml') || contains(github.event.pull_request.changed_files, 'test-manifest.yaml')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     
     steps:
       - name: Checkout code
