@@ -191,71 +191,80 @@ The system automatically detects the environment:
 
 ### GitHub Actions Integration
 
-The test manifest system is fully integrated with GitHub Actions through multiple workflows:
+The test manifest system is integrated with a streamlined, consolidated GitHub Actions architecture designed for speed, agility, and comprehensive coverage.
 
-#### Primary CI Workflows
+#### Unified CI Architecture
 
-**Traditional CI** (`.github/workflows/ci-traditional.yml`):
+**Primary Workflow** (`.github/workflows/ci-unified.yml`):
 ```yaml
-- name: Show test manifest configuration
-  run: make test-summary
-  env:
-    CI: true
-    GITHUB_ACTIONS: true
+# Fast validation and smart triggers
+validate:
+  - Dependency caching and verification
+  - Smart trigger detection for enhanced/integration testing
+  - Lightweight checks for rapid feedback
 
-- name: Run tests with manifest filtering
-  run: make test-ci
-  env:
-    REGISTRY_HOST: localhost:5100
-    CI: true
-    GITHUB_ACTIONS: true
+# Core CI pipeline - always runs
+ci:
+  - Code formatting and linting (golangci-lint)
+  - Build verification (packages + main application)
+  - CI-optimized test execution with manifest filtering
+  - Artifact generation
+
+# Docker verification - parallel to CI
+docker:
+  - Multi-stage Docker build with Buildx
+  - Test stage execution within containers
+  - Multi-platform build verification (linux/amd64, linux/arm64)
+
+# Enhanced testing - triggered selectively
+enhanced-testing:
+  - Matrix testing across environments and categories
+  - Package-specific testing for critical components
+  - Only runs on master pushes or with PR label
+
+# Integration testing - on-demand only
+integration-testing:
+  - Full integration test suite
+  - External dependency testing (AWS/GCP)
+  - Only runs with PR label
 ```
 
-**Docker Buildx CI** (`.github/workflows/ci.yml`):
+**Scheduled Comprehensive Testing** (`.github/workflows/scheduled-comprehensive.yml`):
 ```yaml
-# Dockerfile.buildx test stage
-FROM base AS test
-ENV CI=true
-ENV GITHUB_ACTIONS=true
-RUN make test-ci
+# Daily comprehensive testing
+comprehensive-testing:
+  - Full integration test suite
+  - External dependency testing (when credentials available)
+  - Flaky test detection with multiple runs
+  - Comprehensive reporting and artifact collection
 ```
 
-#### Advanced Workflows
+#### Smart Trigger System
 
-**Integration Tests** (`.github/workflows/integration-tests.yml`):
-- Runs daily via cron schedule
-- Triggered by master branch pushes
-- Triggered by PR label `run-integration-tests`
-- Supports external dependency testing with AWS/GCP credentials
-- Includes flaky test detection with multiple runs
+**Always Runs (Fast Feedback)**:
+- ✅ **validate**: Dependency verification and smart trigger detection
+- ✅ **ci**: Core linting, build, and CI-optimized testing
+- ✅ **docker**: Container build and test verification
 
-**Test Matrix** (`.github/workflows/test-matrix.yml`):
-- Parallel execution of different test categories
-- Matrix includes: unit/ci, unit/local, timing_sensitive/local, integration/integration
-- Package-specific testing for critical components
-- Triggered by master pushes or PR label `run-test-matrix`
+**Selective Triggers**:
+- 🎯 **enhanced-testing**: Matrix testing (master pushes or `run-enhanced-tests` label)
+- 🎯 **integration-testing**: Full integration tests (`run-integration-tests` label)
+- 🎯 **manifest-validation**: Manifest validation (only on manifest file changes)
 
-**Manifest Validation** (`.github/workflows/test-manifest-validation.yml`):
-- Validates manifest syntax and completeness
-- Tests environment detection and category filtering
-- Measures manifest coverage of actual tests
-- Triggers on manifest file changes
+**Scheduled**:
+- 📅 **Daily 2 AM UTC**: Comprehensive testing with flaky detection
+- 🔧 **Manual**: `workflow_dispatch` for on-demand comprehensive testing
 
-#### Workflow Triggers and Labels
+#### PR Labels for Enhanced Control
 
-**PR Labels for Enhanced Testing**:
-- `run-integration-tests` - Triggers full integration test suite on PR
-- `run-test-matrix` - Runs comprehensive test matrix on PR
+**Available Labels**:
+- `run-enhanced-tests` - Triggers matrix testing and package-specific validation
+- `run-integration-tests` - Triggers full integration test suite with external dependencies
 
-**Automatic Triggers**:
-- **Push to master**: Runs all workflows (traditional CI, matrix, integration)
-- **Pull requests**: Runs traditional CI only (fast feedback)
-- **Daily cron**: Runs integration tests and flaky test detection
-- **Manifest changes**: Triggers manifest validation workflow
-
-**Manual Triggers**:
-- Integration tests support `workflow_dispatch` with external dependency options
-- All workflows can be manually triggered from GitHub Actions UI
+**Default Behavior**:
+- **Pull Requests**: Fast CI feedback only (validate + ci + docker)
+- **Master Pushes**: Full pipeline including enhanced testing
+- **Scheduled**: Comprehensive testing with external dependencies
 
 ### Local Development Workflow
 
