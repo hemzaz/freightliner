@@ -1,0 +1,176 @@
+# Cleanup Command Configuration
+# This file defines cleanup behavior, patterns, and safety settings
+
+version: "1.0"
+description: "Freightliner codebase cleanup configuration"
+
+# Default cleanup settings
+cleanup:
+  confidence_threshold: high        # Only process high confidence by default
+  verification_required: true       # Require verification after each phase
+  backup_before_cleanup: true       # Create git commits as checkpoints
+  interactive_mode: false           # Set to true for manual confirmation prompts
+  
+  # Verification commands that must pass after each cleanup phase
+  verification_commands:
+    - "make build"                   # Verify application builds
+    - "make test-ci"                 # Verify tests pass with manifest
+    - "go mod tidy"                  # Clean up Go dependencies
+  
+  # Optional verification commands (warnings only if they fail)
+  optional_verification:
+    - "make lint"                    # Linting (may have acceptable issues)
+
+# File and directory patterns for cleanup categories
+patterns:
+  build_artifacts:
+    enabled: true
+    confidence: high
+    patterns:
+      - "bin/*"                      # Built binaries
+      - "*.exe"                      # Windows executables
+      - "*.so"                       # Linux shared libraries
+      - "*.dylib"                    # macOS dynamic libraries
+      - "*.dll"                      # Windows dynamic libraries
+      - "*.obj"                      # Object files
+      - "*.o"                        # Object files
+      - "coverage.out"               # Go coverage files
+      - "*.prof"                     # Profile files
+      - "*.log"                      # Log files (unless in logs/ directory)
+    
+  empty_directories:
+    enabled: true
+    confidence: high
+    min_age_days: 1                  # Only remove directories empty for 1+ days
+    excluded_patterns:
+      - ".git"                       # Never remove git directories
+      - "vendor"                     # Never remove vendor directories
+      - "node_modules"               # Never remove node_modules
+    
+  disabled_configurations:
+    enabled: true
+    confidence: high
+    patterns:
+      - "*staticcheck.conf"          # Staticcheck disabled in favor of golangci-lint
+      - ".golangci-critical.yml"     # Superseded by unified golangci.yml
+      - "*.bak"                      # Backup files
+      - "*.orig"                     # Original files from merges
+      - "*.tmp"                      # Temporary files
+    
+  historical_documentation:
+    enabled: true
+    confidence: medium               # Require confirmation for docs
+    patterns:
+      - "*ANALYSIS*.md"              # Analysis documents
+      - "*OVERHAUL*.md"              # Overhaul documentation
+      - "*VERSION*.md"               # Version-specific analysis
+      - "CHANGELOG_OLD.md"           # Old changelog files
+    
+  legacy_scripts:
+    enabled: true
+    confidence: high
+    patterns:
+      - "scripts/*staticcheck*"      # Staticcheck scripts when disabled
+    makefile_indicators:
+      - "# Now handled by"           # Comments indicating replacement
+      - "# Disabled:"               # Explicitly disabled scripts
+
+# Files and patterns to never remove (safety exclusions)
+never_remove:
+  patterns:
+    - "README.md"                    # Main project documentation
+    - "CLAUDE.md"                    # Claude-specific instructions
+    - "LICENSE*"                     # License files
+    - "go.mod"                       # Go module definition
+    - "go.sum"                       # Go module checksums
+    - "Makefile"                     # Build automation
+    - ".gitignore"                   # Git ignore patterns
+    - "main.go"                      # Application entry point
+    - "examples/*"                   # Example configurations for users
+    - "docs/TEST_MANIFEST_SYSTEM.md" # Active system documentation
+  
+  directories:
+    - ".git"                         # Version control
+    - "pkg"                          # Source code packages
+    - "cmd"                          # Command implementations
+    - ".github/workflows"            # CI/CD workflows
+    - ".claude/commands"             # Claude command definitions
+
+# Reference tracking for documentation updates
+reference_tracking:
+  enabled: true
+  update_patterns:
+    - "*.md"                         # Markdown documentation
+    - ".claude/structure.md"         # Project structure documentation
+    - "README.md"                    # Main documentation
+  
+  reference_patterns:
+    - 'docs/.*\.md'                  # References to docs directory
+    - 'scripts/.*\.sh'               # References to scripts
+    - '\.github/workflows/.*\.yml'   # References to workflow files
+
+# Cleanup phases and their execution order
+phases:
+  phase_1:
+    name: "Build Artifacts"
+    description: "Remove committed build artifacts"
+    categories: ["build_artifacts"]
+    confidence_required: high
+    verification_required: true
+    
+  phase_2:
+    name: "Empty Directories"
+    description: "Remove empty directories"
+    categories: ["empty_directories"]
+    confidence_required: high
+    verification_required: false    # Structure changes don't need full verification
+    
+  phase_3:
+    name: "Disabled Configurations"
+    description: "Remove superseded configuration files"
+    categories: ["disabled_configurations"]
+    confidence_required: high
+    verification_required: true
+    
+  phase_4:
+    name: "Legacy Scripts"
+    description: "Remove disabled or superseded scripts"
+    categories: ["legacy_scripts"]
+    confidence_required: high
+    verification_required: true
+    
+  phase_5:
+    name: "Historical Documentation"
+    description: "Remove outdated analysis and implementation docs"
+    categories: ["historical_documentation"]
+    confidence_required: medium     # Requires confirmation
+    verification_required: false   # Documentation changes don't affect functionality
+    
+  phase_6:
+    name: "Reference Updates"
+    description: "Update documentation references to removed files"
+    categories: ["reference_tracking"]
+    confidence_required: high
+    verification_required: false   # Documentation updates
+
+# Reporting configuration
+reporting:
+  show_skipped_files: true          # Show files that were skipped and why
+  show_confidence_reasons: true     # Show reasoning for confidence levels
+  generate_summary: true            # Generate cleanup summary report
+  save_analysis: true               # Save detailed analysis for review
+  
+# Integration settings
+integration:
+  git:
+    create_checkpoints: true        # Create git commits before each phase
+    commit_message_prefix: "Cleanup:" # Prefix for cleanup commit messages
+    verify_clean_working_dir: true  # Ensure no uncommitted changes before cleanup
+    
+  build_system:
+    respect_makefile: true          # Parse Makefile to understand dependencies
+    verify_make_targets: true       # Verify make targets still work after cleanup
+    
+  go_modules:
+    run_mod_tidy: true              # Run go mod tidy after cleanup
+    verify_dependencies: true       # Verify no unused dependencies remain

@@ -306,3 +306,34 @@ type TagLister interface {
 - Constructor pattern: `New*` for constructors
 
 This structure ensures maintainable, scalable code organization that supports the project's growth while maintaining clear boundaries and dependencies.
+
+## Claude AI Integration
+
+### Specifications Directory
+```
+.claude/
+├── specs/                        # Feature specifications using spec-driven development
+│   ├── cleanup/                  # Cleanup command specification
+│   │   ├── requirements.md       # Cleanup requirements and user stories
+│   │   ├── design.md             # Technical design and architecture
+│   │   └── tasks.md              # Implementation task breakdown
+│   ├── critical-bug-fixes/       # Bug fix specifications
+│   ├── architectural-patterns/   # Architecture pattern specs
+│   └── code-quality-standards/   # Code quality specifications
+├── commands/                     # Claude slash command definitions
+│   └── cleanup.md                # /cleanup command implementation
+├── cleanup-config.yml            # Cleanup command configuration
+├── product.md                    # Product vision and goals
+└── structure.md                  # This file - project structure documentation
+```
+
+### Cleanup System
+The cleanup specification provides a comprehensive system for maintaining codebase hygiene:
+
+- **requirements.md**: Defines user stories for automated cleanup, safety protocols, and verification requirements
+- **design.md**: Technical architecture with scanner engine, analysis engine, planning engine, and execution engine
+- **tasks.md**: 18 implementation tasks across 6 phases from core infrastructure to testing and documentation
+- **cleanup.md**: Slash command implementation with safety-first methodology
+- **cleanup-config.yml**: Configurable cleanup patterns, confidence levels, and verification commands
+
+The cleanup system follows a safety-first approach with git checkpoints, verification after each phase, and automatic rollback on failures. It categorizes cleanup operations by confidence level (High/Medium/Low) and provides comprehensive analysis of build artifacts, dead code, redundant configurations, and documentation maintenance.
