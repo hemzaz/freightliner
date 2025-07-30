@@ -7,7 +7,7 @@ before:
     - go mod tidy
 
 builds:
-  - main: ./cmd/freightliner/main.go
+  - main: ./main.go
     id: freightliner
     binary: freightliner
     env:

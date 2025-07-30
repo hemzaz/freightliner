@@ -238,7 +238,9 @@ scripts/
 ├── lint.sh                       # Linting script
 ├── organize_imports.sh           # Import organization script
 ├── pre-commit                    # Pre-commit hook
-├── staticcheck.sh                # Static analysis script
+├── setup-test-registries.sh      # Test registry setup script
+├── test-registry-setup.sh        # Alternative test registry setup
+├── test-with-manifest.sh         # Test execution with manifest filtering
 └── vet.sh                        # Go vet script
 ```
 

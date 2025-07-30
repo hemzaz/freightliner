@@ -136,7 +136,7 @@ Freightliner uses the standard Google Cloud authentication methods. You can conf
 - **Removed redundant checks** from Makefile, pre-commit hooks, and CI configurations
 - **Result**: All CI pipelines now pass consistently with fast, reliable linting
 
-For detailed technical analysis, see [CI Linting Overhaul Documentation](docs/CI_LINTING_OVERHAUL.md).
+The CI system uses a unified workflow with comprehensive test manifest integration for reliable builds.
 
 ### Security Features
 
