@@ -38,9 +38,9 @@ type PerformanceMetrics struct {
 	FailedOps       int64
 
 	// Timing metrics
-	MinDuration   time.Duration
-	MaxDuration   time.Duration
-	TotalDuration time.Duration
+	MinDuration       time.Duration
+	MaxDuration       time.Duration
+	TotalDurationNano int64 // Total duration in nanoseconds for atomic operations
 
 	// Throughput metrics
 	TotalBytesProcessed int64
@@ -70,7 +70,7 @@ func (pm *PerformanceMetrics) Update(duration time.Duration, originalSize, compr
 
 	if success {
 		atomic.AddInt64(&pm.SuccessfulOps, 1)
-		atomic.AddInt64(&pm.TotalDuration, int64(duration))
+		atomic.AddInt64(&pm.TotalDurationNano, int64(duration))
 		atomic.AddInt64(&pm.TotalBytesProcessed, originalSize)
 		atomic.AddInt64(&pm.OriginalSize, originalSize)
 		atomic.AddInt64(&pm.CompressedSize, compressedSize)
@@ -110,7 +110,7 @@ func (pm *PerformanceMetrics) GetSummary() map[string]interface{} {
 
 	totalOps := atomic.LoadInt64(&pm.TotalOperations)
 	successfulOps := atomic.LoadInt64(&pm.SuccessfulOps)
-	totalDuration := time.Duration(atomic.LoadInt64(&pm.TotalDuration))
+	totalDuration := time.Duration(atomic.LoadInt64(&pm.TotalDurationNano))
 	totalBytes := atomic.LoadInt64(&pm.TotalBytesProcessed)
 
 	var avgDuration time.Duration
@@ -143,7 +143,6 @@ func generateTestData(size int) []byte {
 	// Create data that compresses somewhat realistically
 	// 70% random data, 30% repeated patterns
 	randomSize := int(float64(size) * 0.7)
-	patternSize := size - randomSize
 
 	// Random data
 	rand.Read(data[:randomSize])
