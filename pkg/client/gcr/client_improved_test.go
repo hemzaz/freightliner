@@ -71,7 +71,7 @@ func TestGCRClientListRepositoriesWithMocks(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mockCatalog, mockAuth := tc.setupMocks()
-			logger := freightliner_log.NewLogger(freightliner_log.InfoLevel)
+			logger := freightliner_log.NewLogger()
 
 			// Create a test client with mocked dependencies
 			// In practice, you'd need dependency injection to replace the real clients
@@ -212,7 +212,7 @@ func TestArtifactRegistryClientWithMocks(t *testing.T) {
 }
 
 func TestGCRRepositoryOperationsWithMocks(t *testing.T) {
-	logger := freightliner_log.NewLogger(freightliner_log.InfoLevel)
+	logger := freightliner_log.NewLogger()
 
 	tests := []struct {
 		name      string

@@ -16,7 +16,7 @@ func TestProviderConstantsExist(t *testing.T) {
 	}
 
 	// Just a placeholder test to ensure compilation
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	if logger == nil {
 		t.Fatal("Failed to create logger")
 	}

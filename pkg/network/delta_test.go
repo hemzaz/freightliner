@@ -528,7 +528,7 @@ func TestChunkingFunctions(t *testing.T) {
 }
 
 func TestDeltaManager(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	manager, err := NewDeltaManager(logger, DefaultDeltaOptions())
 	if err != nil {
@@ -569,7 +569,7 @@ func TestDeltaManager(t *testing.T) {
 }
 
 func TestOptimizeTransfer(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	manager, _ := NewDeltaManager(logger, DefaultDeltaOptions())
 
 	// Create source repository with a manifest
@@ -630,7 +630,7 @@ func TestOptimizeTransfer(t *testing.T) {
 }
 
 func TestNoDelta(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	// Disable delta generation
 	opts := DefaultDeltaOptions()

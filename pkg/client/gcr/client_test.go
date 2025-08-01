@@ -143,7 +143,7 @@ func TestClientListRepositories(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Import the logger package
-			logger := freightliner_log.NewLogger(freightliner_log.InfoLevel)
+			logger := freightliner_log.NewLogger()
 
 			// Mock client with required fields for the test
 			client := &Client{

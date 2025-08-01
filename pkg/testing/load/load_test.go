@@ -165,7 +165,7 @@ type LoadTestRunner struct {
 // NewLoadTestRunner creates a new load test runner
 func NewLoadTestRunner(config LoadTestConfig, logger *log.Logger) *LoadTestRunner {
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewLogger()
 	}
 
 	return &LoadTestRunner{
@@ -403,7 +403,7 @@ func (r *LoadTestRunner) logFinalResults(metrics LoadTestMetrics) {
 // Benchmark tests for load testing
 
 func BenchmarkReplicationLoad(b *testing.B) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	config := LoadTestConfig{
 		ConcurrentJobs:     10,
@@ -428,7 +428,7 @@ func BenchmarkReplicationLoad(b *testing.B) {
 }
 
 func TestLoadTestHighConcurrency(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	config := LoadTestConfig{
 		ConcurrentJobs:     50,
@@ -479,7 +479,7 @@ func TestLoadTestHighConcurrency(t *testing.T) {
 }
 
 func TestLoadTestWithRealWorkerPool(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	// Create a real worker pool for more realistic testing
 	pool := replication.NewWorkerPool(20, logger)

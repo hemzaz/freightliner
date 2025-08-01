@@ -252,7 +252,7 @@ func TestECRAuthenticationWithMocks(t *testing.T) {
 
 // TestECRClientIntegrationWithMocks demonstrates how to test the full client with mocks
 func TestECRClientIntegrationWithMocks(t *testing.T) {
-	logger := freightliner_log.NewLogger(freightliner_log.InfoLevel)
+	logger := freightliner_log.NewLogger()
 
 	// This test demonstrates the pattern but would require dependency injection
 	// in the actual ECR client to work with mocks

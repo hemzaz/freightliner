@@ -40,15 +40,15 @@ func TestLoggerLevels(t *testing.T) {
 		name         string
 		loggerLevel  Level
 		logFuncLevel Level
-		logFunc      func(logger *Logger, msg string)
+		logFunc      func(logger Logger, msg string)
 		expectedLog  bool
 	}{
 		{
 			name:         "Debug level logs debug",
 			loggerLevel:  DebugLevel,
 			logFuncLevel: DebugLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Debug(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Debug(msg)
 			},
 			expectedLog: true,
 		},
@@ -56,8 +56,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Info level doesn't log debug",
 			loggerLevel:  InfoLevel,
 			logFuncLevel: DebugLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Debug(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Debug(msg)
 			},
 			expectedLog: false,
 		},
@@ -65,8 +65,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Debug level logs info",
 			loggerLevel:  DebugLevel,
 			logFuncLevel: InfoLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Info(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Info(msg)
 			},
 			expectedLog: true,
 		},
@@ -74,8 +74,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Info level logs info",
 			loggerLevel:  InfoLevel,
 			logFuncLevel: InfoLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Info(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Info(msg)
 			},
 			expectedLog: true,
 		},
@@ -83,8 +83,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Warn level logs warn",
 			loggerLevel:  WarnLevel,
 			logFuncLevel: WarnLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Warn(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Warn(msg)
 			},
 			expectedLog: true,
 		},
@@ -92,8 +92,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Warn level doesn't log info",
 			loggerLevel:  WarnLevel,
 			logFuncLevel: InfoLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Info(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Info(msg)
 			},
 			expectedLog: false,
 		},
@@ -110,8 +110,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Error level doesn't log warn",
 			loggerLevel:  ErrorLevel,
 			logFuncLevel: WarnLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Warn(msg, nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Warn(msg)
 			},
 			expectedLog: false,
 		},
@@ -119,7 +119,7 @@ func TestLoggerLevels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := NewLogger(tt.loggerLevel)
+			logger := NewLogger()
 			testMsg := "test message " + time.Now().String() // Make message unique
 
 			output := captureOutput(func() {

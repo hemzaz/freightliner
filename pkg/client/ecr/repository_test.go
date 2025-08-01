@@ -94,7 +94,7 @@ func setupTestRepository(mockECR *mockRepositoryECRAPI) *Repository {
 	repo, _ := name.NewRepository("123456789012.dkr.ecr.us-west-2.amazonaws.com/test-repo")
 
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	// Create a transport option
 	transportOpt := remote.WithUserAgent("test-agent")

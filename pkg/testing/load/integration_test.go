@@ -20,7 +20,7 @@ func TestLoadTestFrameworkIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	t.Run("ScenarioExecution", func(t *testing.T) {
 		testScenarioExecution(t, tempDir, logger)
@@ -270,7 +270,7 @@ func BenchmarkLoadTestFramework(b *testing.B) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	b.Run("ScenarioCreation", func(b *testing.B) {
 		b.ResetTimer()
@@ -325,7 +325,7 @@ func TestLoadTestFrameworkStress(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	collector := NewPrometheusLoadTestCollector(":0", logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -382,7 +382,7 @@ func TestLoadTestFrameworkConcurrency(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	collector := NewPrometheusLoadTestCollector(":0", logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -449,7 +449,7 @@ func TestLoadTestFrameworkResourceCleanup(t *testing.T) {
 	}
 	// Note: Not deferring cleanup to test manual cleanup
 
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 
 	// Test baseline manager cleanup
 	baselineManager := &BaselineManager{

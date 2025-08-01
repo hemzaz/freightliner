@@ -112,7 +112,7 @@ func TestNewClient(t *testing.T) {
 			client, err := NewClient(ClientOptions{
 				Region:    tc.region,
 				AccountID: tc.accountID,
-				Logger:    log.NewLogger(log.InfoLevel),
+				Logger:    log.NewLogger(),
 			})
 
 			if tc.expectedErr {

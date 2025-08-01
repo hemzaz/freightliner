@@ -87,7 +87,7 @@ func (m *TransferMockRepository) GetRemoteOptions() ([]remote.Option, error) {
 }
 
 func TestTransferManager(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	opts := DefaultTransferOptions()
 
 	// Create transfer manager
@@ -132,7 +132,7 @@ func TestDefaultTransferOptions(t *testing.T) {
 }
 
 func TestTransferBlob(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	opts := DefaultTransferOptions()
 
 	manager, err := NewTransferManager(opts, logger)
@@ -160,7 +160,7 @@ func TestTransferBlob(t *testing.T) {
 }
 
 func TestTransferImage(t *testing.T) {
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewLogger()
 	opts := DefaultTransferOptions()
 
 	manager, err := NewTransferManager(opts, logger)
