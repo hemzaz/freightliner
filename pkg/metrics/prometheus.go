@@ -135,3 +135,33 @@ func (p *PrometheusMetrics) GetTopDestinationRepositories(n int) map[string]int6
 
 	return result
 }
+
+// TagCopyStarted records the start of copying a specific tag
+func (p *PrometheusMetrics) TagCopyStarted(sourceRepo, destRepo, tag string) {
+	// No-op for now - could track tag-level metrics in the future
+}
+
+// TagCopyCompleted records the completion of copying a specific tag
+func (p *PrometheusMetrics) TagCopyCompleted(sourceRepo, destRepo, tag string, byteCount int64) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	p.bytesCopied += byteCount
+}
+
+// TagCopyFailed records a failure to copy a specific tag
+func (p *PrometheusMetrics) TagCopyFailed(sourceRepo, destRepo, tag string) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	p.replicationErrors++
+}
+
+// RepositoryCopyCompleted records the completion of copying an entire repository
+func (p *PrometheusMetrics) RepositoryCopyCompleted(sourceRepo, destRepo string, totalTags, copiedTags, skippedTags, failedTags int) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	p.sourceRepositories[sourceRepo]++
+	p.destinationRepositories[destRepo]++
+}

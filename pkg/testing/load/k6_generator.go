@@ -302,7 +302,7 @@ func (bs *BenchmarkSuite) generateK6Scripts(scenarios []ScenarioConfig) error {
 			Duration:           bs.k6Config.Duration.String(),
 			RampUpTime:         bs.k6Config.RampUpTime.String(),
 			RampDownTime:       bs.k6Config.RampDownTime.String(),
-			P95Threshold:       scenario.ValidationCriteria.MaxP99LatencyMs,
+			P95Threshold:       int64(scenario.ValidationCriteria.MaxP99LatencyMs),
 			FailureThreshold:   scenario.ValidationCriteria.MaxFailureRate,
 			MinThroughput:      scenario.ValidationCriteria.MinThroughputMBps,
 			MaxFailureRate:     scenario.ValidationCriteria.MaxFailureRate,
@@ -342,11 +342,11 @@ func (bs *BenchmarkSuite) generateK6Scripts(scenarios []ScenarioConfig) error {
 			return fmt.Errorf("failed to execute k6 script template for %s: %w", scenario.Name, err)
 		}
 
-		bs.logger.Info("Generated k6 script", map[string]interface{}{
+		bs.logger.WithFields(map[string]interface{}{
 			"scenario": scenario.Name,
 			"file":     scriptFile,
 			"images":   len(scenario.Images),
-		})
+		}).Info("Generated k6 script")
 	}
 
 	// Generate a comprehensive test script that runs all scenarios

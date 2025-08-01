@@ -41,11 +41,11 @@ type LoadTestMetrics struct {
 	TotalRepositories int64
 
 	// Timing
-	StartTime      time.Time
-	EndTime        time.Time
-	MinJobDuration time.Duration
-	MaxJobDuration time.Duration
-	TotalJobTime   time.Duration
+	StartTime        time.Time
+	EndTime          time.Time
+	MinJobDuration   time.Duration
+	MaxJobDuration   time.Duration
+	TotalJobTimeNano int64 // Total job time in nanoseconds for atomic operations
 
 	// Concurrency
 	CurrentConcurrency int64
@@ -72,7 +72,7 @@ func NewLoadTestMetrics() *LoadTestMetrics {
 func (m *LoadTestMetrics) UpdateJobCompleted(duration time.Duration, repositories int) {
 	atomic.AddInt64(&m.CompletedJobs, 1)
 	atomic.AddInt64(&m.TotalRepositories, int64(repositories))
-	atomic.AddInt64(&m.TotalJobTime, int64(duration))
+	atomic.AddInt64(&m.TotalJobTimeNano, int64(duration))
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -138,7 +138,7 @@ func (m *LoadTestMetrics) GetSummary() LoadTestSummary {
 
 	// Calculate derived metrics
 	if summary.CompletedJobs > 0 {
-		avgJobTime := time.Duration(atomic.LoadInt64(&m.TotalJobTime) / summary.CompletedJobs)
+		avgJobTime := time.Duration(atomic.LoadInt64(&m.TotalJobTimeNano) / summary.CompletedJobs)
 		summary.AvgJobDuration = avgJobTime
 	}
 

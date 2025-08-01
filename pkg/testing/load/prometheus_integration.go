@@ -15,7 +15,7 @@ import (
 // PrometheusLoadTestCollector integrates load testing with Prometheus metrics
 type PrometheusLoadTestCollector struct {
 	metricsCollector metrics.MetricsCollector
-	logger           *log.Logger
+	logger           log.Logger
 
 	// Load test specific metrics
 	loadTestMetrics *LoadTestPrometheusMetrics
@@ -101,9 +101,9 @@ type AlertThresholds struct {
 }
 
 // NewPrometheusLoadTestCollector creates a new Prometheus-integrated load test collector
-func NewPrometheusLoadTestCollector(metricsAddr string, logger *log.Logger) *PrometheusLoadTestCollector {
+func NewPrometheusLoadTestCollector(metricsAddr string, logger log.Logger) *PrometheusLoadTestCollector {
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewLogger()
 	}
 
 	return &PrometheusLoadTestCollector{
@@ -166,12 +166,12 @@ func (pc *PrometheusLoadTestCollector) StartMetricsServer(ctx context.Context) e
 	}
 
 	go func() {
-		pc.logger.Info("Starting Prometheus metrics server", map[string]interface{}{
+		pc.logger.WithFields(map[string]interface{}{
 			"address": pc.metricsAddr,
-		})
+		}).Info("Starting Prometheus metrics server")
 
 		if err := pc.metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			pc.logger.Error("Metrics server error", map[string]interface{}{"error": err.Error()})
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Metrics server error", err)
 		}
 	}()
 
@@ -245,13 +245,14 @@ func (pc *PrometheusLoadTestCollector) RecordScenarioExecution(scenario string, 
 	cutoff := time.Now().Add(-pc.retentionPeriod)
 	pc.trimOldTrends(cutoff)
 
-	pc.logger.Info("Recorded scenario execution", map[string]interface{}{
+	successRate := 1.0 - result.FailureRate
+	pc.logger.WithFields(map[string]interface{}{
 		"scenario":          scenario,
 		"throughput_mbps":   result.AverageThroughputMBps,
 		"memory_mb":         result.MemoryUsageMB,
 		"success_rate":      fmt.Sprintf("%.2f%%", successRate*100),
 		"validation_passed": result.ValidationPassed,
-	})
+	}).Info("Recorded scenario execution")
 }
 
 // CompareWithBaseline compares current results with baseline and detects regressions
@@ -284,13 +285,13 @@ func (pc *PrometheusLoadTestCollector) CompareWithBaseline(scenario string, resu
 
 	pc.loadTestMetrics.BaselineComparison[scenario] = regression
 
-	pc.logger.Info("Baseline comparison completed", map[string]interface{}{
+	pc.logger.WithFields(map[string]interface{}{
 		"scenario":          scenario,
 		"throughput_change": fmt.Sprintf("%.1f%%", regression.ThroughputChange),
 		"latency_change":    fmt.Sprintf("%.1f%%", regression.LatencyChange),
 		"memory_change":     fmt.Sprintf("%.1f%%", regression.MemoryChange),
 		"severity":          regression.Severity,
-	})
+	}).Info("Baseline comparison completed")
 }
 
 // HTTP handlers for Prometheus metrics endpoints
@@ -476,13 +477,13 @@ func (pc *PrometheusLoadTestCollector) shouldTriggerAlert(regression RegressionM
 }
 
 func (pc *PrometheusLoadTestCollector) triggerPerformanceAlert(scenario string, regression RegressionMetrics) {
-	pc.logger.Warn("Performance alert triggered", map[string]interface{}{
+	pc.logger.WithFields(map[string]interface{}{
 		"scenario":          scenario,
 		"throughput_change": fmt.Sprintf("%.1f%%", regression.ThroughputChange),
 		"latency_change":    fmt.Sprintf("%.1f%%", regression.LatencyChange),
 		"memory_change":     fmt.Sprintf("%.1f%%", regression.MemoryChange),
 		"severity":          regression.Severity,
-	})
+	}).Warn("Performance alert triggered")
 
 	// Here you would integrate with alerting systems like:
 	// - Slack notifications

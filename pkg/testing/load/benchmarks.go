@@ -195,18 +195,18 @@ func (bs *BenchmarkSuite) runK6Benchmarks(scenarios []ScenarioConfig) ([]Benchma
 	}
 
 	for _, scenario := range scenarios {
-		bs.logger.Info("Running k6 benchmark", map[string]interface{}{
+		bs.logger.WithFields(map[string]interface{}{
 			"scenario": scenario.Name,
 			"duration": bs.k6Config.Duration.String(),
 			"vus":      bs.k6Config.VUs,
-		})
+		}).Info("Running k6 benchmark")
 
 		result, err := bs.runSingleK6Test(scenario)
 		if err != nil {
-			bs.logger.Error("k6 test failed", map[string]interface{}{
+			bs.logger.WithFields(map[string]interface{}{
 				"scenario": scenario.Name,
 				"error":    err.Error(),
-			})
+			}).Error("k6 test failed", err)
 			// Continue with other tests
 			continue
 		}
@@ -236,19 +236,19 @@ func (bs *BenchmarkSuite) runApacheBenchTests(scenarios []ScenarioConfig) ([]Ben
 	bs.abConfig.URL = fmt.Sprintf("http://%s/replicate", serverAddr)
 
 	for _, scenario := range scenarios {
-		bs.logger.Info("Running Apache Bench test", map[string]interface{}{
+		bs.logger.WithFields(map[string]interface{}{
 			"scenario":    scenario.Name,
 			"requests":    bs.abConfig.Requests,
 			"concurrency": bs.abConfig.Concurrency,
 			"url":         bs.abConfig.URL,
-		})
+		}).Info("Running Apache Bench test")
 
 		result, err := bs.runSingleApacheBenchTest(scenario)
 		if err != nil {
-			bs.logger.Error("Apache Bench test failed", map[string]interface{}{
+			bs.logger.WithFields(map[string]interface{}{
 				"scenario": scenario.Name,
 				"error":    err.Error(),
-			})
+			}).Error("Apache Bench test failed", err)
 			continue
 		}
 
@@ -272,18 +272,18 @@ func (bs *BenchmarkSuite) runGoBenchmarks() ([]BenchmarkResult, error) {
 	}
 
 	for _, benchName := range benchmarks {
-		bs.logger.Info("Running Go benchmark", map[string]interface{}{
+		bs.logger.WithFields(map[string]interface{}{
 			"benchmark": benchName,
 			"duration":  bs.goConfig.BenchTime.String(),
 			"count":     bs.goConfig.Count,
-		})
+		}).Info("Running Go benchmark")
 
 		result, err := bs.runSingleGoBenchmark(benchName)
 		if err != nil {
-			bs.logger.Error("Go benchmark failed", map[string]interface{}{
+			bs.logger.WithFields(map[string]interface{}{
 				"benchmark": benchName,
 				"error":     err.Error(),
-			})
+			}).Error("Go benchmark failed", err)
 			continue
 		}
 
@@ -329,7 +329,7 @@ func (bs *BenchmarkSuite) runSingleK6Test(scenario ScenarioConfig) (BenchmarkRes
 
 	// Parse k6 JSON output for detailed metrics
 	if err := bs.parseK6Results(outputFile, &result); err != nil {
-		bs.logger.Warn("Failed to parse k6 results", map[string]interface{}{"error": err.Error()})
+		bs.logger.WithFields(map[string]interface{}{"error": err.Error()}).Warn("Failed to parse k6 results")
 	}
 
 	// Validate against scenario criteria
@@ -378,7 +378,7 @@ func (bs *BenchmarkSuite) runSingleApacheBenchTest(scenario ScenarioConfig) (Ben
 
 	// Parse Apache Bench output
 	if err := bs.parseApacheBenchResults(string(output), &result); err != nil {
-		bs.logger.Warn("Failed to parse Apache Bench results", map[string]interface{}{"error": err.Error()})
+		bs.logger.WithFields(map[string]interface{}{"error": err.Error()}).Warn("Failed to parse Apache Bench results")
 	}
 
 	result.ValidationPassed = bs.validateBenchmarkResult(result, scenario.ValidationCriteria)
@@ -430,7 +430,7 @@ func (bs *BenchmarkSuite) runSingleGoBenchmark(benchName string) (BenchmarkResul
 
 	// Parse Go benchmark output
 	if err := bs.parseGoBenchmarkResults(string(output), &result); err != nil {
-		bs.logger.Warn("Failed to parse Go benchmark results", map[string]interface{}{"error": err.Error()})
+		bs.logger.WithFields(map[string]interface{}{"error": err.Error()}).Warn("Failed to parse Go benchmark results")
 	}
 
 	// Go benchmarks don't have validation criteria like scenarios, so always pass
