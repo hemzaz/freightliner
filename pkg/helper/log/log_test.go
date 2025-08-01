@@ -101,8 +101,8 @@ func TestLoggerLevels(t *testing.T) {
 			name:         "Error level logs error",
 			loggerLevel:  ErrorLevel,
 			logFuncLevel: ErrorLevel,
-			logFunc: func(logger *Logger, msg string) {
-				logger.Error(msg, errors.New("test error"), nil)
+			logFunc: func(logger Logger, msg string) {
+				logger.Error(msg, errors.New("test error"))
 			},
 			expectedLog: true,
 		},
@@ -174,10 +174,10 @@ func TestLoggerFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := NewLogger(DebugLevel)
+			logger := NewLogger()
 
 			output := captureOutput(func() {
-				logger.Info(tt.msg, tt.fields)
+				logger.WithFields(tt.fields).Info(tt.msg)
 			})
 
 			// Check if expected message is present
@@ -206,13 +206,13 @@ func TestLoggerFields(t *testing.T) {
 }
 
 func TestErrorLogging(t *testing.T) {
-	logger := NewLogger(DebugLevel)
+	logger := NewLogger()
 	testErr := errors.New("test error")
 
 	output := captureOutput(func() {
-		logger.Error("error message", testErr, map[string]interface{}{
+		logger.WithFields(map[string]interface{}{
 			"key": "value",
-		})
+		}).Error("error message", testErr)
 	})
 
 	// Check error field
@@ -227,12 +227,12 @@ func TestFatalLogging(t *testing.T) {
 	// NOTE: We can't fully test Fatal because it calls os.Exit
 	// We can only test the logging part, not the exit behavior
 
-	logger := NewLogger(FatalLevel + 1) // Set level higher than Fatal to avoid actual exit
+	logger := NewLogger() // Set level higher than Fatal to avoid actual exit
 	testErr := errors.New("fatal error")
 
 	// Test that Fatal doesn't log or exit when level is too high
 	output := captureOutput(func() {
-		logger.Fatal("should not log", testErr, nil)
+		logger.Fatal("should not log", testErr)
 	})
 
 	if strings.Contains(output, "should not log") {
