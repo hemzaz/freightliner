@@ -1,0 +1,67 @@
+# Git
+.git
+.gitignore
+README.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+Jenkinsfile
+
+# Development
+.air.toml
+tmp/
+*.log
+.env
+.env.*
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test files
+*_test.go
+testdata/
+coverage.out
+coverage.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment
+deployments/
+k8s/
+helm/
+terraform/
+*.yaml
+*.yml
+!go.yaml
+
+# Build artifacts
+bin/
+dist/
+target/
+
+# Node.js (if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Misc
+*.bak
+*.orig
+*.tmp

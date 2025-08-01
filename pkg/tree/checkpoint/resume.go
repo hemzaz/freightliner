@@ -139,34 +139,34 @@ func GetRemainingRepositories(cp *TreeCheckpoint, opts ResumableOptions) ([]stri
 
 	var remaining []string
 
-	// Map of completed repositories for fast lookup
-	completed := make(map[string]bool)
-	for _, repo := range cp.CompletedRepositories {
-		completed[repo] = true
-	}
-
-	// Map of failed repositories for fast lookup
-	failed := make(map[string]bool)
-
-	// Check each repository status
-	for repoName, repoStatus := range cp.Repositories {
-		// Check if this repo is marked as failed
-		if repoStatus.Status == StatusFailed {
-			failed[repoName] = true
-		}
-
+	// Check RepoTasks for repository status
+	for _, repoTask := range cp.RepoTasks {
 		// Skip completed repositories if requested
-		if opts.SkipCompleted && completed[repoName] {
+		if opts.SkipCompleted && repoTask.Status == StatusCompleted {
 			continue
 		}
 
 		// Skip failed repositories if not retrying
-		if !opts.RetryFailed && failed[repoName] {
+		if !opts.RetryFailed && repoTask.Status == StatusFailed {
 			continue
 		}
 
-		// Add to the list of repositories to process
-		remaining = append(remaining, repoName)
+		// Include repositories that are not completed or if we don't skip completed
+		// Include failed repositories if we retry failed
+		shouldInclude := false
+
+		if repoTask.Status == StatusCompleted && !opts.SkipCompleted {
+			shouldInclude = true
+		} else if repoTask.Status == StatusFailed && opts.RetryFailed {
+			shouldInclude = true
+		} else if repoTask.Status != StatusCompleted && repoTask.Status != StatusFailed {
+			// Include pending, interrupted, in-progress, etc.
+			shouldInclude = true
+		}
+
+		if shouldInclude {
+			remaining = append(remaining, repoTask.SourceRepository)
+		}
 	}
 
 	return remaining, nil

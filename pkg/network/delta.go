@@ -45,13 +45,13 @@ func DefaultDeltaOptions() DeltaOptions {
 // DeltaGenerator creates deltas between source and destination files
 type DeltaGenerator struct {
 	options DeltaOptions
-	logger  *log.Logger
+	logger  log.Logger
 	hasher  hash.Hash
 }
 
 // DeltaManager manages delta operations
 type DeltaManager struct {
-	logger  *log.Logger
+	logger  log.Logger
 	options DeltaOptions
 }
 
@@ -73,9 +73,9 @@ func (d *DeltaManager) getDelta(source, target []byte) ([]byte, int64, error) {
 }
 
 // NewDeltaManager creates a new delta manager
-func NewDeltaManager(logger *log.Logger, opts DeltaOptions) (*DeltaManager, error) {
+func NewDeltaManager(logger log.Logger, opts DeltaOptions) (*DeltaManager, error) {
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewBasicLogger(log.InfoLevel)
 	}
 	return &DeltaManager{
 		logger:  logger,
@@ -121,11 +121,11 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 		// Compare the manifests by digest
 		if sourceManifest.Digest == destManifest.Digest {
 			// Already identical - nothing to transfer
-			d.logger.Info("Manifests are identical, skipping transfer", map[string]interface{}{
+			d.logger.WithFields(map[string]interface{}{
 				"digest": digest,
 				"source": sourceRepo.GetRepositoryName(),
 				"dest":   destRepo.GetRepositoryName(),
-			})
+			}).Info("Manifests are identical, skipping transfer")
 
 			summary.TransferSize = 0
 			summary.SavingsPercent = 100.0
@@ -137,7 +137,7 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 	// Check if delta is disabled via MaxDeltaRatio
 	if d.options.MaxDeltaRatio <= 0.0 {
 		// Delta optimization is disabled
-		d.logger.Debug("Delta optimization disabled (MaxDeltaRatio = 0)", nil)
+		d.logger.Debug("Delta optimization disabled (MaxDeltaRatio = 0)")
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
@@ -146,10 +146,10 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 	// Threshold could be configurable, but 1KB is a reasonable default for manifests
 	minDeltaSize := 1024 // 1KB threshold
 	if len(sourceManifest.Content) < minDeltaSize {
-		d.logger.Debug("Manifest too small for delta optimization", map[string]interface{}{
+		d.logger.WithFields(map[string]interface{}{
 			"size":      len(sourceManifest.Content),
 			"threshold": minDeltaSize,
-		})
+		}).Debug("Manifest too small for delta optimization")
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
@@ -177,9 +177,9 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 	// Try to create a delta
 	delta, err := CreateDelta(destContent, targetContent, deltaFormat)
 	if err != nil {
-		d.logger.Warn("Failed to create delta, falling back to full transfer", map[string]interface{}{
+		d.logger.WithFields(map[string]interface{}{
 			"error": err.Error(),
-		})
+		}).Warn("Failed to create delta, falling back to full transfer")
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
@@ -187,12 +187,12 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 	// Check if the delta is smaller than the MaxDeltaRatio threshold
 	deltaRatio := float64(len(delta)) / float64(len(targetContent))
 	if deltaRatio > d.options.MaxDeltaRatio {
-		d.logger.Debug("Delta too large, using full transfer", map[string]interface{}{
+		d.logger.WithFields(map[string]interface{}{
 			"ratio":       deltaRatio,
 			"threshold":   d.options.MaxDeltaRatio,
 			"delta_size":  len(delta),
 			"target_size": len(targetContent),
-		})
+		}).Debug("Delta too large, using full transfer")
 		summary.Duration = time.Since(startTime)
 		return summary, false, nil
 	}
@@ -258,13 +258,13 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 		}
 	}
 
-	d.logger.Info("Created delta for transfer optimization", map[string]interface{}{
+	d.logger.WithFields(map[string]interface{}{
 		"source_size":     len(targetContent),
 		"delta_size":      len(delta),
 		"savings_percent": savingsPercent,
 		"format":          deltaFormat,
 		"chunks_modified": summary.ChunksModified,
-	})
+	}).Info("Created delta for transfer optimization")
 
 	// Update duration
 	summary.Duration = time.Since(startTime)
@@ -273,9 +273,9 @@ func (d *DeltaManager) OptimizeTransfer(sourceRepo, destRepo interfaces.Reposito
 }
 
 // NewDeltaGenerator creates a new delta generator with the given options
-func NewDeltaGenerator(opts DeltaOptions, logger *log.Logger) *DeltaGenerator {
+func NewDeltaGenerator(opts DeltaOptions, logger log.Logger) *DeltaGenerator {
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	// Normalize options
@@ -350,9 +350,9 @@ func (g *DeltaGenerator) GenerateManifest(ctx context.Context, sourceClient, des
 	if err != nil {
 		// If the destination doesn't exist yet, that's okay - empty manifest
 		if errors.Is(err, errors.ErrNotFound) {
-			g.logger.Info("Destination repository doesn't exist yet", map[string]interface{}{
+			g.logger.WithFields(map[string]interface{}{
 				"destination": destRepo,
-			})
+			}).Info("Destination repository doesn't exist yet")
 			// Create empty manifest with just the source items
 			return g.createEmptyManifest(srcRepo, destRepo)
 		}

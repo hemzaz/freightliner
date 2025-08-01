@@ -13,7 +13,7 @@ import (
 
 func TestWorkerPoolSubmit(t *testing.T) {
 	// Create a worker pool with 2 workers
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 	pool := NewWorkerPool(2, logger)
 	pool.Start()
 	defer pool.Stop()
@@ -58,7 +58,7 @@ func TestWorkerPoolSubmit(t *testing.T) {
 
 func TestWorkerPoolPriority(t *testing.T) {
 	// Create a worker pool with 2 workers
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 	pool := NewWorkerPool(2, logger)
 	pool.Start()
 	defer pool.Stop()
@@ -105,13 +105,21 @@ func TestWorkerPoolScaling(t *testing.T) {
 	for _, workerCount := range []int{1, 2, 4, 8} {
 		t.Run(fmt.Sprintf("Workers-%d", workerCount), func(t *testing.T) {
 			// Create a worker pool with variable worker count
-			logger := log.NewLogger(log.InfoLevel)
+			logger := log.NewBasicLogger(log.InfoLevel)
 			pool := NewWorkerPool(workerCount, logger)
 			pool.Start()
 			defer pool.Stop()
 
 			// Create a counter for completed jobs
 			var completed int32
+			var resultsReceived int32
+
+			// Start result consumer to prevent deadlock
+			go func() {
+				for range pool.GetResults() {
+					atomic.AddInt32(&resultsReceived, 1)
+				}
+			}()
 
 			// Submit 100 jobs
 			for i := 0; i < 100; i++ {
@@ -127,24 +135,16 @@ func TestWorkerPoolScaling(t *testing.T) {
 				}
 			}
 
-			// Wait for jobs to complete (with timeout)
-			timeoutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
+			// Wait for all jobs to complete
+			pool.Wait()
 
-			// Poll until all jobs are done or timeout
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
+			// Verify all jobs completed
+			if atomic.LoadInt32(&completed) != 100 {
+				t.Errorf("Expected 100 completed jobs, got %d", atomic.LoadInt32(&completed))
+			}
 
-			for {
-				select {
-				case <-ticker.C:
-					if atomic.LoadInt32(&completed) == 100 {
-						return
-					}
-				case <-timeoutCtx.Done():
-					t.Fatalf("Timed out waiting for jobs to complete, got %d/100", atomic.LoadInt32(&completed))
-					return
-				}
+			if atomic.LoadInt32(&resultsReceived) != 100 {
+				t.Errorf("Expected 100 results received, got %d", atomic.LoadInt32(&resultsReceived))
 			}
 		})
 	}
@@ -152,7 +152,7 @@ func TestWorkerPoolScaling(t *testing.T) {
 
 func TestWorkerPoolCancellation(t *testing.T) {
 	// Create a worker pool with 2 workers
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 	pool := NewWorkerPool(2, logger)
 	pool.Start()
 	defer pool.Stop()
@@ -210,7 +210,7 @@ func TestWorkerPoolCancellation(t *testing.T) {
 
 func TestWorkerPoolStopWithRunningJobs(t *testing.T) {
 	// Create a worker pool with 2 workers
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 	pool := NewWorkerPool(2, logger)
 	pool.Start()
 
@@ -258,7 +258,7 @@ func TestWorkerPoolStopWithRunningJobs(t *testing.T) {
 
 func TestResultsChannel(t *testing.T) {
 	// Create a worker pool with 2 workers
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 	pool := NewWorkerPool(2, logger)
 	pool.Start()
 

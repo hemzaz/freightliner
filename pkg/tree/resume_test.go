@@ -42,7 +42,7 @@ func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryCli
 	}
 
 	// Create logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create copier
 	copier := copy.NewCopier(logger)

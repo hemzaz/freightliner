@@ -23,7 +23,7 @@ import (
 
 // Client implements the registry client interface for Google Container Registry
 type Client struct {
-	logger         *log.Logger
+	logger         log.Logger
 	project        string
 	location       string
 	arClient       *artifactregistry.Service
@@ -40,7 +40,7 @@ type ClientOptions struct {
 	Location string
 
 	// Logger is the logger to use
-	Logger *log.Logger
+	Logger log.Logger
 
 	// CredentialsFile is the path to a Google service account JSON key file
 	CredentialsFile string
@@ -67,7 +67,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	}
 
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	var arOpts []option.ClientOption
@@ -90,9 +90,9 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	ctx := context.Background()
 	arService, err := artifactregistry.NewService(ctx, arOpts...)
 	if err != nil {
-		opts.Logger.Warn("Failed to create Artifact Registry client, some functionality may be limited", map[string]interface{}{
+		opts.Logger.WithFields(map[string]interface{}{
 			"error": err.Error(),
-		})
+		}).Warn("Failed to create Artifact Registry client, some functionality may be limited")
 		// We'll continue without the AR client - we can still use the GCR API
 		arService = nil
 	}
@@ -148,11 +148,11 @@ func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map
 		return nil, errors.InvalidInputf("repository name cannot be empty")
 	}
 
-	c.logger.Info("Creating repository in GCR", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"repository": repoName,
 		"project":    c.project,
 		"location":   c.location,
-	})
+	}).Info("Creating repository in GCR")
 
 	// Create the GCR repository reference
 	registry := fmt.Sprintf("gcr.io/%s", c.project)
@@ -172,10 +172,10 @@ func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map
 		repository: repository,
 	}
 
-	c.logger.Info("Repository reference created (repository will be created automatically on first push)", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"repository": repoName,
 		"registry":   registry,
-	})
+	}).Info("Repository reference created (repository will be created automatically on first push)")
 
 	return repo, nil
 }
@@ -209,11 +209,11 @@ func (c *Client) listRepositoriesViaAR(ctx context.Context, prefix string) ([]st
 	parent := fmt.Sprintf("projects/%s/locations/%s", c.project, location)
 
 	// List repositories in the project/location
-	c.logger.Debug("Listing repositories via Artifact Registry API", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"project":  c.project,
 		"location": location,
 		"prefix":   prefix,
-	})
+	}).Debug("Listing repositories via Artifact Registry API")
 
 	// Create request with filter if needed
 	req := c.arClient.Projects.Locations.Repositories.List(parent)
@@ -265,10 +265,10 @@ func (c *Client) listRepositoriesViaGCR(ctx context.Context, prefix string) ([]s
 		registryPath = fmt.Sprintf("%s-docker.pkg.dev/%s", c.location, c.project)
 	}
 
-	c.logger.Debug("Listing repositories via GCR API", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"registry": registryPath,
 		"prefix":   prefix,
-	})
+	}).Debug("Listing repositories via GCR API")
 
 	// Create a repository reference for the registry
 	registry, err := name.NewRepository(registryPath)

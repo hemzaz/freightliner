@@ -1,0 +1,228 @@
+# Default values for freightliner.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Application configuration
+image:
+  registry: docker.io
+  repository: freightliner/app
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+# Deployment configuration
+replicaCount: 3
+
+# Service configuration
+service:
+  type: LoadBalancer
+  port: 443
+  targetPort: 8080
+  annotations: {}
+  labels: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: freightliner.company.com
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: api.freightliner.company.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: freightliner-tls-cert
+      hosts:
+        - freightliner.company.com
+        - api.freightliner.company.com
+
+# Resource configuration
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Auto-scaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 3000
+  fsGroup: 2000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Pod security context
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Configuration
+config:
+  # Application configuration
+  logLevel: info
+  port: 8080
+  
+  # Registry configuration
+  aws:
+    region: us-west-2
+    ecrEndpoint: ""
+  
+  gcp:
+    projectId: ""
+    region: us-central1
+  
+  # Performance tuning
+  workerPoolSize: 10
+  maxConcurrentReplications: 5
+  httpTimeout: 300s
+  retryAttempts: 3
+  
+  # Monitoring
+  metricsEnabled: true
+  metricsPort: 2112
+
+# Secrets configuration (to be created externally)
+secrets:
+  # AWS credentials
+  awsAccessKeyId: ""
+  awsSecretAccessKey: ""
+  
+  # GCP service account key
+  gcpServiceAccountKey: ""
+  
+  # Registry authentication
+  registryAuth: {}
+
+# Environment-specific overrides
+environment: production
+
+# Node selection
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - freightliner
+          topologyKey: kubernetes.io/hostname
+
+# Network policies
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - {}  # Allow all egress (for registry communication)
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# RBAC
+rbac:
+  create: true
+
+# Persistent storage
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Monitoring configuration
+monitoring:
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    interval: 30s
+    path: /metrics
+    port: metrics
+    labels: {}
+    annotations: {}
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+  # maxUnavailable: 1

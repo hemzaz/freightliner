@@ -43,7 +43,7 @@ type Client struct {
 	ecr          ECRServiceAPI
 	region       string
 	accountID    string
-	logger       *log.Logger
+	logger       log.Logger
 	transportOpt remote.Option
 }
 
@@ -65,7 +65,7 @@ type ClientOptions struct {
 	CredentialsFile string
 
 	// Logger is the logger to use
-	Logger *log.Logger
+	Logger log.Logger
 }
 
 // LegacyClientOptions is an alias for ClientOptions for backward compatibility
@@ -78,7 +78,7 @@ type LegacyClientOptions struct {
 
 	// Internal STS client for testing
 	stsClient STSServiceAPI
-	Logger    *log.Logger
+	Logger    log.Logger
 }
 
 // STSServiceAPI is an interface for AWS STS API operations
@@ -109,7 +109,7 @@ func validateClientOptions(opts *ClientOptions) error {
 	}
 
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	return nil
@@ -293,11 +293,11 @@ func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map
 		return nil, errors.Wrap(err, "failed to create repository reference")
 	}
 
-	c.logger.Info("Created ECR repository", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"repository": repoName,
 		"registry":   registry,
 		"arn":        *resp.Repository.RepositoryArn,
-	})
+	}).Info("Created ECR repository")
 
 	return &Repository{
 		client:     c,

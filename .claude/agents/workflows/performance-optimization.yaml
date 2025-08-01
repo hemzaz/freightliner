@@ -1,0 +1,289 @@
+# Performance Optimization Workflow with Subagents
+# Freightliner Container Registry Replication Project
+
+workflow:
+  name: "performance-optimization"
+  description: "Comprehensive performance analysis and optimization workflow"
+  version: "1.0"
+  
+  trigger:
+    - event: "performance-regression"
+      threshold: "20% degradation"
+    - event: "code-change"
+      paths: ["pkg/copy/**", "pkg/replication/**", "pkg/client/**"]
+    - event: "scheduled"
+      cron: "0 4 * * 2"  # Weekly performance analysis
+
+  primary_agent: "performance-engineer"
+  estimated_duration: "3-6 hours"
+  
+  subagents:
+    memory-profiler:
+      specialist: "Go memory optimization for high-throughput operations"
+      tools: ["go tool pprof", "go-torch", "benchstat"]
+      focus_areas:
+        - "pkg/copy/ (blob transfer and buffering)"
+        - "pkg/replication/ (worker pool memory management)"
+        - "pkg/client/ (HTTP client connection caching)"
+      metrics:
+        - "heap_size"
+        - "allocation_rate"
+        - "gc_frequency"
+        - "memory_leaks"
+      timeout: "30m"
+      
+    network-optimizer:
+      specialist: "Network I/O performance and efficiency"
+      tools: ["iperf3", "tcpdump", "wireshark", "netstat"]
+      focus_areas:
+        - "Registry API communication efficiency"
+        - "Blob transfer optimization"  
+        - "Connection pooling and reuse"
+        - "Compression and streaming strategies"
+      metrics:
+        - "bandwidth_utilization"
+        - "connection_count"
+        - "request_latency"
+        - "throughput_mbps"
+      timeout: "25m"
+      
+    load-test-architect:
+      specialist: "Performance testing and scalability analysis"
+      tools: ["k6", "Apache Bench", "custom Go benchmarks"]
+      focus_areas:
+        - "High-volume replication scenarios"
+        - "Concurrent multi-cloud operations"
+        - "Large container image handling"
+        - "Network resilience under failures"
+      metrics:
+        - "requests_per_second"
+        - "error_rate"
+        - "response_time_p95"
+        - "concurrent_users"
+      timeout: "45m"
+
+  workflow_steps:
+    - step: "baseline-profiling"
+      subagent: "memory-profiler"
+      input:
+        - type: "current_codebase"
+          source: "git_head"
+        - type: "benchmark_scenarios"
+          source: "performance_test_suite"
+      output: "memory_profile_baseline"
+      parallel: true
+      
+      micro_specialists:
+        - name: "heap-analyzer"
+          task: "Analyze heap allocations and identify memory hotspots"
+        - name: "goroutine-leak-detector"
+          task: "Detect potential goroutine leaks in concurrent operations"
+      
+    - step: "network-analysis"
+      subagent: "network-optimizer"
+      input:
+        - type: "network_trace_data"
+          source: "production_logs"
+        - type: "api_usage_patterns"
+          source: "registry_metrics"
+      output: "network_optimization_report"
+      parallel: true
+      
+      micro_specialists:
+        - name: "connection-pool-optimizer"
+          task: "Optimize HTTP connection pooling configuration"
+        - name: "bandwidth-efficiency-expert"
+          task: "Analyze bandwidth usage and compression opportunities"
+          
+    - step: "load-testing"
+      subagent: "load-test-architect"
+      input:
+        - type: "test_scenarios"
+          source: "load_test_definitions"
+        - type: "target_metrics"
+          source: "performance_requirements"
+      output: "load_test_results"
+      parallel: true
+      depends_on: []
+      
+      micro_specialists:
+        - name: "scenario-designer"
+          task: "Design realistic load test scenarios"
+        - name: "benchmark-automation-specialist"
+          task: "Automate performance regression testing"
+
+    - step: "bottleneck-analysis"
+      subagent: "memory-profiler"
+      input:
+        - type: "all_profiles"
+          sources: ["memory_profile_baseline", "network_optimization_report", "load_test_results"]
+      output: "bottleneck_identification"
+      depends_on: ["baseline-profiling", "network-analysis", "load-testing"]
+      parallel: false
+      
+    - step: "optimization-implementation"
+      subagent: "network-optimizer"
+      input:
+        - type: "bottleneck_report"
+          source: "bottleneck-analysis"
+        - type: "optimization_priorities"
+          source: "performance_requirements"
+      output: "optimization_implementations"
+      depends_on: ["bottleneck-analysis"]
+      parallel: false
+      
+    - step: "validation-testing"
+      subagent: "load-test-architect"
+      input:
+        - type: "optimized_code"
+          source: "optimization-implementation"
+        - type: "baseline_metrics"
+          source: "baseline-profiling"
+      output: "performance_validation_report"
+      depends_on: ["optimization-implementation"]
+      parallel: false
+
+  performance_targets:
+    memory_usage:
+      current: "4-8GB peak"
+      target: "500MB-1GB peak"
+      improvement: "75-85% reduction"
+      
+    throughput:
+      current: "20 MB/s"
+      target: "100-150 MB/s" 
+      improvement: "5-7x increase"
+      
+    concurrency:
+      current: "10-50 concurrent operations"
+      target: "200-500 concurrent operations"
+      improvement: "10x scalability"
+      
+    latency:
+      current: "2-5s per operation"
+      target: "200-500ms per operation"
+      improvement: "90% reduction"
+
+  quality_gates:
+    - gate: "memory_target_met"
+      description: "Memory usage within target range"
+      validator: "memory-profiler"
+      criteria:
+        - "peak_memory_mb <= 1024"
+        - "memory_growth_rate <= 0.1"
+        - "gc_pressure_score <= 0.3"
+      blocking: true
+      
+    - gate: "throughput_improved"
+      description: "Throughput meets minimum improvement threshold"
+      validator: "network-optimizer"
+      criteria:
+        - "throughput_mbps >= 80"
+        - "connection_reuse_rate >= 0.8"
+        - "bandwidth_efficiency >= 0.7"
+      blocking: true
+      
+    - gate: "load_test_passed"
+      description: "Load testing meets scalability requirements"
+      validator: "load-test-architect"
+      criteria:
+        - "concurrent_users >= 200"
+        - "error_rate <= 0.001"
+        - "p95_response_time <= 1000"
+      blocking: true
+      
+    - gate: "no_performance_regression"
+      description: "Optimizations don't introduce regressions"
+      validator: "performance-engineer"
+      criteria:
+        - "regression_score <= 0.05"
+        - "stability_index >= 0.95"
+      blocking: true
+
+  optimization_strategies:
+    memory:
+      - strategy: "streaming_transfers"
+        implementation: "Replace io.ReadAll with streaming"
+        expected_impact: "80% memory reduction"
+        
+      - strategy: "connection_pooling"
+        implementation: "HTTP/2 connection reuse"
+        expected_impact: "40% memory reduction"
+        
+    network:
+      - strategy: "parallel_processing"
+        implementation: "Concurrent tag processing"
+        expected_impact: "5x throughput increase"
+        
+      - strategy: "compression_optimization"
+        implementation: "Smart compression selection"
+        expected_impact: "30% bandwidth reduction"
+        
+    caching:
+      - strategy: "layer_deduplication"
+        implementation: "SHA256-based layer cache"
+        expected_impact: "60% transfer reduction"
+        
+      - strategy: "metadata_caching"
+        implementation: "Redis manifest cache"
+        expected_impact: "50% API call reduction"
+
+  output_artifacts:
+    - name: "performance_analysis_report"
+      format: "markdown"
+      includes: ["baseline_metrics", "bottleneck_analysis", "optimization_results"]
+      
+    - name: "benchmarking_suite"
+      format: "go_test"
+      includes: ["performance_benchmarks", "regression_tests", "load_tests"]
+      
+    - name: "optimization_recommendations"
+      format: "yaml"
+      includes: ["implementation_plan", "performance_targets", "monitoring_setup"]
+
+  handoff:
+    success:
+      next_workflow: "code-quality-enhancement"  
+      trigger_condition: "all_performance_gates_passed"
+      handoff_data: ["performance_metrics", "optimization_implementations"]
+      
+    partial_success:
+      next_workflow: "performance-iteration"
+      trigger_condition: "some_targets_met"
+      handoff_data: ["remaining_optimizations", "priority_adjustments"]
+      
+    failure:
+      escalation: "performance-architect"
+      notification: "performance-targets-not-met"
+      rollback: "revert_optimization_changes"
+
+  monitoring:
+    continuous_metrics:
+      - "memory_usage_trend"
+      - "throughput_moving_average"
+      - "error_rate_sla"
+      - "latency_percentiles"
+      
+    alerts:
+      - condition: "memory_usage > 2GB"
+        severity: "warning"
+        action: "trigger_memory_analysis"
+        
+      - condition: "throughput < 50MB/s"
+        severity: "critical"
+        action: "trigger_performance_investigation"
+        
+    dashboards:
+      - name: "freightliner_performance"
+        metrics: ["throughput", "memory", "latency", "errors"]
+        refresh: "30s"
+
+  rollback:
+    conditions:
+      - "performance_regression_detected"
+      - "stability_issues_introduced"
+      - "memory_usage_exceeded_limits"
+    actions:
+      - "revert_performance_changes"
+      - "restore_baseline_configuration"
+      - "trigger_incident_response"

@@ -14,12 +14,12 @@ import (
 // TreeReplicationService handles tree replication operations
 type TreeReplicationService struct {
 	cfg                *config.Config
-	logger             *log.Logger
-	replicationService *ReplicationService
+	logger             log.Logger
+	replicationService ReplicationService
 }
 
 // NewTreeReplicationService creates a new tree replication service
-func NewTreeReplicationService(cfg *config.Config, logger *log.Logger) *TreeReplicationService {
+func NewTreeReplicationService(cfg *config.Config, logger log.Logger) *TreeReplicationService {
 	return &TreeReplicationService{
 		cfg:                cfg,
 		logger:             logger,
@@ -103,14 +103,19 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 		return nil, errors.InvalidInputf("registry type must be 'ecr' or 'gcr'")
 	}
 
-	// Create registry clients
-	clients, err := s.replicationService.createRegistryClients(ctx, sourceRegistry, destRegistry)
+	// Create registry clients - need to access implementation methods
+	replicationSvc, ok := s.replicationService.(*replicationService)
+	if !ok {
+		return nil, errors.InvalidInputf("replication service must be concrete implementation for tree replication")
+	}
+
+	clients, err := replicationSvc.createRegistryClients(ctx, sourceRegistry, destRegistry)
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize credentials if using secrets manager
-	if initErr := s.replicationService.initializeCredentials(ctx); initErr != nil {
+	if initErr := replicationSvc.initializeCredentials(ctx); initErr != nil {
 		return nil, initErr
 	}
 
@@ -121,9 +126,9 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 	// Auto-detect worker count if configured
 	if options.WorkerCount == 0 && s.cfg.Workers.AutoDetect {
 		options.WorkerCount = config.GetOptimalWorkerCount()
-		s.logger.Info("Auto-detected worker count", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"workers": options.WorkerCount,
-		})
+		}).Info("Auto-detected worker count")
 	}
 
 	// Create options map for tree replicator (for backward compatibility)
@@ -270,7 +275,12 @@ func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, sourc
 	}
 
 	// Create a copier for the tree replicator to use
-	encManager, err := s.replicationService.setupEncryptionManager(ctx, dest.GetRegistryName())
+	replicationSvc, ok := s.replicationService.(*replicationService)
+	if !ok {
+		return nil, errors.InvalidInputf("replication service must be concrete implementation for encryption setup")
+	}
+
+	encManager, err := replicationSvc.setupEncryptionManager(ctx, dest.GetRegistryName())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to set up encryption manager for tree replicator")
 	}
@@ -295,12 +305,12 @@ func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, sourc
 
 	// If resuming from a checkpoint, set up the resume operation
 	if options.ResumeID != "" {
-		s.logger.Info("Setting up tree replication resume", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"resumeID":      options.ResumeID,
 			"skipCompleted": options.SkipCompleted,
 			"retryFailed":   options.RetryFailed,
 			"checkpointDir": options.CheckpointDir,
-		})
+		}).Info("Setting up tree replication resume")
 
 		// Initialize the checkpoint store for resume
 		store, err := tree.InitCheckpointStore(options.CheckpointDir)
@@ -328,17 +338,17 @@ func (s *TreeReplicationService) createTreeReplicator(ctx context.Context, sourc
 			return nil, errors.Wrap(err, "failed to get remaining repositories for resume")
 		}
 
-		s.logger.Info("Resume operation set up", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"repositories": len(repositories),
-		})
+		}).Info("Resume operation set up")
 
 		// For now, we don't have a method to set up a resume
 		// In a real implementation, you would use the checkpoint and resumeOpts to configure the replicator
 		// This is just a placeholder for now
 		if len(repositories) > 0 {
-			s.logger.Info("Found repositories to resume", map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"count": len(repositories),
-			})
+			}).Info("Found repositories to resume")
 		}
 	}
 

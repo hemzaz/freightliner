@@ -18,7 +18,7 @@ import (
 type EnhancedRepositoryOptions struct {
 	Name       string
 	Repository name.Repository
-	Logger     *log.Logger
+	Logger     log.Logger
 	Client     interface{}
 
 	// Cache configuration
@@ -54,7 +54,7 @@ type EnhancedRepository struct {
 // NewEnhancedRepository creates a new enhanced repository
 func NewEnhancedRepository(opts EnhancedRepositoryOptions) *EnhancedRepository {
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	// Create base repository
@@ -81,9 +81,7 @@ func NewEnhancedRepository(opts EnhancedRepositoryOptions) *EnhancedRepository {
 
 // RefreshTags refreshes the tag list
 func (r *EnhancedRepository) RefreshTags(ctx context.Context) error {
-	r.logger.Debug("Refreshing tags for repository", map[string]interface{}{
-		"repository": r.GetName(),
-	})
+	r.logger.WithField("repository", r.GetName()).Debug("Refreshing tags for repository")
 
 	// Clear the tags cache to force a fresh fetch
 	func() {
@@ -98,10 +96,10 @@ func (r *EnhancedRepository) RefreshTags(ctx context.Context) error {
 		return errors.Wrap(err, "failed to refresh tags")
 	}
 
-	r.logger.Info("Successfully refreshed tags", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.GetName(),
 		"tag_count":  len(tags),
-	})
+	}).Info("Successfully refreshed tags")
 
 	return nil
 }
@@ -117,10 +115,10 @@ func (r *EnhancedRepository) RefreshImages(ctx context.Context, tags []string) e
 		tags = allTags
 	}
 
-	r.logger.Debug("Refreshing image cache", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.GetName(),
 		"tag_count":  len(tags),
-	})
+	}).Debug("Refreshing image cache")
 
 	// Clear existing image cache
 	r.ClearCache()
@@ -133,29 +131,29 @@ func (r *EnhancedRepository) RefreshImages(ctx context.Context, tags []string) e
 		default:
 		}
 
-		r.logger.Debug("Refreshing image", map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"repository": r.GetName(),
 			"tag":        tag,
 			"progress":   fmt.Sprintf("%d/%d", i+1, len(tags)),
-		})
+		}).Debug("Refreshing image")
 
 		// Fetch the image (this will cache it)
 		_, err := r.GetTag(ctx, tag)
 		if err != nil {
-			r.logger.Warn("Failed to refresh image", map[string]interface{}{
+			r.logger.WithFields(map[string]interface{}{
 				"repository": r.GetName(),
 				"tag":        tag,
 				"error":      err.Error(),
-			})
+			}).Warn("Failed to refresh image")
 			// Continue with other images rather than failing completely
 			continue
 		}
 	}
 
-	r.logger.Info("Successfully refreshed image cache", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.GetName(),
 		"tag_count":  len(tags),
-	})
+	}).Info("Successfully refreshed image cache")
 
 	return nil
 }
@@ -198,10 +196,10 @@ func (r *EnhancedRepository) GetImageSummary(ctx context.Context, reference stri
 
 	configFile, err := img.ConfigFile()
 	if err != nil {
-		r.logger.Warn("Failed to get image config file", map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"tag":   reference,
 			"error": err.Error(),
-		})
+		}).Warn("Failed to get image config file")
 	}
 
 	// Calculate size
@@ -234,9 +232,7 @@ func (r *EnhancedRepository) GetImageSummary(ctx context.Context, reference stri
 
 // ListImageManifests lists all manifests in the repository
 func (r *EnhancedRepository) ListImageManifests(ctx context.Context) ([]string, error) {
-	r.logger.Debug("Listing image manifests for repository", map[string]interface{}{
-		"repository": r.GetName(),
-	})
+	r.logger.WithField("repository", r.GetName()).Debug("Listing image manifests for repository")
 
 	// Get all tags first
 	tags, err := r.ListTags(ctx)
@@ -257,22 +253,22 @@ func (r *EnhancedRepository) ListImageManifests(ctx context.Context) ([]string, 
 		// Get the image for this tag
 		img, err := r.GetTag(ctx, tag)
 		if err != nil {
-			r.logger.Warn("Failed to get image for manifest listing", map[string]interface{}{
+			r.logger.WithFields(map[string]interface{}{
 				"repository": r.GetName(),
 				"tag":        tag,
 				"error":      err.Error(),
-			})
+			}).Warn("Failed to get image for manifest listing")
 			continue
 		}
 
 		// Get the manifest digest
 		digest, err := img.Digest()
 		if err != nil {
-			r.logger.Warn("Failed to get digest for manifest listing", map[string]interface{}{
+			r.logger.WithFields(map[string]interface{}{
 				"repository": r.GetName(),
 				"tag":        tag,
 				"error":      err.Error(),
-			})
+			}).Warn("Failed to get digest for manifest listing")
 			continue
 		}
 
@@ -292,11 +288,11 @@ func (r *EnhancedRepository) ListImageManifests(ctx context.Context) ([]string, 
 		}
 	}
 
-	r.logger.Debug("Successfully listed image manifests", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository":     r.GetName(),
 		"tag_count":      len(tags),
 		"manifest_count": len(manifests),
-	})
+	}).Debug("Successfully listed image manifests")
 
 	return manifests, nil
 }

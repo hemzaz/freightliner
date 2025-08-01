@@ -16,7 +16,7 @@ import (
 type BaseClient struct {
 	registryName string
 	util         *RegistryUtil
-	logger       *log.Logger
+	logger       log.Logger
 
 	// Cache for repositories to avoid recreating them
 	repositoriesMutex sync.RWMutex
@@ -26,13 +26,13 @@ type BaseClient struct {
 // BaseClientOptions provides options for creating a base client
 type BaseClientOptions struct {
 	RegistryName string
-	Logger       *log.Logger
+	Logger       log.Logger
 }
 
 // NewBaseClient creates a new base client for registry operations
 func NewBaseClient(opts BaseClientOptions) *BaseClient {
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	return &BaseClient{
@@ -67,10 +67,10 @@ func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (interf
 		return repo, nil
 	}
 
-	c.logger.Debug("Creating repository reference", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"registry":   c.registryName,
 		"repository": repoName,
-	})
+	}).Debug("Creating repository reference")
 
 	// Create a proper repository reference
 	repoRef, err := c.util.CreateRepositoryReference(c.registryName, repoName)
@@ -92,11 +92,11 @@ func (c *BaseClient) GetRepository(ctx context.Context, repoName string) (interf
 		c.repositories[repoName] = repo
 	}()
 
-	c.logger.Debug("Successfully created repository", map[string]interface{}{
+	c.logger.WithFields(map[string]interface{}{
 		"registry":   c.registryName,
 		"repository": repoName,
 		"uri":        repoRef.String(),
-	})
+	}).Debug("Successfully created repository")
 
 	return repo, nil
 }

@@ -22,7 +22,7 @@ type GCPKMS struct {
 	keyRing  string
 	project  string
 	location string
-	logger   *log.Logger
+	logger   log.Logger
 }
 
 // GCPOpts contains options for the GCP KMS provider
@@ -32,7 +32,7 @@ type GCPOpts struct {
 	KeyRing         string
 	Key             string
 	CredentialsFile string
-	Logger          *log.Logger
+	Logger          log.Logger
 }
 
 // NewGCPKMS creates a new Google Cloud KMS provider
@@ -66,7 +66,7 @@ func NewGCPKMS(ctx context.Context, opts GCPOpts) (*GCPKMS, error) {
 	}
 
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	// Construction of key name for GCP KMS follows the format:
@@ -101,9 +101,9 @@ func (g *GCPKMS) Encrypt(ctx context.Context, plaintext []byte) ([]byte, error) 
 	// Call GCP KMS to encrypt the data
 	resp, err := g.client.Encrypt(ctx, req)
 	if err != nil {
-		g.logger.Error("Failed to encrypt data with GCP KMS", err, map[string]interface{}{
+		g.logger.WithFields(map[string]interface{}{
 			"key_name": g.keyName,
-		})
+		}).Error("Failed to encrypt data with GCP KMS", err)
 		return nil, errors.Wrap(err, "failed to encrypt data with GCP KMS")
 	}
 
@@ -125,9 +125,9 @@ func (g *GCPKMS) Decrypt(ctx context.Context, ciphertext []byte) ([]byte, error)
 	// Call GCP KMS to decrypt the data
 	resp, err := g.client.Decrypt(ctx, req)
 	if err != nil {
-		g.logger.Error("Failed to decrypt data with GCP KMS", err, map[string]interface{}{
+		g.logger.WithFields(map[string]interface{}{
 			"key_name": g.keyName,
-		})
+		}).Error("Failed to decrypt data with GCP KMS", err)
 		return nil, errors.Wrap(err, "failed to decrypt data with GCP KMS")
 	}
 

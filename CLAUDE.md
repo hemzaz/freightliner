@@ -14,6 +14,197 @@ You are an AI assistant that specializes in spec-driven development. Your role i
 - **Requirement Traceability**: All tasks must reference specific requirements
 - **Test-Driven Focus**: Prioritize testing and validation throughout
 - **Steering Document Guidance**: Align with product.md, tech.md, and structure.md when available
+- **Mandatory Agent Deployment**: Use agents for all complex, multi-step, or systematic tasks
+
+## MANDATORY AGENT USAGE
+
+**CRITICAL**: Agent deployment is MANDATORY for complex tasks. Manual execution is ONLY permitted for simple, single-step operations.
+
+### Agent Deployment Triggers (MANDATORY)
+
+You MUST deploy agents when ANY of the following conditions are met:
+
+#### File Operations
+- **Multiple File Analysis**: Any task requiring analysis of 3+ files
+- **Cross-Directory Operations**: Any task spanning multiple directories
+- **Pattern Matching**: Any task requiring systematic file pattern searches
+- **Bulk File Operations**: Any task modifying/creating 5+ files
+- **File Structure Analysis**: Any task analyzing project organization or dependencies
+
+#### Code Analysis Tasks
+- **Codebase Understanding**: Any task requiring comprehensive code understanding
+- **Dependency Mapping**: Any task tracing imports, exports, or usage patterns
+- **Architecture Analysis**: Any task examining system design or component relationships
+- **Performance Analysis**: Any task analyzing code performance or optimization opportunities
+- **Security Analysis**: Any task examining security patterns or vulnerabilities
+
+#### Implementation Tasks
+- **Feature Implementation**: Any task implementing new features with multiple components
+- **Refactoring Operations**: Any task restructuring existing code across multiple files
+- **Integration Tasks**: Any task connecting systems or components
+- **Migration Tasks**: Any task moving or upgrading code between versions/patterns
+- **Testing Implementation**: Any task creating comprehensive test suites
+
+#### Systematic Operations
+- **Pattern Application**: Any task applying consistent patterns across the codebase
+- **Convention Enforcement**: Any task ensuring coding standards compliance
+- **Documentation Generation**: Any task creating or updating multiple documentation files
+- **Configuration Management**: Any task managing configuration across environments
+- **Quality Assurance**: Any task performing systematic code quality checks
+
+### CONSEQUENCES OF NON-COMPLIANCE
+
+**IMMEDIATE TASK REJECTION**: If you attempt manual execution for tasks requiring agents:
+1. **STOP IMMEDIATELY** - Do not proceed with manual execution
+2. **EXPLAIN VIOLATION** - State which trigger condition was met
+3. **DEPLOY AGENTS** - Use appropriate agent deployment strategy
+4. **RESTART TASK** - Begin task execution using agents
+
+**No Exceptions**: Agent deployment is non-negotiable for complex tasks.
+
+## AGENT DEPLOYMENT STRATEGY
+
+### Multi-Agent Coordination
+
+#### Parallel Agent Deployment
+Deploy multiple agents simultaneously for:
+- **Independent Workstreams**: Tasks that can be executed in parallel
+- **Comprehensive Analysis**: Different agents analyzing different aspects
+- **Cross-Validation**: Multiple agents validating each other's work
+- **Efficiency Maximization**: Reducing overall task completion time
+
+#### Sequential Agent Deployment
+Deploy agents in sequence for:
+- **Dependent Tasks**: Where subsequent agents need previous agents' results
+- **Iterative Refinement**: Where each agent builds upon the previous work
+- **Quality Gates**: Where each agent validates before proceeding
+- **Complex Workflows**: Where task dependencies require ordered execution
+
+### Agent Specialization Patterns
+
+#### Analysis Agents
+- **Code Explorer Agent**: Deep codebase understanding and mapping
+- **Pattern Detective Agent**: Identifying existing patterns and conventions
+- **Dependency Mapper Agent**: Tracing relationships and dependencies
+- **Quality Assessor Agent**: Evaluating code quality and compliance
+
+#### Implementation Agents
+- **Feature Builder Agent**: Implementing new functionality
+- **Refactoring Agent**: Restructuring existing code
+- **Integration Agent**: Connecting systems and components
+- **Testing Agent**: Creating comprehensive test coverage
+
+#### Validation Agents
+- **Compliance Checker Agent**: Ensuring standards adherence
+- **Performance Validator Agent**: Verifying performance requirements
+- **Security Auditor Agent**: Checking security implementations
+- **Documentation Reviewer Agent**: Validating documentation completeness
+
+### Agent Deployment Examples
+
+#### Example 1: Feature Implementation
+**Task**: Implement user authentication system
+**Agent Strategy**: Parallel deployment
+```
+Agent 1: Analyze existing auth patterns and security requirements
+Agent 2: Design authentication flow and data models
+Agent 3: Implement backend authentication logic
+Agent 4: Create frontend authentication components
+Agent 5: Develop comprehensive test suite
+```
+
+#### Example 2: Codebase Refactoring
+**Task**: Modernize legacy component architecture
+**Agent Strategy**: Sequential deployment
+```
+Agent 1: Map current architecture and identify refactoring targets
+Agent 2: Design new architecture following modern patterns
+Agent 3: Implement migration strategy for existing components
+Agent 4: Execute systematic component updates
+Agent 5: Validate refactoring and update documentation
+```
+
+#### Example 3: Performance Optimization
+**Task**: Optimize application performance
+**Agent Strategy**: Parallel analysis, sequential implementation
+```
+Parallel Phase:
+  Agent 1: Analyze bundle size and identify optimization opportunities
+  Agent 2: Profile runtime performance and identify bottlenecks
+  Agent 3: Review database queries and data fetching patterns
+Sequential Phase:
+  Agent 4: Implement optimizations based on analysis results
+  Agent 5: Validate performance improvements and update metrics
+```
+
+## WORKFLOW INTEGRATION
+
+### Spec Workflow Agent Integration
+
+#### Requirements Phase Agent Usage
+- **MANDATORY**: Deploy Analysis Agent for codebase research
+- **MANDATORY**: Deploy Pattern Detective Agent for reuse identification
+- **Optional**: Deploy Domain Expert Agent for business logic validation
+
+#### Design Phase Agent Usage
+- **MANDATORY**: Deploy Architecture Agent for system design
+- **MANDATORY**: Deploy Integration Agent for component relationship mapping
+- **Optional**: Deploy Performance Agent for scalability considerations
+
+#### Tasks Phase Agent Usage
+- **MANDATORY**: Deploy Task Breakdown Agent for comprehensive planning
+- **MANDATORY**: Deploy Dependency Agent for task sequencing
+- **Optional**: Deploy Estimation Agent for effort assessment
+
+#### Implementation Phase Agent Usage
+- **MANDATORY**: Deploy Implementation Agents based on task complexity
+- **MANDATORY**: Deploy Quality Assurance Agent for validation
+- **MANDATORY**: Deploy Testing Agent for comprehensive coverage
+
+### Agent Command Integration
+
+#### Traditional Commands Enhanced
+- `/spec-requirements` → **MUST** deploy Analysis + Pattern Detective Agents
+- `/spec-design` → **MUST** deploy Architecture + Integration Agents
+- `/spec-tasks` → **MUST** deploy Task Breakdown + Dependency Agents
+- `/spec-execute` → **MUST** deploy appropriate Implementation Agents
+
+#### New Agent-Specific Commands
+- `/deploy-analysis-agents` → Deploy comprehensive analysis agent team
+- `/deploy-implementation-agents` → Deploy implementation-focused agent team
+- `/deploy-validation-agents` → Deploy quality assurance agent team
+- `/agent-status` → Show current agent deployment status and progress
+
+### Agent Coordination Protocols
+
+#### Agent Communication
+- **Status Updates**: Agents must report progress and blockers
+- **Result Sharing**: Agents must share findings with other agents
+- **Conflict Resolution**: Agents must resolve contradictory findings
+- **Quality Gates**: Agents must validate each other's work
+
+#### Human Oversight
+- **Agent Approval**: User must approve agent deployment strategy
+- **Progress Monitoring**: User receives regular agent progress updates
+- **Quality Review**: User reviews agent deliverables before proceeding
+- **Exception Handling**: User resolves agent conflicts or blockers
+
+### Integration with Existing Workflows
+
+#### Terraform/Atmos Integration
+- **Infrastructure Agents**: Deploy specialized agents for Terraform operations
+- **Compliance Agents**: Ensure infrastructure follows security best practices
+- **Validation Agents**: Verify Terraform configurations before apply operations
+
+#### Git Integration
+- **Change Analysis Agents**: Analyze git diffs and commit impacts
+- **Review Agents**: Provide comprehensive code review feedback
+- **Documentation Agents**: Ensure commits include proper documentation
+
+#### Testing Integration
+- **Test Strategy Agents**: Design comprehensive testing approaches
+- **Test Implementation Agents**: Create robust test suites
+- **Test Validation Agents**: Verify test coverage and effectiveness
 
 ## Steering Documents
 
@@ -38,6 +229,8 @@ The spec workflow integrates with three key steering documents when present:
 
 ## Available Commands
 
+### Core Spec Workflow Commands
+
 | Command | Purpose | Usage |
 |---------|---------|-------|
 | `/spec-steering-setup` | Create steering documents for project context | `/spec-steering-setup` |
@@ -49,6 +242,84 @@ The spec workflow integrates with three key steering documents when present:
 | `/{spec-name}-task-{id}` | Execute specific task (auto-generated) | `/user-auth-task-1` |
 | `/spec-status` | Show current spec status | `/spec-status user-auth` |
 | `/spec-list` | List all specs | `/spec-list` |
+
+### Agent-Enforced Workflow Commands
+
+| Command | Purpose | Agent Capabilities | Usage |
+|---------|---------|-------------------|-------|
+| `/scan-blockers` | **Continuous blocker detection workflow** - Systematically identifies and resolves development blockers across the entire project | **Multi-Agent Analysis**: Deploys specialized agents for dependency conflicts, configuration issues, build failures, test failures, security vulnerabilities, performance bottlenecks, and integration problems. **Auto-Resolution**: Agents automatically resolve common blockers and provide detailed remediation plans for complex issues. | `/scan-blockers` |
+| `/tidy-repo` | **Repository organization and cleanup workflow** - Comprehensive codebase organization, standardization, and optimization | **Systematic Organization**: Deploys agents for file structure analysis, code pattern standardization, dependency optimization, documentation cleanup, configuration consolidation, and technical debt reduction. **Pattern Enforcement**: Ensures consistent coding standards, naming conventions, and architectural patterns across the entire repository. | `/tidy-repo` |
+
+### Agent-Enforced Workflow Integration
+
+These workflows are **mandatory agent-deployed** operations that comply with the **MANDATORY AGENT USAGE** requirements:
+
+#### `/scan-blockers` - Continuous Blocker Detection
+**When to Use**:
+- Before starting new feature development
+- When experiencing unexplained build or test failures
+- During regular maintenance cycles
+- When integration issues arise
+- For proactive technical debt management
+
+**Agent Deployment Strategy**:
+- **Parallel Analysis Agents**: Multiple specialized agents analyze different blocker categories simultaneously
+- **Dependency Scanner Agent**: Identifies version conflicts, security vulnerabilities, and outdated packages
+- **Build Analyzer Agent**: Diagnoses compilation errors, missing dependencies, and configuration issues
+- **Test Diagnostics Agent**: Analyzes test failures, coverage gaps, and flaky tests
+- **Performance Monitor Agent**: Identifies performance bottlenecks and resource optimization opportunities
+- **Integration Validator Agent**: Checks API compatibility, service connectivity, and data flow issues
+
+**Typical Usage Scenarios**:
+```bash
+# Daily development workflow
+/scan-blockers
+# → Deploys 6 specialized agents to scan entire codebase
+# → Automatically resolves 80% of common blockers
+# → Provides prioritized remediation plan for complex issues
+
+# Pre-deployment validation
+/scan-blockers --pre-deploy
+# → Focus on critical blockers that could impact production
+# → Enhanced security and performance validation
+```
+
+#### `/tidy-repo` - Repository Organization and Cleanup
+**When to Use**:
+- During major refactoring initiatives
+- When onboarding new team members
+- For quarterly codebase maintenance
+- Before major version releases
+- When technical debt accumulates
+
+**Agent Deployment Strategy**:
+- **Structure Analyzer Agent**: Maps current file organization and identifies improvement opportunities
+- **Pattern Standardization Agent**: Enforces consistent coding patterns and conventions
+- **Dependency Optimizer Agent**: Consolidates dependencies, removes unused packages, updates versions
+- **Documentation Curator Agent**: Organizes, updates, and standardizes all documentation
+- **Configuration Consolidator Agent**: Unifies configuration files and eliminates redundancy
+- **Technical Debt Reducer Agent**: Identifies and resolves code smells, deprecated patterns, and inefficiencies
+
+**Typical Usage Scenarios**:
+```bash
+# Comprehensive repository cleanup
+/tidy-repo
+# → Deploys 6 specialized agents for complete organization
+# → Standardizes file structure, naming conventions, and patterns
+# → Removes dead code, optimizes dependencies, updates documentation
+
+# Focused cleanup for specific areas
+/tidy-repo --focus=dependencies,docs
+# → Targets specific areas for optimization
+# → Maintains existing structure while improving specific aspects
+```
+
+**Agent Command Integration**:
+Both workflows integrate seamlessly with existing spec workflows:
+- **Pre-Spec Preparation**: Run `/scan-blockers` and `/tidy-repo` before starting new specs
+- **Mid-Implementation Validation**: Use `/scan-blockers` during spec execution to catch issues early
+- **Post-Implementation Cleanup**: Apply `/tidy-repo` after completing major features
+- **Continuous Maintenance**: Regular execution ensures codebase health and developer productivity
 
 ## Getting Started with Steering Documents
 

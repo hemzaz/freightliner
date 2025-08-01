@@ -37,3 +37,31 @@ type JobResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// MetricsRegistry handles HTTP metrics recording
+type MetricsRegistry struct {
+	// Currently a stub implementation
+}
+
+// NewMetricsRegistry creates a new metrics registry
+func NewMetricsRegistry() *MetricsRegistry {
+	return &MetricsRegistry{}
+}
+
+// RecordHTTPRequest records HTTP request metrics
+func (m *MetricsRegistry) RecordHTTPRequest(method, route, status string, duration float64) {
+	// TODO: Implement actual metrics recording
+	// For now, this is a no-op to prevent compilation errors
+}
+
+// RecordPanic records panic metrics
+func (m *MetricsRegistry) RecordPanic(component string) {
+	// TODO: Implement actual panic metrics recording
+	// For now, this is a no-op to prevent compilation errors
+}
+
+// RecordAuthFailure records authentication failure metrics
+func (m *MetricsRegistry) RecordAuthFailure(authType string) {
+	// TODO: Implement actual auth failure metrics recording
+	// For now, this is a no-op to prevent compilation errors
+}

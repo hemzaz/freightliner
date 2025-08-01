@@ -96,14 +96,14 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		Resumed:      true,
 	}
 
-	t.logger.Info("Resuming tree replication", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"id":              savedCheckpoint.ID,
 		"source_prefix":   savedCheckpoint.SourcePrefix,
 		"dest_prefix":     savedCheckpoint.DestPrefix,
 		"progress":        savedCheckpoint.Progress,
 		"total_repos":     len(savedCheckpoint.Repositories),
 		"completed_repos": len(savedCheckpoint.CompletedRepositories),
-	})
+	}).Info("Resuming tree replication")
 
 	// Get repositories that still need to be processed
 	resumeOpts := checkpoint.ResumableOptions{
@@ -117,9 +117,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		return nil, errors.Wrap(err, "failed to get remaining repositories")
 	}
 
-	t.logger.Info("Found repositories to resume", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"count": len(remainingRepos),
-	})
+	}).Info("Found repositories to resume")
 
 	// Update checkpoint for resumed replication
 	savedCheckpoint.Status = checkpoint.StatusInProgress
@@ -127,10 +127,10 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	// Save the updated checkpoint
 	if err := t.checkpointStore.SaveCheckpoint(savedCheckpoint); err != nil {
-		t.logger.Warn("Failed to save updated checkpoint", map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"error": err.Error(),
 			"id":    savedCheckpoint.ID,
-		})
+		}).Warn("Failed to save updated checkpoint")
 	}
 
 	// Set up checkpoint timer for periodic updates (every 30 seconds)
@@ -145,10 +145,10 @@ func (t *TreeReplicator) ResumeTreeReplication(
 				// Update and save the checkpoint
 				savedCheckpoint.LastUpdated = time.Now()
 				if err := t.checkpointStore.SaveCheckpoint(savedCheckpoint); err != nil {
-					t.logger.Warn("Failed to save periodic checkpoint", map[string]interface{}{
+					t.logger.WithFields(map[string]interface{}{
 						"error": err.Error(),
 						"id":    savedCheckpoint.ID,
-					})
+					}).Warn("Failed to save periodic checkpoint")
 				}
 			case <-checkpointDone:
 				checkpointTicker.Stop()
@@ -185,9 +185,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		// Find the repository status in the checkpoint
 		repoStatus, exists := savedCheckpoint.Repositories[repoName]
 		if !exists {
-			t.logger.Warn("Repository not found in checkpoint", map[string]interface{}{
+			t.logger.WithFields(map[string]interface{}{
 				"repository": repoName,
-			})
+			}).Warn("Repository not found in checkpoint")
 			wg.Done()
 			continue
 		}
@@ -288,16 +288,16 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	// Save final checkpoint
 	if err := t.checkpointStore.SaveCheckpoint(savedCheckpoint); err != nil {
-		t.logger.Warn("Failed to save final checkpoint", map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"error": err.Error(),
 			"id":    savedCheckpoint.ID,
-		})
+		}).Warn("Failed to save final checkpoint")
 	} else {
-		t.logger.Info("Saved final checkpoint", map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"id":       savedCheckpoint.ID,
 			"status":   savedCheckpoint.Status,
 			"progress": savedCheckpoint.Progress,
-		})
+		}).Info("Saved final checkpoint")
 	}
 
 	// Log completion
@@ -306,7 +306,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		status = "interrupted"
 	}
 
-	t.logger.Info("Tree replication resume "+status, map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"repositories":      result.Repositories,
 		"images_replicated": result.ImagesReplicated,
 		"images_skipped":    result.ImagesSkipped,
@@ -314,7 +314,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		"duration_ms":       result.Duration.Milliseconds(),
 		"progress":          result.Progress,
 		"interrupted":       result.Interrupted,
-	})
+	}).Info("Tree replication resume " + status)
 
 	var finalErr error
 	if len(errs) > 0 {

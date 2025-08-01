@@ -1,0 +1,20 @@
+apiVersion: v2
+name: freightliner
+description: A Helm chart for Freightliner Container Registry Replication
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - container-registry
+  - replication
+  - docker
+  - kubernetes
+home: https://github.com/company/freightliner
+sources:
+  - https://github.com/company/freightliner
+maintainers:
+  - name: Platform Team
+    email: platform@company.com
+annotations:
+  category: DevOps
+dependencies: []

@@ -41,9 +41,9 @@ func newCheckpointListCmd() *cobra.Command {
 			logger, ctx, cancel := setupCommand(cmd.Context())
 			defer cancel()
 
-			logger.Info("Listing checkpoints", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"dir": cfg.Checkpoint.Directory,
-			})
+			}).Info("Listing checkpoints")
 
 			// Create checkpoint service
 			checkpointSvc := service.NewCheckpointService(cfg, logger)
@@ -51,7 +51,7 @@ func newCheckpointListCmd() *cobra.Command {
 			// List checkpoints
 			checkpoints, err := checkpointSvc.ListCheckpoints(ctx)
 			if err != nil {
-				logger.Error("Failed to list checkpoints", err, nil)
+				logger.Error("Failed to list checkpoints", err)
 				fmt.Printf("Error listing checkpoints: %s\n", err)
 				os.Exit(1)
 			}
@@ -93,10 +93,10 @@ func newCheckpointShowCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			logger.Info("Showing checkpoint", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"id":  cfg.Checkpoint.ID,
 				"dir": cfg.Checkpoint.Directory,
-			})
+			}).Info("Showing checkpoint")
 
 			// Create checkpoint service
 			checkpointSvc := service.NewCheckpointService(cfg, logger)
@@ -104,7 +104,7 @@ func newCheckpointShowCmd() *cobra.Command {
 			// Get checkpoint details
 			checkpoint, err := checkpointSvc.GetCheckpoint(ctx, cfg.Checkpoint.ID)
 			if err != nil {
-				logger.Error("Failed to get checkpoint", err, nil)
+				logger.Error("Failed to get checkpoint", err)
 				fmt.Printf("Error getting checkpoint: %s\n", err)
 				os.Exit(1)
 			}
@@ -157,10 +157,10 @@ func newCheckpointDeleteCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			logger.Info("Deleting checkpoint", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"id":  cfg.Checkpoint.ID,
 				"dir": cfg.Checkpoint.Directory,
-			})
+			}).Info("Deleting checkpoint")
 
 			// Create checkpoint service
 			checkpointSvc := service.NewCheckpointService(cfg, logger)
@@ -168,7 +168,7 @@ func newCheckpointDeleteCmd() *cobra.Command {
 			// Delete checkpoint
 			err := checkpointSvc.DeleteCheckpoint(ctx, cfg.Checkpoint.ID)
 			if err != nil {
-				logger.Error("Failed to delete checkpoint", err, nil)
+				logger.Error("Failed to delete checkpoint", err)
 				fmt.Printf("Error deleting checkpoint: %s\n", err)
 				os.Exit(1)
 			}
@@ -200,11 +200,11 @@ func newCheckpointExportCmd() *cobra.Command {
 				outputPath = fmt.Sprintf("checkpoint-%s.json", cfg.Checkpoint.ID)
 			}
 
-			logger.Info("Exporting checkpoint", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"id":     cfg.Checkpoint.ID,
 				"dir":    cfg.Checkpoint.Directory,
 				"output": outputPath,
-			})
+			}).Info("Exporting checkpoint")
 
 			// Create checkpoint service
 			checkpointSvc := service.NewCheckpointService(cfg, logger)
@@ -212,7 +212,7 @@ func newCheckpointExportCmd() *cobra.Command {
 			// Export checkpoint
 			err := checkpointSvc.ExportCheckpoint(ctx, cfg.Checkpoint.ID, outputPath)
 			if err != nil {
-				logger.Error("Failed to export checkpoint", err, nil)
+				logger.Error("Failed to export checkpoint", err)
 				fmt.Printf("Error exporting checkpoint: %s\n", err)
 				os.Exit(1)
 			}
@@ -243,10 +243,10 @@ func newCheckpointImportCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			logger.Info("Importing checkpoint", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"dir":   cfg.Checkpoint.Directory,
 				"input": inputPath,
-			})
+			}).Info("Importing checkpoint")
 
 			// Create checkpoint service
 			checkpointSvc := service.NewCheckpointService(cfg, logger)
@@ -254,7 +254,7 @@ func newCheckpointImportCmd() *cobra.Command {
 			// Import checkpoint
 			checkpoint, err := checkpointSvc.ImportCheckpoint(ctx, inputPath)
 			if err != nil {
-				logger.Error("Failed to import checkpoint", err, nil)
+				logger.Error("Failed to import checkpoint", err)
 				fmt.Printf("Error importing checkpoint: %s\n", err)
 				os.Exit(1)
 			}

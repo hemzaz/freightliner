@@ -1,0 +1,376 @@
+# Test Reliability Enhancement Workflow with Subagents
+# Freightliner Container Registry Replication Project
+
+workflow:
+  name: "test-reliability-enhancement"
+  description: "Comprehensive test suite reliability and coverage improvement"
+  version: "1.0"
+  
+  trigger:
+    - event: "test-failure"
+      threshold: "flaky_test_detected"
+    - event: "coverage-drop"
+      threshold: "below_90_percent"
+    - event: "ci-instability"
+      pattern: "multiple_test_failures"
+    - event: "scheduled"
+      cron: "0 8 * * 4"  # Weekly test reliability review
+
+  primary_agent: "test-automator"
+  estimated_duration: "4-8 hours"
+  
+  subagents:
+    unit-test-engineer:
+      specialist: "Fast, reliable unit tests with comprehensive mocking"
+      expertise: ["table_driven_tests", "mocking", "property_based_testing"]
+      focus_areas:
+        - "All pkg/ modules with <10ms execution time"
+        - "Complex business logic isolation"
+        - "Error handling and edge cases"
+        - "Concurrent operations safety"
+      reliability_targets:
+        - "zero_flaky_tests"
+        - "deterministic_outcomes"
+        - "isolated_execution"
+        - "fast_feedback"
+      timeout: "60m"
+      
+    integration-test-engineer:
+      specialist: "End-to-end testing with realistic scenarios"
+      expertise: ["system_integration", "docker_testing", "cloud_mocking"]
+      focus_areas:
+        - "Multi-cloud registry operations (AWS ECR ↔ GCP GCR)"
+        - "Large-scale replication scenarios"
+        - "Authentication flow validation" 
+        - "Error recovery and resilience"
+      reliability_targets:
+        - "realistic_test_scenarios"
+        - "isolated_test_environments"
+        - "comprehensive_error_coverage"
+        - "performance_validation"
+      timeout: "90m"
+      
+    ci-pipeline-engineer:
+      specialist: "CI/CD pipeline optimization and test automation"
+      expertise: ["github_actions", "test_parallelization", "flaky_test_detection"]
+      focus_areas:
+        - "GitHub Actions workflow optimization"
+        - "Test parallelization and timing"
+        - "Flaky test identification and elimination"
+        - "Test environment consistency"
+      reliability_targets:
+        - "stable_ci_pipeline"
+        - "parallel_test_execution"
+        - "consistent_environments"
+        - "fast_feedback_loops"
+      timeout: "45m"
+
+  current_test_issues:
+    failing_tests:
+      pkg_replication: 5  # worker pool, reconciler issues
+      pkg_client_gcr: 6   # GCP integration issues  
+      pkg_client_ecr: 3   # AWS integration issues
+      pkg_tree_checkpoint: 1  # resume logic broken
+      
+    flaky_patterns:
+      - "race_conditions_in_worker_pools"
+      - "timing_sensitive_operations"
+      - "external_service_dependencies"
+      - "shared_test_resources"
+      
+    coverage_gaps:
+      - "error_handling_paths"
+      - "concurrent_operation_edge_cases"
+      - "large_payload_scenarios"
+      - "network_failure_recovery"
+
+  workflow_steps:
+    - step: "test-failure-analysis"
+      subagent: "unit-test-engineer"
+      input:
+        - type: "failing_test_results"
+          source: "ci_pipeline_failures"
+        - type: "test_execution_logs"
+          source: "github_actions_logs"
+      output: "test_failure_root_causes"
+      parallel: true
+      
+      micro_specialists:
+        - name: "mock-specialist"
+          task: "Analyze and improve mocking strategies"
+          focus: "AWS/GCP service mocking, deterministic responses"
+        - name: "table-test-designer"
+          task: "Redesign tests with table-driven patterns"
+          focus: "Comprehensive test case coverage, edge cases"
+      
+    - step: "integration-test-audit"
+      subagent: "integration-test-engineer"
+      input:
+        - type: "integration_test_suite"
+          paths: ["pkg/client/**/", "cmd/**/*_test.go"]
+        - type: "external_dependencies"
+          source: "aws_gcp_service_calls"
+      output: "integration_test_improvement_plan"
+      parallel: true
+      
+      micro_specialists:
+        - name: "system-test-coordinator"
+          task: "Design comprehensive system test scenarios"
+          focus: "Multi-cloud workflows, realistic data volumes"
+        - name: "external-service-mocker"
+          task: "Create robust mocks for external services"
+          focus: "AWS ECR/GCP GCR API responses, error conditions"
+          
+    - step: "ci-pipeline-optimization"
+      subagent: "ci-pipeline-engineer"
+      input:
+        - type: "current_workflows"
+          paths: [".github/workflows/**"]
+        - type: "test_execution_metrics"
+          source: "pipeline_performance_data"
+      output: "ci_optimization_recommendations"
+      parallel: true
+      
+      micro_specialists:
+        - name: "pipeline-optimizer"
+          task: "Optimize CI pipeline performance and reliability"
+          focus: "Parallel execution, resource optimization, caching"
+        - name: "flaky-test-eliminator"
+          task: "Identify and fix flaky test patterns"
+          focus: "Race conditions, timing issues, environment dependencies"
+
+    - step: "test-implementation"
+      subagent: "unit-test-engineer"
+      input:
+        - type: "improvement_plans"
+          sources: ["test_failure_root_causes", "integration_test_improvement_plan", "ci_optimization_recommendations"]
+      output: "enhanced_test_implementations"
+      depends_on: ["test-failure-analysis", "integration-test-audit", "ci-pipeline-optimization"]
+      parallel: false
+      
+    - step: "mock-framework-enhancement"
+      subagent: "integration-test-engineer"  
+      input:
+        - type: "mocking_requirements"
+          source: "test-implementation"
+        - type: "service_api_specifications"
+          source: "aws_ecr_gcp_gcr_apis"
+      output: "enhanced_mock_framework"
+      depends_on: ["test-implementation"]
+      parallel: false
+      
+    - step: "ci-pipeline-deployment"
+      subagent: "ci-pipeline-engineer"
+      input:
+        - type: "optimized_workflows"
+          source: "ci-optimization-recommendations"
+        - type: "enhanced_tests"
+          source: "enhanced_test_implementations"
+      output: "deployed_ci_improvements"
+      depends_on: ["test-implementation", "mock-framework-enhancement"]
+      parallel: false
+      
+    - step: "reliability-validation"
+      subagent: "ci-pipeline-engineer"
+      input:
+        - type: "complete_test_suite"
+          source: "deployed_ci_improvements"
+        - type: "reliability_metrics"
+          source: "test_execution_history"
+      output: "reliability_validation_report"
+      depends_on: ["ci-pipeline-deployment"]
+      parallel: false
+
+  test_reliability_targets:
+    unit_tests:
+      success_rate: "100%"
+      execution_time: "<100ms total"
+      flakiness: "0% flaky tests"
+      coverage: ">95% for critical paths"
+      
+    integration_tests:
+      success_rate: ">98%"
+      execution_time: "<5min total"
+      flakiness: "<1% flaky tests"
+      scenario_coverage: "100% critical workflows"
+      
+    ci_pipeline:
+      overall_success_rate: ">95%"
+      average_duration: "<15min"
+      flaky_failure_rate: "<0.5%"
+      parallel_efficiency: ">80%"
+
+  quality_gates:
+    - gate: "unit_test_reliability"
+      description: "Unit tests are fast, reliable, and comprehensive"
+      validator: "unit-test-engineer"
+      criteria:
+        - "flaky_unit_tests == 0"
+        - "unit_test_duration <= 100"  # milliseconds
+        - "unit_test_coverage >= 95"
+        - "mock_coverage >= 90"
+      blocking: true
+      
+    - gate: "integration_test_coverage"
+      description: "Integration tests cover all critical workflows"
+      validator: "integration-test-engineer"
+      criteria:
+        - "critical_workflow_coverage == 100"
+        - "external_service_mocked == true"
+        - "error_scenario_coverage >= 80"
+        - "large_payload_tested == true"
+      blocking: true
+      
+    - gate: "ci_pipeline_stability"
+      description: "CI pipeline is stable and efficient"
+      validator: "ci-pipeline-engineer"
+      criteria:
+        - "pipeline_success_rate >= 95"
+        - "average_duration <= 900"  # 15 minutes
+        - "flaky_test_elimination >= 90"
+        - "parallel_execution_optimized == true"
+      blocking: true
+      
+    - gate: "test_maintainability"
+      description: "Tests are maintainable and well-documented"
+      validator: "test-automator"
+      criteria:
+        - "test_documentation_coverage >= 80"
+        - "test_code_duplication <= 10"
+        - "helper_function_reuse >= 70"
+        - "test_readability_score >= 8"
+      blocking: false
+
+  test_enhancement_strategies:
+    unit_tests:
+      - strategy: "race_condition_elimination"
+        implementation: "Replace time-based waits with synchronization"
+        expected_impact: "100% elimination of timing-related flakiness"
+        
+      - strategy: "comprehensive_mocking"
+        implementation: "Mock all external dependencies"
+        expected_impact: "Zero external service dependencies in unit tests"
+        
+      - strategy: "table_driven_redesign"
+        implementation: "Convert linear tests to table-driven"
+        expected_impact: "Improved test coverage and maintainability"
+        
+    integration_tests:
+      - strategy: "containerized_test_environments"
+        implementation: "Docker-based test registries"
+        expected_impact: "Consistent, isolated test environments"
+        
+      - strategy: "realistic_data_scenarios"
+        implementation: "Test with production-like data volumes"
+        expected_impact: "Better coverage of real-world scenarios"
+        
+    ci_pipeline:
+      - strategy: "intelligent_parallelization"
+        implementation: "Dynamic test splitting based on execution time"
+        expected_impact: "50% reduction in pipeline duration"
+        
+      - strategy: "flaky_test_quarantine"
+        implementation: "Automatic detection and isolation of flaky tests"
+        expected_impact: "Stable pipeline with unreliable tests isolated"
+
+  mock_framework_enhancements:
+    aws_ecr_mocks:
+      - service: "GetAuthorizationToken"
+        scenarios: ["success", "expired_token", "insufficient_permissions"]
+        
+      - service: "DescribeRepositories"
+        scenarios: ["empty_registry", "large_repository_list", "pagination"]
+        
+      - service: "GetDownloadUrlForLayer"
+        scenarios: ["valid_layer", "missing_layer", "corrupted_layer"]
+        
+    gcp_gcr_mocks:
+      - service: "ListRepositories"
+        scenarios: ["success", "authentication_failure", "rate_limiting"]
+        
+      - service: "GetManifest"
+        scenarios: ["v2_manifest", "v1_manifest", "missing_manifest"]
+        
+      - service: "UploadBlob"
+        scenarios: ["successful_upload", "quota_exceeded", "network_failure"]
+
+  test_patterns:
+    deterministic_testing:
+      - pattern: "fixed_time_sources"
+        implementation: "Injectable clock for time-dependent tests"
+        
+      - pattern: "controlled_randomness"
+        implementation: "Seeded random generators for predictable outcomes"
+        
+    isolation:
+      - pattern: "test_containers"
+        implementation: "Isolated Docker containers for each test suite"
+        
+      - pattern: "cleanup_automation"
+        implementation: "Automatic resource cleanup after each test"
+
+  output_artifacts:
+    - name: "test_reliability_report"
+      format: "markdown"
+      includes: ["flakiness_analysis", "coverage_improvements", "ci_optimization_results"]
+      
+    - name: "enhanced_test_suite"
+      format: "go_test"
+      includes: ["improved_unit_tests", "robust_integration_tests", "mock_implementations"]
+      
+    - name: "ci_pipeline_configuration"
+      format: "yaml"
+      includes: ["optimized_workflows", "parallel_strategies", "reliability_monitoring"]
+
+  handoff:
+    success:
+      next_workflow: "deployment-readiness-validation"
+      trigger_condition: "all_reliability_gates_passed"
+      handoff_data: ["test_metrics", "ci_configuration", "reliability_benchmarks"]
+      
+    partial_success:
+      next_workflow: "targeted-test-fixes"
+      trigger_condition: "critical_tests_stabilized"
+      handoff_data: ["remaining_flaky_tests", "improvement_priorities"]
+      
+    failure:
+      escalation: "test-engineering-lead"
+      notification: "test-reliability-goals-not-met"
+      rollback: "revert_test_changes"
+
+  monitoring:
+    test_metrics:
+      - "test_success_rate_by_package"
+      - "average_test_execution_time"
+      - "flaky_test_detection_rate"
+      - "coverage_percentage_trend"
+      
+    ci_metrics:
+      - "pipeline_success_rate"
+      - "average_pipeline_duration"
+      - "test_parallel_efficiency"
+      - "resource_utilization"
+      
+    alerts:
+      - condition: "flaky_test_detected"
+        severity: "warning"
+        action: "quarantine_flaky_test"
+        
+      - condition: "coverage_drop > 5%"
+        severity: "critical"
+        action: "trigger_coverage_analysis"
+        
+      - condition: "ci_success_rate < 90%"
+        severity: "critical"
+        action: "trigger_ci_investigation"
+
+  rollback:
+    conditions:
+      - "test_reliability_degraded"
+      - "ci_pipeline_broken"
+      - "coverage_significantly_reduced"
+    actions:
+      - "revert_test_changes"
+      - "restore_previous_ci_configuration"
+      - "run_baseline_test_suite"
+      - "notify_development_team"

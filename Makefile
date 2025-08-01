@@ -1,164 +1,304 @@
-.PHONY: build test test-manifest test-ci test-local test-integration test-unit lint clean fmt imports vet test-setup test-validate test-cleanup test-full
+# Makefile for Freightliner Container Registry Replication
 
-# Build the application
-build:
-	GO111MODULE=on GOFLAGS=-mod=mod go build -o bin/freightliner main.go
+# Build variables
+VERSION ?= $(shell git describe --tags --always --dirty)
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD)
+LDFLAGS = -w -s -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)
 
-# Build test manifest tool
-build-test-manifest:
-	@mkdir -p bin
-	GO111MODULE=on GOFLAGS=-mod=mod go build -o bin/test-manifest ./cmd/test-manifest
+# Docker variables
+DOCKER_REGISTRY ?= ghcr.io
+DOCKER_REPOSITORY ?= company/freightliner
+DOCKER_TAG ?= $(VERSION)
+DOCKER_IMAGE = $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):$(DOCKER_TAG)
 
-# Run all tests (legacy - now uses manifest)
-test: test-manifest
+# Go variables
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+CGO_ENABLED ?= 0
 
-# Run tests with manifest-based filtering (auto-detect environment)
-test-manifest: build-test-manifest
-	@echo "Running tests with manifest-based filtering..."
-	./scripts/test-with-manifest.sh
+# Directories
+BIN_DIR = bin
+BUILD_DIR = build
+COVERAGE_DIR = coverage
 
-# Run tests optimized for CI environment
-test-ci: build-test-manifest
-	@echo "Running CI-optimized tests..."
-	./scripts/test-with-manifest.sh --env ci
+.PHONY: help
+help: ## Display this help message
+	@echo "Freightliner Container Registry Replication"
+	@echo ""
+	@echo "Available targets:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# Run tests for local development environment
-test-local: build-test-manifest
-	@echo "Running local development tests..."
-	./scripts/test-with-manifest.sh --env local
+.PHONY: clean
+clean: ## Clean build artifacts
+	@echo "Cleaning build artifacts..."
+	rm -rf $(BIN_DIR) $(BUILD_DIR) $(COVERAGE_DIR)
+	docker system prune -f
 
-# Run full integration tests
-test-integration: build-test-manifest
-	@echo "Running integration tests..."
-	./scripts/test-with-manifest.sh --env integration
+.PHONY: deps
+deps: ## Download and verify dependencies
+	@echo "Downloading dependencies..."
+	go mod download
+	go mod verify
+	go mod tidy
 
-# Run only unit tests
-test-unit: build-test-manifest
-	@echo "Running unit tests only..."
-	./scripts/test-with-manifest.sh --categories unit
+.PHONY: generate
+generate: ## Generate code
+	@echo "Generating code..."
+	go generate ./...
 
-# Run tests without external dependencies
-test-no-deps: build-test-manifest
-	@echo "Running tests without external dependencies..."
-	./scripts/test-with-manifest.sh --categories unit
+.PHONY: fmt
+fmt: ## Format code
+	@echo "Formatting code..."
+	go fmt ./...
+	goimports -w .
 
-# Show test manifest summary
-test-summary: build-test-manifest
-	@echo "Test Manifest Summary:"
-	./scripts/test-with-manifest.sh --summary
+.PHONY: lint
+lint: ## Run linters
+	@echo "Running linters..."
+	golangci-lint run ./...
 
-# Validate test manifest
-test-manifest-validate: build-test-manifest
-	@echo "Validating test manifest..."
-	./bin/test-manifest validate
+.PHONY: vet
+vet: ## Run go vet
+	@echo "Running go vet..."
+	go vet ./...
 
-# Run legacy test command (without manifest filtering)
-test-legacy:
-	GO111MODULE=on GOFLAGS=-mod=mod go test -v ./...
+.PHONY: test
+test: ## Run tests
+	@echo "Running tests..."
+	mkdir -p $(COVERAGE_DIR)
+	go test -v -race -covermode=atomic -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
+	go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
 
-# Run linting
-lint:
-	./scripts/lint.sh ./...
+.PHONY: test-short
+test-short: ## Run short tests
+	@echo "Running short tests..."
+	go test -short ./...
 
-# Run fast linting (critical linters only)
-lint-fast:
-	./scripts/lint.sh --fast ./...
+.PHONY: bench
+bench: ## Run benchmarks
+	@echo "Running benchmarks..."
+	go test -bench=. -benchmem ./...
 
-# Clean build artifacts
-clean:
-	rm -rf bin/
-	GO111MODULE=on go clean
+.PHONY: security
+security: ## Run security scanners
+	@echo "Running security scanners..."
+	gosec ./...
+	govulncheck ./...
 
-# Format code with gofmt
-fmt:
-	GO111MODULE=on go fmt ./...
+.PHONY: build
+build: ## Build the application
+	@echo "Building freightliner $(VERSION)..."
+	mkdir -p $(BIN_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+		-ldflags="$(LDFLAGS)" \
+		-o $(BIN_DIR)/freightliner \
+		.
 
-# Check if code is formatted
-fmt-check:
-	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
-		echo "Code is not formatted with gofmt. Run 'make fmt' to fix."; \
-		gofmt -d .; \
-		exit 1; \
-	fi
+.PHONY: build-all
+build-all: ## Build for all platforms
+	@echo "Building for all platforms..."
+	mkdir -p $(BIN_DIR)
+	
+	# Linux AMD64
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+		-ldflags="$(LDFLAGS)" \
+		-o $(BIN_DIR)/freightliner-linux-amd64 \
+		.
+	
+	# Linux ARM64
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+		-ldflags="$(LDFLAGS)" \
+		-o $(BIN_DIR)/freightliner-linux-arm64 \
+		.
+	
+	# macOS AMD64
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
+		-ldflags="$(LDFLAGS)" \
+		-o $(BIN_DIR)/freightliner-darwin-amd64 \
+		.
+	
+	# macOS ARM64
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build \
+		-ldflags="$(LDFLAGS)" \
+		-o $(BIN_DIR)/freightliner-darwin-arm64 \
+		.
+	
+	# Windows AMD64
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
+		-ldflags="$(LDFLAGS)" \
+		-o $(BIN_DIR)/freightliner-windows-amd64.exe \
+		.
 
-# Organize imports
-imports:
-	./scripts/organize_imports.sh
+.PHONY: install
+install: build ## Install the application
+	@echo "Installing freightliner..."
+	go install -ldflags="$(LDFLAGS)" .
 
-# Check if imports are organized
-imports-check:
-	@go install golang.org/x/tools/cmd/goimports@v0.29.0
-	@GOIMPORTS_OUTPUT=$$(goimports -l -local freightliner .); \
-	if [ -n "$$GOIMPORTS_OUTPUT" ]; then \
-		echo "Imports not properly organized. Run 'make imports' to fix."; \
-		echo "$$GOIMPORTS_OUTPUT"; \
-		exit 1; \
-	fi
+.PHONY: docker-build
+docker-build: ## Build Docker image
+	@echo "Building Docker image $(DOCKER_IMAGE)..."
+	docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		-t $(DOCKER_IMAGE) \
+		-t $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):latest \
+		.
 
-# Run go vet
-vet:
-	./scripts/vet.sh ./...
+.PHONY: docker-build-dev
+docker-build-dev: ## Build development Docker image
+	@echo "Building development Docker image..."
+	docker build -f Dockerfile.dev -t freightliner:dev .
 
-# Tool versions
-GOIMPORTS_VERSION = v0.29.0
-GOLANGCI_LINT_VERSION = v2.3.0
-SHADOW_VERSION = v0.29.0
-INTERFACER_VERSION = v0.0.0-20180902061238-70be1b28218b
-STATICCHECK_VERSION = 2025.1.1
+.PHONY: docker-push
+docker-push: docker-build ## Push Docker image
+	@echo "Pushing Docker image $(DOCKER_IMAGE)..."
+	docker push $(DOCKER_IMAGE)
+	docker push $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):latest
 
-# Setup development environment
-setup:
-	GO111MODULE=on go mod download
-	go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@$(SHADOW_VERSION)
-	go install github.com/mvdan/interfacer/cmd/interfacer@$(INTERFACER_VERSION)
-	# go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)  # Now handled by golangci-lint
-	cp scripts/pre-commit .git/hooks/pre-commit
-	chmod +x .git/hooks/pre-commit
-	@echo "Setup complete. Running initial checks..."
-	./scripts/lint.sh --fast
-	./scripts/vet.sh
-	# ./scripts/staticcheck.sh  # Now handled by golangci-lint
+.PHONY: docker-scan
+docker-scan: docker-build ## Scan Docker image for vulnerabilities
+	@echo "Scanning Docker image for vulnerabilities..."
+	trivy image $(DOCKER_IMAGE)
 
-# Run staticcheck - DISABLED: now handled by golangci-lint
-# staticcheck:
-#	./scripts/staticcheck.sh ./...
+.PHONY: docker-run
+docker-run: ## Run Docker container
+	@echo "Running Docker container..."
+	docker run --rm -p 8080:8080 $(DOCKER_IMAGE)
 
-# Run all quality checks
-check: fmt imports vet lint test
+.PHONY: compose-up
+compose-up: ## Start development environment with Docker Compose
+	@echo "Starting development environment..."
+	docker-compose up -d
 
-# Install hooks
-hooks:
-	cp .git/hooks/pre-commit .git/hooks/pre-commit.backup 2>/dev/null || true
-	cp scripts/pre-commit .git/hooks/pre-commit
-	chmod +x .git/hooks/pre-commit
+.PHONY: compose-down
+compose-down: ## Stop development environment
+	@echo "Stopping development environment..."
+	docker-compose down
 
-# Test registry setup and management
-test-setup:
-	@echo "Setting up test registries for Freightliner..."
-	./scripts/setup-test-registries.sh
+.PHONY: compose-logs
+compose-logs: ## View Docker Compose logs
+	@echo "Viewing logs..."
+	docker-compose logs -f
 
-test-validate:
-	@echo "Validating test registry setup..."
-	./scripts/test-registry-setup.sh
+.PHONY: compose-prod-up
+compose-prod-up: ## Start production-like environment
+	@echo "Starting production-like environment..."
+	docker-compose -f docker-compose.prod.yml up -d
 
-test-cleanup:
-	@echo "Cleaning up test registries..."
-	./scripts/setup-test-registries.sh --cleanup
+.PHONY: compose-prod-down
+compose-prod-down: ## Stop production-like environment
+	@echo "Stopping production-like environment..."
+	docker-compose -f docker-compose.prod.yml down
 
-# Run complete test cycle with registries
-test-full: test-setup
-	@echo "Running tests with local registries..."
-	sleep 5  # Give registries time to fully initialize
-	go test ./pkg/tree/ -v -timeout=300s
-	go test ./pkg/service/ -v -timeout=300s  
-	go test ./pkg/copy/ -v -timeout=300s
-	@echo "Tests complete. Use 'make test-cleanup' to remove registries."
+.PHONY: k8s-deploy-dev
+k8s-deploy-dev: ## Deploy to development Kubernetes cluster
+	@echo "Deploying to development cluster..."
+	helm upgrade --install freightliner-dev ./deployments/helm/freightliner \
+		--namespace freightliner-dev \
+		--create-namespace \
+		--set image.tag=$(VERSION) \
+		--set replicaCount=1 \
+		--set resources.requests.cpu=100m \
+		--set resources.requests.memory=256Mi \
+		--set config.logLevel=debug
 
-# Quick test run (assumes registries are already running)
-test-quick:
-	@echo "Running quick tests (registries must be running)..."
-	go test ./pkg/tree/ -v -timeout=300s
-	go test ./pkg/service/ -v -timeout=300s
-	go test ./pkg/copy/ -v -timeout=300s
+.PHONY: k8s-deploy-staging
+k8s-deploy-staging: ## Deploy to staging Kubernetes cluster
+	@echo "Deploying to staging cluster..."
+	helm upgrade --install freightliner-staging ./deployments/helm/freightliner \
+		--namespace freightliner-staging \
+		--create-namespace \
+		--values ./deployments/helm/freightliner/values-staging.yaml \
+		--set image.tag=$(VERSION)
+
+.PHONY: k8s-deploy-prod
+k8s-deploy-prod: ## Deploy to production Kubernetes cluster
+	@echo "Deploying to production cluster..."
+	helm upgrade --install freightliner-prod ./deployments/helm/freightliner \
+		--namespace freightliner \
+		--create-namespace \
+		--values ./deployments/helm/freightliner/values-production.yaml \
+		--set image.tag=$(VERSION)
+
+.PHONY: terraform-init-aws
+terraform-init-aws: ## Initialize Terraform for AWS
+	@echo "Initializing Terraform for AWS..."
+	cd deployments/terraform/aws && terraform init
+
+.PHONY: terraform-plan-aws
+terraform-plan-aws: ## Plan Terraform changes for AWS
+	@echo "Planning Terraform changes for AWS..."
+	cd deployments/terraform/aws && terraform plan
+
+.PHONY: terraform-apply-aws
+terraform-apply-aws: ## Apply Terraform changes for AWS
+	@echo "Applying Terraform changes for AWS..."
+	cd deployments/terraform/aws && terraform apply
+
+.PHONY: terraform-init-gcp
+terraform-init-gcp: ## Initialize Terraform for GCP
+	@echo "Initializing Terraform for GCP..."
+	cd deployments/terraform/gcp && terraform init
+
+.PHONY: terraform-plan-gcp
+terraform-plan-gcp: ## Plan Terraform changes for GCP
+	@echo "Planning Terraform changes for GCP..."
+	cd deployments/terraform/gcp && terraform plan
+
+.PHONY: terraform-apply-gcp
+terraform-apply-gcp: ## Apply Terraform changes for GCP
+	@echo "Applying Terraform changes for GCP..."
+	cd deployments/terraform/gcp && terraform apply
+
+.PHONY: tools
+tools: ## Install development tools
+	@echo "Installing development tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/cosmtrek/air@latest
+	go install github.com/go-delve/delve/cmd/dlv@latest
+
+.PHONY: validate
+validate: deps fmt vet lint test security ## Run all validation checks
+
+.PHONY: release
+release: validate build-all docker-build docker-push ## Create a release
+
+.PHONY: dev
+dev: ## Run development server with hot reload
+	@echo "Starting development server with hot reload..."
+	air
+
+.PHONY: debug
+debug: ## Run with debugger
+	@echo "Starting with debugger..."
+	dlv debug --headless --listen=:2345 --api-version=2 --accept-multiclient
+
+.PHONY: check-env
+check-env: ## Check environment variables
+	@echo "Checking environment variables..."
+	@echo "GO version: $(shell go version)"
+	@echo "Docker version: $(shell docker --version)"
+	@echo "Kubectl version: $(shell kubectl version --client --short 2>/dev/null || echo 'kubectl not found')"
+	@echo "Helm version: $(shell helm version --short 2>/dev/null || echo 'helm not found')"
+	@echo "Terraform version: $(shell terraform version 2>/dev/null || echo 'terraform not found')"
+
+.PHONY: docs
+docs: ## Generate documentation
+	@echo "Generating documentation..."
+	go doc -all . > docs/api.md
+
+.PHONY: benchmark-report
+benchmark-report: ## Generate benchmark report
+	@echo "Generating benchmark report..."
+	mkdir -p $(COVERAGE_DIR)
+	go test -bench=. -benchmem -cpuprofile $(COVERAGE_DIR)/cpu.prof -memprofile $(COVERAGE_DIR)/mem.prof ./...
+	go tool pprof -http=:8081 $(COVERAGE_DIR)/cpu.prof &
+	@echo "CPU profile server started at http://localhost:8081"
+
+.PHONY: all
+all: validate build docker-build ## Run all checks and build everything

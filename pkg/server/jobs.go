@@ -280,11 +280,11 @@ type ReplicateJob struct {
 	Tags   []string `json:"tags,omitempty"`
 	Force  bool     `json:"force"`
 	DryRun bool     `json:"dry_run"`
-	svc    *service.ReplicationService
+	svc    service.ReplicationService
 }
 
 // NewReplicateJob creates a new replicate job
-func NewReplicateJob(source, destination string, tags []string, force, dryRun bool, svc *service.ReplicationService) *ReplicateJob {
+func NewReplicateJob(source, destination string, tags []string, force, dryRun bool, svc service.ReplicationService) *ReplicateJob {
 	return &ReplicateJob{
 		BaseJob: NewBaseJob(JobTypeReplicate, source, destination),
 		Tags:    tags,

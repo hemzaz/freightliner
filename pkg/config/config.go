@@ -31,6 +31,9 @@ type Config struct {
 	// Server configuration
 	Server ServerConfig
 
+	// Metrics configuration
+	Metrics MetricsConfig
+
 	// Checkpoint configuration
 	Checkpoint CheckpointConfig
 
@@ -180,6 +183,12 @@ func NewDefaultConfig() *Config {
 			ReplicatePath:     "/api/v1/replicate",
 			TreeReplicatePath: "/api/v1/replicate-tree",
 			StatusPath:        "/api/v1/status",
+		},
+		Metrics: MetricsConfig{
+			Enabled:   true,
+			Port:      2112,
+			Path:      "/metrics",
+			Namespace: "freightliner",
 		},
 		Checkpoint: CheckpointConfig{
 			Directory: "${HOME}/.freightliner/checkpoints",

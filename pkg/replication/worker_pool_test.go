@@ -13,7 +13,7 @@ import (
 
 // TestWorkerPool_Basic tests basic worker pool functionality
 func TestWorkerPool_Basic(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	pool := NewWorkerPool(5, logger)
 	pool.Start()
 
@@ -43,12 +43,12 @@ func TestWorkerPool_Basic(t *testing.T) {
 
 // TestWorkerPool_Errors tests error handling in the worker pool
 func TestWorkerPool_Errors(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	pool := NewWorkerPool(3, logger)
 	pool.Start()
 
 	expectedErr := errors.New("test error")
-	errorsReceived := 0
+	var errorsReceived atomic.Int32
 
 	// Submit successful tasks
 	for i := 0; i < 5; i++ {
@@ -71,10 +71,13 @@ func TestWorkerPool_Errors(t *testing.T) {
 	}
 
 	// Collect results in a separate goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for result := range pool.GetResults() {
 			if result.Error != nil {
-				errorsReceived++
+				errorsReceived.Add(1)
 				if !errors.Is(result.Error, expectedErr) {
 					t.Errorf("Expected error %v, got %v", expectedErr, result.Error)
 				}
@@ -85,15 +88,18 @@ func TestWorkerPool_Errors(t *testing.T) {
 	// Wait for tasks to complete
 	pool.Wait()
 
+	// Wait for result processing to complete
+	wg.Wait()
+
 	// Verify we received the expected error
-	if errorsReceived != 1 {
-		t.Errorf("Expected 1 error, got %d", errorsReceived)
+	if errorsReceived.Load() != 1 {
+		t.Errorf("Expected 1 error, got %d", errorsReceived.Load())
 	}
 }
 
 // TestWorkerPool_ContextCancellation tests cancellation via context
 func TestWorkerPool_ContextCancellation(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	pool := NewWorkerPool(3, logger)
 	pool.Start()
 
@@ -121,14 +127,23 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 
 	// Verify the result shows cancellation
 	var receivedContextCancelled bool
-	for result := range pool.GetResults() {
-		if result.Error != nil && errors.Is(result.Error, context.Canceled) {
-			receivedContextCancelled = true
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for result := range pool.GetResults() {
+			if result.Error != nil && errors.Is(result.Error, context.Canceled) {
+				receivedContextCancelled = true
+			}
 		}
-	}
+	}()
 
 	// Wait for tasks to complete
 	pool.Wait()
+
+	// Wait for result processing to complete
+	wg.Wait()
 
 	if !receivedContextCancelled {
 		t.Error("Expected to receive context cancelled error")
@@ -137,7 +152,7 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 
 // TestWorkerPool_Concurrency tests that the worker pool respects concurrency limits
 func TestWorkerPool_Concurrency(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	workers := 3
 	pool := NewWorkerPool(workers, logger)
 	pool.Start()
@@ -191,18 +206,24 @@ func TestWorkerPool_Concurrency(t *testing.T) {
 
 // TestWorkerPool_Stop tests stopping the worker pool
 func TestWorkerPool_Stop(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
-	pool := NewWorkerPool(3, logger)
+	logger := log.NewBasicLogger(log.DebugLevel)
+	pool := NewWorkerPool(2, logger)
 	pool.Start()
 
 	var completedTasks atomic.Int32
+	var cancelled bool
 
-	// Submit some tasks
-	for i := 0; i < 5; i++ {
+	// Submit tasks that respect context cancellation
+	for i := 0; i < 4; i++ {
 		err := pool.Submit("task-"+string(rune('A'+i)), func(ctx context.Context) error {
-			time.Sleep(50 * time.Millisecond)
-			completedTasks.Add(1)
-			return nil
+			select {
+			case <-time.After(100 * time.Millisecond):
+				completedTasks.Add(1)
+				return nil
+			case <-ctx.Done():
+				cancelled = true
+				return ctx.Err()
+			}
 		})
 		if err != nil {
 			t.Fatalf("Failed to submit task: %v", err)
@@ -218,15 +239,18 @@ func TestWorkerPool_Stop(t *testing.T) {
 	// The wait should complete due to Stop
 	pool.Wait()
 
-	// Not all tasks should have completed
-	if completedTasks.Load() == 5 {
-		t.Error("Expected some tasks to be interrupted by Stop()")
+	// Some tasks should have been cancelled or not all should have completed naturally
+	completed := completedTasks.Load()
+	if completed == 4 && !cancelled {
+		t.Error("Expected some tasks to be interrupted by Stop() or cancelled due to context")
 	}
+
+	t.Logf("Completed tasks: %d, Cancelled: %v", completed, cancelled)
 }
 
 // TestWorkerPool_RaceConditions focuses on detecting race conditions with the race detector
 func TestWorkerPool_RaceConditions(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	pool := NewWorkerPool(10, logger)
 	pool.Start()
 
@@ -276,7 +300,7 @@ func TestWorkerPool_RaceConditions(t *testing.T) {
 
 // TestWorkerPool_MultipleSubmittersAndConsumers tests multiple goroutines submitting and consuming results
 func TestWorkerPool_MultipleSubmittersAndConsumers(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	pool := NewWorkerPool(5, logger)
 	pool.Start()
 
@@ -342,7 +366,7 @@ func TestWorkerPool_MultipleSubmittersAndConsumers(t *testing.T) {
 
 // TestWorkerPool_PriorityOrdering tests tasks with different priorities
 func TestWorkerPool_PriorityOrdering(t *testing.T) {
-	logger := log.NewLogger(log.DebugLevel)
+	logger := log.NewBasicLogger(log.DebugLevel)
 	pool := NewWorkerPool(1, logger) // Single worker to ensure sequential processing
 	pool.Start()
 

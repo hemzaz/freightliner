@@ -1,0 +1,329 @@
+# Code Quality Enhancement Workflow with Subagents
+# Freightliner Container Registry Replication Project
+
+workflow:
+  name: "code-quality-enhancement"
+  description: "Comprehensive Go code quality improvement workflow"
+  version: "1.0"
+  
+  trigger:
+    - event: "code-change"
+      paths: ["pkg/**/*.go", "cmd/**/*.go"]
+    - event: "quality-gate-failure"
+    - event: "scheduled"
+      cron: "0 6 * * 3"  # Weekly code quality review
+
+  primary_agent: "golang-pro"
+  estimated_duration: "2-5 hours"
+  
+  subagents:
+    go-concurrency-specialist:
+      specialist: "Go concurrency patterns and optimization"
+      expertise: ["goroutines", "channels", "select", "sync", "context"]
+      focus_areas:
+        - "pkg/replication/worker_pool.go (worker management)"
+        - "pkg/copy/copier.go (parallel blob transfers)"
+        - "pkg/tree/replicator.go (concurrent repository processing)"
+      quality_criteria:
+        - "race_conditions_eliminated"
+        - "proper_context_propagation"
+        - "resource_leak_prevention"
+        - "deadlock_prevention"
+      timeout: "45m"
+      
+    go-interface-architect:
+      specialist: "Interface design and composition patterns"
+      expertise: ["interface_segregation", "dependency_inversion", "composition"]
+      focus_areas:
+        - "pkg/interfaces/ (core abstractions)"
+        - "pkg/client/ (registry client interfaces)"
+        - "pkg/copy/ (copier interfaces)"
+      quality_criteria:
+        - "single_responsibility_maintained"
+        - "interface_segregation_applied"
+        - "composition_over_inheritance"
+        - "mockable_interfaces"
+      timeout: "40m"
+      
+    go-performance-optimizer:
+      specialist: "Go performance optimization and efficiency"
+      expertise: ["memory_management", "cpu_optimization", "allocation_patterns"]
+      focus_areas:
+        - "Memory allocation patterns"
+        - "CPU-intensive operations"
+        - "Garbage collection optimization"
+        - "Resource usage efficiency"
+      quality_criteria:
+        - "minimal_allocations"
+        - "efficient_algorithms"
+        - "proper_resource_cleanup"
+        - "gc_pressure_minimized"
+      timeout: "50m"
+
+  workflow_steps:
+    - step: "concurrency-analysis"
+      subagent: "go-concurrency-specialist"
+      input:
+        - type: "go_source_files"
+          paths: ["pkg/replication/**", "pkg/copy/**", "pkg/tree/**"]
+        - type: "test_results"
+          source: "race_detection_tests"
+      output: "concurrency_analysis_report"
+      parallel: true
+      
+      micro_specialists:
+        - name: "channel-pattern-expert"
+          task: "Analyze and optimize channel usage patterns"
+          focus: "Channel buffering, closing, and flow control"
+        - name: "worker-pool-designer"
+          task: "Optimize worker pool implementations"
+          focus: "Dynamic scaling, resource management, graceful shutdown"
+      
+    - step: "interface-design-review"
+      subagent: "go-interface-architect"
+      input:
+        - type: "interface_definitions"
+          paths: ["pkg/interfaces/**", "pkg/client/**"]
+        - type: "implementation_analysis"
+          source: "interface_usage_patterns"
+      output: "interface_design_assessment"
+      parallel: true
+      
+      micro_specialists:
+        - name: "interface-segregation-specialist"
+          task: "Apply Interface Segregation Principle"
+          focus: "Split large interfaces into focused contracts"
+        - name: "composition-pattern-expert"
+          task: "Design composition patterns for complex behaviors"
+          focus: "Embedded interfaces and behavior composition"
+          
+    - step: "performance-code-review"
+      subagent: "go-performance-optimizer"
+      input:
+        - type: "performance_critical_code"
+          paths: ["pkg/copy/**", "pkg/network/**"]
+        - type: "profiling_data"
+          source: "performance_baseline_profile"
+      output: "performance_optimization_plan"
+      parallel: true
+      
+      micro_specialists:
+        - name: "allocation-optimizer"
+          task: "Minimize memory allocations in hot paths"
+          focus: "Object pooling, buffer reuse, slice optimization"
+        - name: "cpu-efficiency-expert"
+          task: "Optimize CPU-intensive operations"
+          focus: "Algorithm efficiency, loop optimization, branch prediction"
+
+    - step: "code-refactoring"
+      subagent: "go-concurrency-specialist"
+      input:
+        - type: "analysis_reports"
+          sources: ["concurrency_analysis_report", "interface_design_assessment", "performance_optimization_plan"]
+      output: "refactored_implementations"
+      depends_on: ["concurrency-analysis", "interface-design-review", "performance-code-review"]
+      parallel: false
+      
+    - step: "integration-validation"
+      subagent: "go-interface-architect"
+      input:
+        - type: "refactored_code"
+          source: "code-refactoring"
+        - type: "existing_tests"
+          source: "current_test_suite"
+      output: "integration_validation_report"
+      depends_on: ["code-refactoring"]
+      parallel: false
+      
+    - step: "performance-validation"
+      subagent: "go-performance-optimizer"
+      input:
+        - type: "optimized_code"
+          source: "code-refactoring"
+        - type: "benchmark_suite"
+          source: "performance_benchmarks"
+      output: "performance_improvement_metrics"
+      depends_on: ["code-refactoring"]
+      parallel: false
+
+  quality_standards:
+    concurrency:
+      - standard: "race_condition_free"
+        validation: "go test -race"
+        requirement: "zero race conditions detected"
+        
+      - standard: "proper_context_usage"
+        validation: "context propagation analysis"
+        requirement: "context passed through all operations"
+        
+      - standard: "goroutine_lifecycle_managed"
+        validation: "goroutine leak detection"
+        requirement: "all goroutines properly terminated"
+    
+    interfaces:
+      - standard: "interface_segregation"
+        validation: "interface dependency analysis"
+        requirement: "interfaces focused on single responsibility"
+        
+      - standard: "dependency_inversion"
+        validation: "dependency direction analysis"
+        requirement: "abstractions don't depend on concretions"
+        
+      - standard: "composition_over_inheritance"
+        validation: "struct composition analysis"
+        requirement: "behavior composed through interfaces"
+    
+    performance:
+      - standard: "memory_efficiency"
+        validation: "memory allocation profiling"
+        requirement: "minimal allocations in hot paths"
+        
+      - standard: "cpu_efficiency"
+        validation: "cpu profiling analysis"
+        requirement: "optimal algorithm complexity"
+        
+      - standard: "resource_cleanup"
+        validation: "resource leak detection"
+        requirement: "proper cleanup with defer statements"
+
+  quality_gates:
+    - gate: "concurrency_safety"
+      description: "All concurrency issues resolved"
+      validator: "go-concurrency-specialist"
+      criteria:
+        - "race_conditions == 0"
+        - "goroutine_leaks == 0"
+        - "deadlock_potential == 0"
+        - "context_propagation_complete == true"
+      blocking: true
+      auto_fix: false
+      
+    - gate: "interface_design_compliance"
+      description: "Interface design follows best practices"
+      validator: "go-interface-architect"
+      criteria:
+        - "interface_segregation_applied == true"
+        - "dependency_inversion_maintained == true"
+        - "composition_patterns_used == true"
+        - "mockable_interfaces == true"
+      blocking: true
+      
+    - gate: "performance_standards_met"
+      description: "Performance optimization targets achieved"
+      validator: "go-performance-optimizer"
+      criteria:
+        - "memory_allocations_optimized == true"
+        - "cpu_efficiency_improved == true"
+        - "gc_pressure_reduced == true"
+        - "resource_usage_efficient == true"
+      blocking: false
+      
+    - gate: "code_maintainability"
+      description: "Code maintainability improved"
+      validator: "code-reviewer"
+      criteria:
+        - "cyclomatic_complexity <= 10"
+        - "function_length <= 50_lines"
+        - "documentation_coverage >= 80%"
+        - "test_coverage >= 90%"
+      blocking: false
+
+  refactoring_patterns:
+    concurrency:
+      - pattern: "worker_pool_optimization"
+        before: "Fixed buffer sizes, no graceful shutdown"
+        after: "Dynamic scaling, proper cleanup, context handling"
+        impact: "Improved resource utilization and stability"
+        
+      - pattern: "channel_flow_control"
+        before: "Unbuffered channels causing blocking"
+        after: "Appropriately buffered channels with backpressure"
+        impact: "Better throughput and reduced blocking"
+        
+    interfaces:
+      - pattern: "interface_segregation"
+        before: "Monolithic Repository interface"
+        after: "Focused interfaces (Reader, Writer, Lister)"
+        impact: "Better testability and implementation flexibility"
+        
+      - pattern: "composition_design"
+        before: "Large structs with many responsibilities"
+        after: "Composed behaviors through embedded interfaces"
+        impact: "Improved modularity and reusability"
+        
+    performance:
+      - pattern: "memory_pooling"
+        before: "Frequent allocations in hot paths"
+        after: "Object pools and buffer reuse"
+        impact: "Reduced GC pressure and improved throughput"
+        
+      - pattern: "streaming_operations"
+        before: "Loading entire files into memory"
+        after: "Streaming processing with fixed buffers"
+        impact: "Constant memory usage regardless of file size"
+
+  code_metrics:
+    before_optimization:
+      cyclomatic_complexity: "15-25"
+      function_length: "80-150 lines"
+      interface_methods: "8-15 methods per interface"
+      allocation_rate: "high"
+      
+    after_optimization:
+      cyclomatic_complexity: "5-10"
+      function_length: "20-50 lines"
+      interface_methods: "2-5 methods per interface"
+      allocation_rate: "minimal"
+
+  output_artifacts:
+    - name: "code_quality_report"
+      format: "markdown"
+      includes: ["refactoring_summary", "quality_improvements", "metrics_comparison"]
+      
+    - name: "refactored_codebase"
+      format: "go_source"
+      includes: ["optimized_implementations", "improved_interfaces", "enhanced_tests"]
+      
+    - name: "quality_standards_documentation"
+      format: "markdown"
+      includes: ["coding_standards", "best_practices", "review_checklists"]
+
+  handoff:
+    success:
+      next_workflow: "test-reliability-enhancement"
+      trigger_condition: "all_quality_gates_passed"
+      handoff_data: ["refactored_code", "quality_metrics", "test_updates"]
+      
+    partial_success:
+      next_workflow: "targeted-refactoring"
+      trigger_condition: "core_issues_resolved"
+      handoff_data: ["remaining_improvements", "priority_areas"]
+      
+    failure:
+      escalation: "senior-architect"
+      notification: "code-quality-goals-not-met"
+      rollback: "revert_refactoring_changes"
+
+  continuous_improvement:
+    code_reviews:
+      frequency: "every_pr"
+      focus: ["concurrency_patterns", "interface_design", "performance_impact"]
+      
+    static_analysis:
+      tools: ["golangci-lint", "staticcheck", "gosec"]
+      frequency: "every_commit"
+      
+    performance_monitoring:
+      metrics: ["allocation_rate", "gc_frequency", "cpu_usage"]
+      alerts: ["performance_regression", "memory_leak"]
+
+  rollback:
+    conditions:
+      - "integration_tests_failing"
+      - "performance_regression_detected"
+      - "functionality_broken"
+    actions:
+      - "revert_refactoring_commits"
+      - "restore_previous_interfaces"
+      - "run_regression_tests"
+      - "notify_development_team"

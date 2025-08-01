@@ -38,7 +38,7 @@ type Scheduler struct {
 	mutex             sync.RWMutex
 	ctx               context.Context
 	cancelFn          context.CancelFunc
-	logger            *log.Logger
+	logger            log.Logger
 	workerPool        *WorkerPool
 	replicationSvc    ReplicationService
 	registryProviders map[string]interfaces.RegistryProvider
@@ -49,7 +49,7 @@ type Scheduler struct {
 // SchedulerOptions provides configuration for the scheduler
 type SchedulerOptions struct {
 	// Logger is the logger to use
-	Logger *log.Logger
+	Logger log.Logger
 
 	// WorkerPool is the worker pool for executing jobs
 	WorkerPool *WorkerPool
@@ -71,7 +71,7 @@ func NewScheduler(opts SchedulerOptions) *Scheduler {
 	// Create default logger if not provided
 	logger := opts.Logger
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	// Configure cron parser with seconds field
@@ -122,9 +122,9 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 
 	// Skip jobs without a schedule
 	if rule.Schedule == "" {
-		s.logger.Debug("Skipping job without schedule", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id": id,
-		})
+		}).Debug("Skipping job without schedule")
 		return nil
 	}
 
@@ -158,9 +158,9 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 
 	// Check if job already exists
 	if _, exists := s.jobs[id]; exists {
-		s.logger.Debug("Updating existing job", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id": id,
-		})
+		}).Debug("Updating existing job")
 	}
 
 	s.jobs[id] = &Job{
@@ -169,10 +169,10 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		Running: false,
 	}
 
-	s.logger.Info("Added scheduled job", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id":       id,
 		"next_run": nextRun,
-	})
+	}).Info("Added scheduled job")
 
 	return nil
 }
@@ -195,9 +195,9 @@ func (s *Scheduler) RemoveJob(rule ReplicationRule) error {
 	if _, exists := s.jobs[id]; exists {
 		delete(s.jobs, id)
 
-		s.logger.Info("Removed scheduled job", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id": id,
-		})
+		}).Info("Removed scheduled job")
 		return nil
 	}
 
@@ -235,25 +235,25 @@ func (s *Scheduler) checkJobs() {
 			if job.Rule.Schedule != "@once" && job.Rule.Schedule != "@now" {
 				schedule, err := s.cronParser.Parse(job.Rule.Schedule)
 				if err != nil {
-					s.logger.Warn("Invalid cron expression, using default schedule", map[string]interface{}{
+					s.logger.WithFields(map[string]interface{}{
 						"id":       id,
 						"schedule": job.Rule.Schedule,
 						"error":    err.Error(),
 						"next_run": now.Add(1 * time.Hour),
-					})
+					}).Warn("Invalid cron expression, using default schedule")
 					job.NextRun = now.Add(1 * time.Hour)
 				} else {
 					job.NextRun = schedule.Next(now)
-					s.logger.Debug("Scheduled next run", map[string]interface{}{
+					s.logger.WithFields(map[string]interface{}{
 						"id":       id,
 						"next_run": job.NextRun,
-					})
+					}).Debug("Scheduled next run")
 				}
 			} else {
 				// For @once and @now schedules, don't reschedule
-				s.logger.Debug("One-time job, not rescheduling", map[string]interface{}{
+				s.logger.WithFields(map[string]interface{}{
 					"id": id,
-				})
+				}).Debug("One-time job, not rescheduling")
 			}
 
 			// Submit the job to the worker pool
@@ -267,19 +267,19 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 	// Validate input before any processing or locking
 	if id == "" || job == nil {
 		err := errors.InvalidInputf("job ID empty or job is nil")
-		s.logger.Error("Invalid job submission", err, map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"error": err.Error(),
-		})
+		}).Error("Invalid job submission", err)
 		return
 	}
 
 	// Verify worker pool is initialized
 	if s.workerPool == nil {
 		err := errors.InvalidInputf("worker pool not initialized")
-		s.logger.Error("Invalid worker pool", err, map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"error": err.Error(),
 			"id":    id,
-		})
+		}).Error("Invalid worker pool", err)
 
 		// Mark the job as not running since submission will fail
 		s.mutex.Lock()
@@ -290,9 +290,9 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 		return
 	}
 
-	s.logger.Info("Running scheduled job", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id": id,
-	})
+	}).Info("Running scheduled job")
 
 	// Submit the job to the worker pool
 	err := s.workerPool.Submit(id, func(ctx context.Context) error {
@@ -300,10 +300,10 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 			// Recover from panics
 			if r := recover(); r != nil {
 				panicErr := errors.New(fmt.Sprintf("job panic: %v", r))
-				s.logger.Error("Job panic recovered", panicErr, map[string]interface{}{
+				s.logger.WithFields(map[string]interface{}{
 					"id":    id,
 					"panic": fmt.Sprintf("%v", r),
-				})
+				}).Error("Job panic recovered", panicErr)
 			}
 
 			// Mark the job as not running when done
@@ -325,7 +325,7 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 		}
 
 		// Log job start
-		s.logger.Info("Starting replication job", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id":                id,
 			"source_registry":   job.Rule.SourceRegistry,
 			"source_repository": job.Rule.SourceRepository,
@@ -334,7 +334,7 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 			"include_tags":      job.Rule.IncludeTags,
 			"exclude_tags":      job.Rule.ExcludeTags,
 			"force_overwrite":   job.Rule.ForceOverwrite,
-		})
+		}).Info("Starting replication job")
 
 		// Execute the replication using the service
 		startTime := time.Now()
@@ -343,29 +343,29 @@ func (s *Scheduler) submitJob(id string, job *Job) {
 
 		if err != nil {
 			replicationErr := errors.Wrap(err, "replication failed")
-			s.logger.Error("Replication job failed", replicationErr, map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"id":       id,
 				"duration": duration.String(),
 				"error":    err.Error(),
-			})
+			}).Error("Replication job failed", replicationErr)
 			return replicationErr
 		}
 
 		// Log job completion
-		s.logger.Info("Completed replication job", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id":       id,
 			"duration": duration.String(),
-		})
+		}).Info("Completed replication job")
 
 		return nil
 	})
 
 	if err != nil {
 		submitErr := errors.Wrap(err, "failed to submit job to worker pool")
-		s.logger.Error("Failed to submit job", submitErr, map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id":    id,
 			"error": err.Error(),
-		})
+		}).Error("Failed to submit job", submitErr)
 
 		// Mark the job as not running since submission failed
 		s.mutex.Lock()
@@ -391,7 +391,7 @@ func (s *Scheduler) Stop() error {
 		return errors.AlreadyExistsf("scheduler already stopped")
 	}
 
-	s.logger.Info("Stopping scheduler", nil)
+	s.logger.Info("Stopping scheduler")
 	s.cancelFn()
 	return nil
 }

@@ -29,26 +29,31 @@ func newReplicateCmd() *cobra.Command {
 			replicationSvc := service.NewReplicationService(cfg, logger)
 
 			// Execute replication
-			logger.Info("Starting replication", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"source":      source,
 				"destination": destination,
 				"force":       cfg.Replicate.Force,
 				"dry_run":     cfg.Replicate.DryRun,
-			})
+			}).Info("Starting replication")
 
 			result, err := replicationSvc.ReplicateRepository(ctx, source, destination)
 			if err != nil {
-				logger.Error("Replication failed", err, nil)
+				logger.Error("Replication failed", err)
 				fmt.Printf("Error during replication: %s\n", err)
 				os.Exit(1)
 			}
 
 			// Print results
 			fmt.Println("\nReplication complete")
-			fmt.Printf("Tags copied: %d\n", result.TagsCopied)
-			fmt.Printf("Tags skipped: %d\n", result.TagsSkipped)
-			fmt.Printf("Errors: %d\n", result.Errors)
-			fmt.Printf("Total bytes transferred: %d\n", result.BytesTransferred)
+			fmt.Printf("Tags copied: %d\n", result.LayersCopied)
+			fmt.Printf("Tags skipped: %d\n", 0) // This info is not available in ReplicationResult
+			fmt.Printf("Errors: %s\n", func() string {
+				if result.Error != nil {
+					return result.Error.Error()
+				}
+				return "none"
+			}())
+			fmt.Printf("Total bytes transferred: %d\n", result.BytesCopied)
 		},
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -107,7 +108,7 @@ type ReplicateTreeOptions struct {
 
 // TreeReplicator coordinates the replication of repositories
 type TreeReplicator struct {
-	logger            *log.Logger
+	logger            log.Logger
 	copier            *copy.Copier
 	workerCount       int
 	filters           FilterOptions
@@ -126,7 +127,7 @@ func (t *TreeReplicator) SetMetrics(metrics interface{}) {
 }
 
 // NewTreeReplicator creates a new tree replicator
-func NewTreeReplicator(logger *log.Logger, copier *copy.Copier, options TreeReplicatorOptions) *TreeReplicator {
+func NewTreeReplicator(logger log.Logger, copier *copy.Copier, options TreeReplicatorOptions) *TreeReplicator {
 	filters := FilterOptions{
 		ExcludeRepos: options.ExcludeRepositories,
 		ExcludeTags:  options.ExcludeTags,
@@ -152,10 +153,10 @@ func NewTreeReplicator(logger *log.Logger, copier *copy.Copier, options TreeRepl
 	if t.checkpointing.Enabled {
 		store, err := InitCheckpointStore(t.checkpointing.Dir)
 		if err != nil {
-			t.logger.Warn("Failed to initialize checkpoint store, checkpointing disabled", map[string]interface{}{
+			t.logger.WithFields(map[string]interface{}{
 				"error": err.Error(),
 				"dir":   t.checkpointing.Dir,
-			})
+			}).Warn("Failed to initialize checkpoint store, checkpointing disabled")
 		} else {
 			t.checkpointStore = store
 		}
@@ -233,9 +234,9 @@ func (t *TreeReplicator) setupCheckpoint(
 
 	if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
 		wrappedErr := errors.Wrap(err, "failed to save initial checkpoint")
-		t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"checkpoint_id": treeCheckpoint.ID,
-		})
+		}).Warn(wrappedErr.Error())
 	} else {
 		result.CheckpointID = treeCheckpoint.ID
 	}
@@ -260,10 +261,10 @@ func (t *TreeReplicator) getRepositories(
 	result.Repositories = repoCount
 
 	if repoCount == 0 {
-		t.logger.Info("No repositories found matching prefix", map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"source_registry": opts.SourceClient.GetRegistryName(),
 			"prefix":          opts.SourcePrefix,
-		})
+		}).Info("No repositories found matching prefix")
 		t.completeReplication(treeCheckpoint, result, checkpoint.StatusCompleted)
 	}
 
@@ -281,11 +282,11 @@ func (t *TreeReplicator) processRepositories(
 	repoCount := len(repositories)
 
 	// Log start of replication
-	t.logger.Info("Starting replication", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"repositories": repoCount,
 		"workers":      t.workerCount,
 		"dry_run":      t.dryRun,
-	})
+	}).Info("Starting replication")
 
 	// Set up worker pool
 	jobs, metrics, doneSignal := t.setupWorkerPool(ctx, repoCount, opts, treeCheckpoint, result)
@@ -474,10 +475,10 @@ func (t *TreeReplicator) listAndFilterRepositories(
 	sourceClient interfaces.RegistryClient,
 	sourcePrefix string,
 ) ([]string, error) {
-	t.logger.Info("Listing repositories", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"registry": sourceClient.GetRegistryName(),
 		"prefix":   sourcePrefix,
-	})
+	}).Info("Listing repositories")
 
 	repositories, err := sourceClient.ListRepositories(ctx, sourcePrefix)
 	if err != nil {
@@ -498,6 +499,13 @@ func (t *TreeReplicator) listAndFilterRepositories(
 	return repositories, nil
 }
 
+// regexPattern holds a pre-compiled regex pattern with metadata for performance optimization
+type regexPattern struct {
+	regex    *regexp.Regexp
+	pattern  string
+	isSimple bool // Whether this pattern can be optimized further
+}
+
 // patternCache caches compiled glob patterns for faster matching
 type patternCache struct {
 	exactMatches    map[string]struct{} // For exact string matches
@@ -506,6 +514,9 @@ type patternCache struct {
 	containsMatches map[string]struct{} // For *contains* style patterns
 	complexPatterns []string            // For more complex patterns requiring path.Match
 	hasWildcard     bool                // Whether "*" is in the patterns
+
+	// Performance optimization: pre-compiled regex patterns for complex cases
+	regexPatterns []*regexPattern // Pre-compiled regex patterns for optimal performance
 }
 
 // newPatternCache creates an optimized pattern cache from a slice of patterns
@@ -520,6 +531,7 @@ func newPatternCache(patterns []string) *patternCache {
 		suffixMatches:   make(map[string]struct{}),
 		containsMatches: make(map[string]struct{}),
 		complexPatterns: []string{},
+		regexPatterns:   []*regexPattern{},
 		hasWildcard:     false,
 	}
 
@@ -554,11 +566,68 @@ func newPatternCache(patterns []string) *patternCache {
 			continue
 		}
 
-		// For complex patterns, we'll use path.Match
-		cache.complexPatterns = append(cache.complexPatterns, pattern)
+		// For complex patterns, pre-compile regex for better performance
+		regexPattern, err := cache.compileGlobToRegex(pattern)
+		if err != nil {
+			// Fall back to path.Match for patterns that can't be compiled
+			cache.complexPatterns = append(cache.complexPatterns, pattern)
+		} else {
+			cache.regexPatterns = append(cache.regexPatterns, regexPattern)
+		}
 	}
 
 	return cache
+}
+
+// compileGlobToRegex converts a glob pattern to a compiled regex for faster matching
+func (pc *patternCache) compileGlobToRegex(pattern string) (*regexPattern, error) {
+	// Convert glob pattern to regex pattern
+	regexStr := "^"
+
+	// Escape special regex characters except * and ?
+	escaped := strings.NewReplacer(
+		".", "\\.",
+		"+", "\\+",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"{", "\\{",
+		"}", "\\}",
+		"^", "\\^",
+		"$", "\\$",
+		"|", "\\|",
+		"\\", "\\\\",
+	).Replace(pattern)
+
+	// Convert glob wildcards to regex
+	for i := 0; i < len(escaped); i++ {
+		switch escaped[i] {
+		case '*':
+			regexStr += "[^/]*" // Match any characters except path separator
+		case '?':
+			regexStr += "[^/]" // Match single character except path separator
+		default:
+			regexStr += string(escaped[i])
+		}
+	}
+
+	regexStr += "$"
+
+	// Compile the regex
+	regex, err := regexp.Compile(regexStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine if this is a simple pattern that could be optimized further
+	isSimple := !strings.Contains(pattern, "[") && !strings.Contains(pattern, "{")
+
+	return &regexPattern{
+		regex:    regex,
+		pattern:  pattern,
+		isSimple: isSimple,
+	}, nil
 }
 
 // matches returns true if the string matches any pattern in the cache
@@ -585,7 +654,12 @@ func (pc *patternCache) matches(s string) bool {
 		return true
 	}
 
-	// Complex pattern matching - most expensive, do last
+	// Regex pattern matching - optimized for complex patterns
+	if pc.matchesRegex(s) {
+		return true
+	}
+
+	// Complex pattern matching with path.Match - most expensive, do last
 	return pc.matchesComplex(s)
 }
 
@@ -619,6 +693,16 @@ func (pc *patternCache) matchesContains(s string) bool {
 	return false
 }
 
+// matchesRegex checks if the string matches any pre-compiled regex pattern
+func (pc *patternCache) matchesRegex(s string) bool {
+	for _, regexPattern := range pc.regexPatterns {
+		if regexPattern.regex.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchesComplex checks if the string matches any complex pattern
 func (pc *patternCache) matchesComplex(s string) bool {
 	for _, pattern := range pc.complexPatterns {
@@ -630,10 +714,46 @@ func (pc *patternCache) matchesComplex(s string) bool {
 	return false
 }
 
-// matchesAnyPattern returns true if the string matches any of the patterns
-// This is a compatibility wrapper around the new optimized pattern cache
-func (t *TreeReplicator) matchesAnyPattern(s string, patterns []string) bool {
+// patternCacheMap provides persistent pattern cache storage to avoid repeated compilation
+var patternCacheMap = struct {
+	sync.RWMutex
+	caches map[string]*patternCache
+}{
+	caches: make(map[string]*patternCache),
+}
+
+// getCachedPatternCache returns a cached pattern cache or creates one if it doesn't exist
+func getCachedPatternCache(patterns []string) *patternCache {
+	// Create a key from the patterns for caching
+	key := strings.Join(patterns, "|")
+
+	// Try to get from cache first (read lock)
+	patternCacheMap.RLock()
+	if cache, exists := patternCacheMap.caches[key]; exists {
+		patternCacheMap.RUnlock()
+		return cache
+	}
+	patternCacheMap.RUnlock()
+
+	// Create new cache (write lock)
+	patternCacheMap.Lock()
+	defer patternCacheMap.Unlock()
+
+	// Double-check in case another goroutine created it
+	if cache, exists := patternCacheMap.caches[key]; exists {
+		return cache
+	}
+
+	// Create and store the new cache
 	cache := newPatternCache(patterns)
+	patternCacheMap.caches[key] = cache
+	return cache
+}
+
+// matchesAnyPattern returns true if the string matches any of the patterns
+// This is a compatibility wrapper around the new optimized pattern cache with persistent caching
+func (t *TreeReplicator) matchesAnyPattern(s string, patterns []string) bool {
+	cache := getCachedPatternCache(patterns)
 	return cache.matches(s)
 }
 
@@ -655,7 +775,7 @@ func (t *TreeReplicator) setupSignalHandling(ctx context.Context, cancel context
 	go func() {
 		select {
 		case <-ctx.Done():
-			t.logger.Info("Replication canceled", nil)
+			t.logger.Info("Replication canceled")
 		case <-done:
 			// Normal exit
 		}
@@ -695,11 +815,11 @@ func (t *TreeReplicator) replicationWorker(opts replicationWorkerOptions) {
 			// Generate destination repository name by replacing prefix
 			destRepo := strings.Replace(repo, opts.SourcePrefix, opts.DestPrefix, 1)
 
-			t.logger.Info("Replicating repository", map[string]interface{}{
+			t.logger.WithFields(map[string]interface{}{
 				"source":      fmt.Sprintf("%s/%s", opts.SourceClient.GetRegistryName(), repo),
 				"destination": fmt.Sprintf("%s/%s", opts.DestClient.GetRegistryName(), destRepo),
 				"dry_run":     t.dryRun,
-			})
+			}).Info("Replicating repository")
 
 			// Create options for processing the repository
 			processOpts := repositoryProcessOptions{
@@ -716,10 +836,10 @@ func (t *TreeReplicator) replicationWorker(opts replicationWorkerOptions) {
 			// Process repository
 			if err := t.processRepository(processOpts); err != nil {
 				opts.ErrorCount.Add(1)
-				t.logger.Error("Failed to replicate repository", err, map[string]interface{}{
+				t.logger.WithFields(map[string]interface{}{
 					"source":      fmt.Sprintf("%s/%s", opts.SourceClient.GetRegistryName(), repo),
 					"destination": fmt.Sprintf("%s/%s", opts.DestClient.GetRegistryName(), destRepo),
-				})
+				}).Error("Failed to replicate repository", err)
 			}
 
 			opts.CompletedRepos.Add(1)
@@ -754,19 +874,19 @@ func (t *TreeReplicator) processRepository(opts repositoryProcessOptions) error 
 
 		if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
 			wrappedErr := errors.Wrap(err, "failed to update repository checkpoint")
-			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+			t.logger.WithFields(map[string]interface{}{
 				"checkpoint_id": opts.TreeCheckpoint.ID,
 				"source_repo":   opts.SourceRepo,
 				"dest_repo":     opts.DestRepo,
-			})
+			}).Warn(wrappedErr.Error())
 		}
 	}
 
 	// Production implementation: Perform actual repository replication
-	t.logger.Info("Starting repository replication", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo": opts.SourceRepo,
 		"dest_repo":   opts.DestRepo,
-	})
+	}).Info("Starting repository replication")
 
 	// 1. Get source repository reference
 	sourceRepo, err := opts.SourceClient.GetRepository(opts.Context, opts.SourceRepo)
@@ -786,29 +906,29 @@ func (t *TreeReplicator) processRepository(opts repositoryProcessOptions) error 
 		return errors.Wrap(err, "failed to list source repository tags")
 	}
 
-	t.logger.Info("Found tags in source repository", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo": opts.SourceRepo,
 		"tag_count":   len(tags),
 		"tags":        tags,
-	})
+	}).Info("Found tags in source repository")
 
 	// 4. Filter tags based on configuration
 	filteredTags := t.filterTags(tags)
 	if len(filteredTags) == 0 {
-		t.logger.Info("No tags to replicate after filtering", map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"source_repo": opts.SourceRepo,
 			"total_tags":  len(tags),
-		})
+		}).Info("No tags to replicate after filtering")
 		// Still mark as completed even if no tags to replicate
 		t.markRepositoryCompleted(opts)
 		return nil
 	}
 
-	t.logger.Info("Tags to replicate after filtering", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo":    opts.SourceRepo,
 		"filtered_count": len(filteredTags),
 		"filtered_tags":  filteredTags,
-	})
+	}).Info("Tags to replicate after filtering")
 
 	// 5. For each tag, copy the image using parallel processing
 	err = t.replicateTags(opts, sourceRepo, destRepo, filteredTags)
@@ -835,50 +955,89 @@ func (t *TreeReplicator) replicateTags(
 		tagResults   = make(map[string]error)
 	)
 
-	t.logger.Info("Starting tag replication", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo": opts.SourceRepo,
 		"dest_repo":   opts.DestRepo,
 		"tag_count":   len(tags),
-	})
+	}).Info("Starting tag replication")
 
-	// Process each tag sequentially for now - can be made parallel later
+	// Process tags in parallel for optimal network I/O utilization
+	const maxConcurrentTags = 5 // Limit to avoid overwhelming the registries
+	tagSemaphore := make(chan struct{}, maxConcurrentTags)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
 	for _, tag := range tags {
-		err := t.replicateTag(opts, sourceRepo, destRepo, tag)
-		tagResults[tag] = err
+		wg.Add(1)
+		go func(tag string) {
+			defer wg.Done()
 
-		if err != nil {
-			errorCount++
-			t.logger.Error("Failed to replicate tag", err, map[string]interface{}{
-				"source_repo": opts.SourceRepo,
-				"dest_repo":   opts.DestRepo,
-				"tag":         tag,
-			})
-		} else {
-			successCount++
-			t.logger.Info("Successfully replicated tag", map[string]interface{}{
-				"source_repo": opts.SourceRepo,
-				"dest_repo":   opts.DestRepo,
-				"tag":         tag,
-			})
-		}
-
-		// Update result statistics
-		if opts.Result != nil {
-			if err != nil {
-				opts.Result.ImagesFailed++
-			} else {
-				opts.Result.ImagesReplicated++
+			// Check context before starting work
+			select {
+			case <-opts.Context.Done():
+				mu.Lock()
+				tagResults[tag] = opts.Context.Err()
+				errorCount++
+				mu.Unlock()
+				return
+			default:
 			}
-		}
+
+			// Acquire semaphore with context support
+			select {
+			case tagSemaphore <- struct{}{}:
+				defer func() { <-tagSemaphore }()
+			case <-opts.Context.Done():
+				mu.Lock()
+				tagResults[tag] = opts.Context.Err()
+				errorCount++
+				mu.Unlock()
+				return
+			}
+
+			err := t.replicateTag(opts, sourceRepo, destRepo, tag)
+
+			// Safely update shared state
+			mu.Lock()
+			tagResults[tag] = err
+			if err != nil {
+				errorCount++
+				t.logger.WithFields(map[string]interface{}{
+					"source_repo": opts.SourceRepo,
+					"dest_repo":   opts.DestRepo,
+					"tag":         tag,
+				}).Error("Failed to replicate tag", err)
+			} else {
+				successCount++
+				t.logger.WithFields(map[string]interface{}{
+					"source_repo": opts.SourceRepo,
+					"dest_repo":   opts.DestRepo,
+					"tag":         tag,
+				}).Info("Successfully replicated tag")
+			}
+
+			// Update result statistics
+			if opts.Result != nil {
+				if err != nil {
+					opts.Result.ImagesFailed++
+				} else {
+					opts.Result.ImagesReplicated++
+				}
+			}
+			mu.Unlock()
+		}(tag)
 	}
 
-	t.logger.Info("Tag replication completed", map[string]interface{}{
+	// Wait for all tag replications to complete
+	wg.Wait()
+
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo":   opts.SourceRepo,
 		"dest_repo":     opts.DestRepo,
 		"total_tags":    len(tags),
 		"success_count": successCount,
 		"error_count":   errorCount,
-	})
+	}).Info("Tag replication completed")
 
 	// Return error if any tags failed and no tags succeeded
 	if errorCount > 0 && successCount == 0 {
@@ -887,11 +1046,11 @@ func (t *TreeReplicator) replicateTags(
 
 	// Return partial error if some tags failed
 	if errorCount > 0 {
-		t.logger.Warn("Some tags failed to replicate", map[string]interface{}{
+		t.logger.WithFields(map[string]interface{}{
 			"source_repo":   opts.SourceRepo,
 			"error_count":   errorCount,
 			"success_count": successCount,
-		})
+		}).Warn("Some tags failed to replicate")
 	}
 
 	return nil
@@ -904,11 +1063,11 @@ func (t *TreeReplicator) replicateTag(
 	destRepo interfaces.Repository,
 	tag string,
 ) error {
-	t.logger.Debug("Replicating individual tag", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo": opts.SourceRepo,
 		"dest_repo":   opts.DestRepo,
 		"tag":         tag,
-	})
+	}).Debug("Replicating individual tag")
 
 	// Get source image reference
 	sourceRef, err := sourceRepo.GetImageReference(tag)
@@ -952,13 +1111,13 @@ func (t *TreeReplicator) replicateTag(
 		return fmt.Errorf("image copy reported failure for tag %s", tag)
 	}
 
-	t.logger.Debug("Tag replication completed", map[string]interface{}{
+	t.logger.WithFields(map[string]interface{}{
 		"source_repo":       opts.SourceRepo,
 		"dest_repo":         opts.DestRepo,
 		"tag":               tag,
 		"bytes_transferred": result.Stats.BytesTransferred,
 		"layers":            result.Stats.Layers,
-	})
+	}).Debug("Tag replication completed")
 
 	return nil
 }
@@ -972,12 +1131,12 @@ func (t *TreeReplicator) markRepositoryCompleted(opts repositoryProcessOptions) 
 			opts.TreeCheckpoint.CompletedRepositories = append(opts.TreeCheckpoint.CompletedRepositories, opts.SourceRepo)
 
 			if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
-				t.logger.Warn("Failed to save completion checkpoint", map[string]interface{}{
+				t.logger.WithFields(map[string]interface{}{
 					"checkpoint_id": opts.TreeCheckpoint.ID,
 					"source_repo":   opts.SourceRepo,
 					"dest_repo":     opts.DestRepo,
 					"error":         err.Error(),
-				})
+				}).Warn("Failed to save completion checkpoint")
 			}
 		}
 	}
@@ -997,17 +1156,17 @@ func (t *TreeReplicator) handleError(err error, treeCheckpoint *checkpoint.TreeC
 		err = errors.Wrap(err, "%s", message)
 	}
 
-	t.logger.Error(message, err, nil)
+	t.logger.Error(message, err)
 
 	if t.checkpointing.Enabled && t.checkpointStore != nil && treeCheckpoint != nil {
 		treeCheckpoint.Status = checkpoint.StatusFailed
 		treeCheckpoint.LastError = err.Error()
 		if saveErr := t.checkpointStore.SaveCheckpoint(treeCheckpoint); saveErr != nil {
-			t.logger.Warn("Failed to save error checkpoint", map[string]interface{}{
+			t.logger.WithFields(map[string]interface{}{
 				"error":          saveErr.Error(),
 				"original_error": err.Error(),
 				"id":             treeCheckpoint.ID,
-			})
+			}).Warn("Failed to save error checkpoint")
 		}
 	}
 }
@@ -1028,10 +1187,10 @@ func (t *TreeReplicator) completeReplication(treeCheckpoint *checkpoint.TreeChec
 
 		if err := t.checkpointStore.SaveCheckpoint(treeCheckpoint); err != nil {
 			wrappedErr := errors.Wrap(err, "failed to save final checkpoint")
-			t.logger.Warn(wrappedErr.Error(), map[string]interface{}{
+			t.logger.WithFields(map[string]interface{}{
 				"checkpoint_id": treeCheckpoint.ID,
 				"status":        status,
-			})
+			}).Warn(wrappedErr.Error())
 		}
 	}
 }

@@ -15,7 +15,7 @@ import (
 
 // CreateTransport creates a transport for registry operations with authentication
 // This centralizes the common transport creation logic used in both ECR and GCR clients
-func CreateTransport(registry name.Registry, auth authn.Authenticator, logger *log.Logger) (http.RoundTripper, error) {
+func CreateTransport(registry name.Registry, auth authn.Authenticator, logger log.Logger) (http.RoundTripper, error) {
 	scopes := []string{
 		fmt.Sprintf("repository:%s:pull,push", registry.String()),
 	}
@@ -29,9 +29,7 @@ func CreateTransport(registry name.Registry, auth authn.Authenticator, logger *l
 		scopes,
 	)
 	if err != nil {
-		logger.Error("Failed to create transport", err, map[string]interface{}{
-			"registry": registry.String(),
-		})
+		logger.WithField("registry", registry.String()).Error("Failed to create transport", err)
 		return nil, errors.Wrap(err, "failed to create transport")
 	}
 

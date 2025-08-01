@@ -1,0 +1,166 @@
+# Staging environment values for freightliner
+# Override default values for staging deployment
+
+# Global configuration
+global:
+  imageRegistry: "gcr.io/company-staging"
+  imagePullSecrets:
+    - name: gcr-secret
+  storageClass: "standard"
+
+# Application configuration
+image:
+  repository: freightliner/app
+  tag: "latest"
+  pullPolicy: Always
+
+# Staging configuration - smaller scale
+replicaCount: 2
+
+# Staging service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# Staging ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "50"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+  hosts:
+    - host: freightliner-staging.company.com
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: api-freightliner-staging.company.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: freightliner-staging-tls-cert
+      hosts:
+        - freightliner-staging.company.com
+        - api-freightliner-staging.company.com
+
+# Staging resource limits - smaller than production
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# Staging auto-scaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Staging configuration
+config:
+  logLevel: debug
+  port: 8080
+  
+  # AWS configuration
+  aws:
+    region: us-west-2
+  
+  # GCP configuration
+  gcp:
+    projectId: company-staging-123456
+    region: us-central1
+  
+  # Performance tuning for staging
+  workerPoolSize: 5
+  maxConcurrentReplications: 3
+  httpTimeout: 300s
+  retryAttempts: 3
+  
+  # Monitoring
+  metricsEnabled: true
+  metricsPort: 2112
+
+# Staging environment
+environment: staging
+
+# Staging node selection - use cheaper nodes
+nodeSelector:
+  node-type: staging
+
+# Staging tolerations
+tolerations:
+  - key: "staging"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+# Staging affinity - prefer spreading pods
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - freightliner
+          topologyKey: kubernetes.io/hostname
+
+# Staging network policies - more permissive
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from: []  # Allow from any source within cluster
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 2112
+  egress:
+    - {}  # Allow all egress
+
+# Staging persistence - smaller storage
+persistence:
+  enabled: true
+  storageClass: "standard"
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+# Staging monitoring
+monitoring:
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    interval: 30s
+    path: /metrics
+    port: metrics
+    labels:
+      team: platform
+      environment: staging
+
+# Staging pod disruption budget - less strict
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Staging service account
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT:role/freightliner-staging-role"
+    # GCP Workload Identity
+    iam.gke.io/gcp-service-account: "freightliner-staging@company-staging-123456.iam.gserviceaccount.com"

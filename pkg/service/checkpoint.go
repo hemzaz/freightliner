@@ -17,7 +17,7 @@ import (
 // CheckpointService handles checkpoint operations
 type CheckpointService struct {
 	cfg    *config.Config
-	logger *log.Logger
+	logger log.Logger
 	store  checkpoint.CheckpointStore
 }
 
@@ -48,7 +48,7 @@ type RepositoryInfo struct {
 }
 
 // NewCheckpointService creates a new checkpoint service
-func NewCheckpointService(cfg *config.Config, logger *log.Logger) *CheckpointService {
+func NewCheckpointService(cfg *config.Config, logger log.Logger) *CheckpointService {
 	return &CheckpointService{
 		cfg:    cfg,
 		logger: logger,
@@ -64,9 +64,9 @@ func (s *CheckpointService) initStore(ctx context.Context) error {
 	// Expand checkpoint directory path
 	dir := config.ExpandHomeDir(s.cfg.Checkpoint.Directory)
 
-	s.logger.Debug("Initializing checkpoint store", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"directory": dir,
-	})
+	}).Debug("Initializing checkpoint store")
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -81,11 +81,11 @@ func (s *CheckpointService) initStore(ctx context.Context) error {
 
 	// On Unix-like systems, check if permissions are 0700 (owner-only)
 	if fileInfo.Mode().Perm() != 0700 {
-		s.logger.Warn("Checkpoint directory has insecure permissions, fixing", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"directory":   dir,
 			"permissions": fileInfo.Mode().String(),
 			"recommended": "0700",
-		})
+		}).Warn("Checkpoint directory has insecure permissions, fixing")
 
 		// Fix permissions
 		if chmodErr := os.Chmod(dir, 0700); chmodErr != nil { // #nosec G302 - directory needs executable bit for access
@@ -115,9 +115,9 @@ func (s *CheckpointService) ListCheckpoints(ctx context.Context) ([]CheckpointIn
 		return nil, errors.Wrap(err, "failed to list checkpoints")
 	}
 
-	s.logger.Debug("Listed checkpoints", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"count": len(checkpoints),
-	})
+	}).Debug("Listed checkpoints")
 
 	// Create result array
 	result := make([]CheckpointInfo, 0, len(checkpoints))
@@ -142,9 +142,9 @@ func (s *CheckpointService) GetCheckpoint(ctx context.Context, id string) (*Chec
 		return nil, errors.InvalidInputf("checkpoint ID is required")
 	}
 
-	s.logger.Debug("Loading checkpoint", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id": id,
-	})
+	}).Debug("Loading checkpoint")
 
 	// Load checkpoint from store
 	cp, err := s.store.LoadCheckpoint(id)
@@ -168,18 +168,18 @@ func (s *CheckpointService) DeleteCheckpoint(ctx context.Context, id string) err
 		return errors.InvalidInputf("checkpoint ID is required")
 	}
 
-	s.logger.Debug("Deleting checkpoint", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id": id,
-	})
+	}).Debug("Deleting checkpoint")
 
 	// Delete checkpoint from store
 	if err := s.store.DeleteCheckpoint(id); err != nil {
 		return errors.Wrap(err, "failed to delete checkpoint")
 	}
 
-	s.logger.Info("Checkpoint deleted", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id": id,
-	})
+	}).Info("Checkpoint deleted")
 
 	return nil
 }
@@ -198,10 +198,10 @@ func (s *CheckpointService) ExportCheckpoint(ctx context.Context, id string, fil
 		return errors.InvalidInputf("export file path is required")
 	}
 
-	s.logger.Debug("Exporting checkpoint", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id":   id,
 		"path": filePath,
-	})
+	}).Debug("Exporting checkpoint")
 
 	// Load checkpoint from store
 	cp, err := s.store.LoadCheckpoint(id)
@@ -234,10 +234,10 @@ func (s *CheckpointService) ExportCheckpoint(ctx context.Context, id string, fil
 		return errors.Wrap(err, "failed to export checkpoint to JSON")
 	}
 
-	s.logger.Info("Checkpoint exported", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id":   id,
 		"path": filePath,
-	})
+	}).Info("Checkpoint exported")
 
 	return nil
 }
@@ -252,9 +252,9 @@ func (s *CheckpointService) ImportCheckpoint(ctx context.Context, filePath strin
 		return nil, errors.InvalidInputf("import file path is required")
 	}
 
-	s.logger.Debug("Importing checkpoint", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"path": filePath,
-	})
+	}).Debug("Importing checkpoint")
 
 	// Open file
 	file, err := os.Open(filePath)
@@ -278,10 +278,10 @@ func (s *CheckpointService) ImportCheckpoint(ctx context.Context, filePath strin
 		return nil, errors.Wrap(err, "failed to save imported checkpoint")
 	}
 
-	s.logger.Info("Checkpoint imported", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id":   info.ID,
 		"path": filePath,
-	})
+	}).Info("Checkpoint imported")
 
 	return &info, nil
 }
@@ -390,9 +390,9 @@ func (s *CheckpointService) VerifyCheckpoint(ctx context.Context, id string) (bo
 		return false, errors.InvalidInputf("checkpoint ID is required")
 	}
 
-	s.logger.Debug("Verifying checkpoint", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id": id,
-	})
+	}).Debug("Verifying checkpoint")
 
 	// Check if checkpoint exists
 	exists, err := s.store.CheckpointExists(id)
@@ -407,10 +407,10 @@ func (s *CheckpointService) VerifyCheckpoint(ctx context.Context, id string) (bo
 	// Load checkpoint to verify it's valid
 	_, err = s.store.LoadCheckpoint(id)
 	if err != nil {
-		s.logger.Warn("Checkpoint exists but is invalid", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"id":    id,
 			"error": err.Error(),
-		})
+		}).Warn("Checkpoint exists but is invalid")
 		return false, errors.Wrap(err, "checkpoint exists but is invalid")
 	}
 
@@ -427,11 +427,11 @@ func (s *CheckpointService) GetRemainingRepositories(ctx context.Context, id str
 		return nil, errors.InvalidInputf("checkpoint ID is required")
 	}
 
-	s.logger.Debug("Getting remaining repositories", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id":             id,
 		"skip_completed": skipCompleted,
 		"retry_failed":   retryFailed,
-	})
+	}).Debug("Getting remaining repositories")
 
 	// Load checkpoint
 	cp, err := s.store.LoadCheckpoint(id)
@@ -457,12 +457,12 @@ func (s *CheckpointService) GetRemainingRepositories(ctx context.Context, id str
 		remaining = append(remaining, repoName)
 	}
 
-	s.logger.Info("Found remaining repositories", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"id":        id,
 		"count":     len(remaining),
 		"total":     len(cp.Repositories),
 		"completed": len(cp.CompletedRepositories),
-	})
+	}).Info("Found remaining repositories")
 
 	return remaining, nil
 }

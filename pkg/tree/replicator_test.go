@@ -233,7 +233,7 @@ func TestReplicateTree(t *testing.T) {
 	copier := &copy.Copier{}
 
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a tree replicator
 	treeReplicator := NewTreeReplicator(logger, copier, TreeReplicatorOptions{
@@ -310,7 +310,7 @@ func TestReplicateTreeWithPrefix(t *testing.T) {
 	copier := &copy.Copier{}
 
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a tree replicator
 	treeReplicator := NewTreeReplicator(logger, copier, TreeReplicatorOptions{
@@ -388,7 +388,7 @@ func TestReplicateTreeWithFilters(t *testing.T) {
 	copier := &copy.Copier{}
 
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a tree replicator with specific filters
 	treeReplicator := NewTreeReplicator(logger, copier, TreeReplicatorOptions{

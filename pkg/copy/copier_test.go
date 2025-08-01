@@ -71,7 +71,7 @@ func (m *MockMetrics) ReplicationFailed() {
 
 func TestNewCopier(t *testing.T) {
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a copier
 	copier := NewCopier(logger)
@@ -92,7 +92,7 @@ func TestNewCopier(t *testing.T) {
 
 func TestWithEncryptionManager(t *testing.T) {
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a copier
 	copier := NewCopier(logger)
@@ -108,7 +108,7 @@ func TestWithEncryptionManager(t *testing.T) {
 
 func TestWithMetrics(t *testing.T) {
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a copier
 	copier := NewCopier(logger)
@@ -130,7 +130,7 @@ func TestWithMetrics(t *testing.T) {
 
 func TestWithBlobTransferFunc(t *testing.T) {
 	// Create a logger
-	logger := log.NewLogger(log.InfoLevel)
+	logger := log.NewBasicLogger(log.InfoLevel)
 
 	// Create a copier
 	copier := NewCopier(logger)

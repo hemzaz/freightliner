@@ -1,0 +1,192 @@
+# Security Hardening Workflow with Subagents
+# Freightliner Container Registry Replication Project
+
+workflow:
+  name: "security-hardening"
+  description: "Comprehensive security audit and hardening workflow"
+  version: "1.0"
+  
+  trigger:
+    - event: "code-change"
+      paths: ["pkg/security/**", "pkg/client/auth/**", "pkg/server/**"]
+    - event: "manual"
+    - event: "scheduled"
+      cron: "0 2 * * 1"  # Weekly security audit
+
+  primary_agent: "security-auditor"
+  estimated_duration: "2-4 hours"
+  
+  subagents:
+    vulnerability-scanner:
+      specialist: "OWASP compliance and security testing"
+      tools: ["gosec", "staticcheck", "govulncheck"]
+      focus_areas:
+        - "pkg/client/auth/ (authentication mechanisms)"
+        - "pkg/security/ (encryption and secrets)"
+        - "pkg/server/ (HTTP endpoints and middleware)"
+      timeout: "15m"
+      
+    auth-security-specialist:
+      specialist: "Authentication and authorization security"
+      expertise: ["OAuth2", "JWT", "OIDC", "service accounts"]
+      focus_areas:
+        - "AWS ECR authentication flows"
+        - "GCP Container Registry token management"
+        - "API key handling and storage"
+        - "JWT token validation and expiration"
+      timeout: "20m"
+      
+    crypto-specialist:
+      specialist: "Encryption implementation and key management"
+      expertise: ["AES-GCM", "RSA", "elliptic curves", "HSM", "cloud KMS"]
+      focus_areas:
+        - "Container image encryption at rest"
+        - "Transport layer security (TLS)"
+        - "Key management and rotation"
+        - "Envelope encryption patterns"
+      timeout: "25m"
+
+  workflow_steps:
+    - step: "initial-scan"
+      subagent: "vulnerability-scanner"
+      input:
+        - type: "file_paths"
+          source: "modified_files"
+        - type: "baseline"
+          source: "previous_scan_results"
+      output: "vulnerability_report"
+      parallel: false
+      
+      micro_specialists:
+        - name: "OWASP-compliance-checker"
+          task: "Map vulnerabilities to OWASP Top 10"
+        - name: "dependency-scanner"  
+          task: "Scan Go modules for known CVEs"
+      
+    - step: "auth-analysis"
+      subagent: "auth-security-specialist"
+      input:
+        - type: "vulnerability_report"
+          source: "initial-scan"
+        - type: "auth_files"
+          paths: ["pkg/client/auth/**", "pkg/server/middleware/**"]
+      output: "auth_security_assessment"
+      depends_on: ["initial-scan"]
+      parallel: false
+      
+      micro_specialists:
+        - name: "jwt-validator"
+          task: "Validate JWT implementation security"
+        - name: "oauth-flow-auditor"
+          task: "Audit OAuth2 flow implementations"
+          
+    - step: "crypto-validation"
+      subagent: "crypto-specialist"
+      input:
+        - type: "auth_security_assessment"
+          source: "auth-analysis"
+        - type: "crypto_files"
+          paths: ["pkg/security/encryption/**"]
+      output: "crypto_security_report"
+      depends_on: ["auth-analysis"]
+      parallel: false
+      
+      micro_specialists:
+        - name: "encryption-validator"
+          task: "Validate encryption algorithm implementations"
+        - name: "key-rotation-specialist"
+          task: "Analyze key rotation and lifecycle management"
+
+    - step: "integration-validation"
+      subagent: "vulnerability-scanner"
+      input:
+        - type: "all_reports"
+          sources: ["vulnerability_report", "auth_security_assessment", "crypto_security_report"]
+      output: "integrated_security_assessment"
+      depends_on: ["initial-scan", "auth-analysis", "crypto-validation"]
+      parallel: false
+
+  quality_gates:
+    - gate: "no_critical_vulnerabilities"
+      description: "No critical security vulnerabilities present"
+      validator: "security-auditor"
+      criteria:
+        - "critical_count == 0"
+        - "high_count <= 2"
+      blocking: true
+      auto_fix: false
+      
+    - gate: "auth_flows_validated"
+      description: "All authentication flows properly secured"
+      validator: "auth-security-specialist"
+      criteria:
+        - "jwt_validation_secure == true"
+        - "token_storage_encrypted == true"
+        - "credential_rotation_enabled == true"
+      blocking: true
+      
+    - gate: "encryption_compliance"
+      description: "Encryption meets compliance requirements"
+      validator: "crypto-specialist"
+      criteria:
+        - "aes_gcm_used == true"
+        - "key_rotation_automated == true"
+        - "tls_min_version >= 1.2"
+      blocking: true
+      
+    - gate: "architectural_consistency"
+      description: "Security changes maintain architectural integrity"
+      validator: "architect-review"
+      criteria:
+        - "interface_contracts_maintained == true"
+        - "dependency_direction_correct == true"
+      blocking: false
+
+  output_artifacts:
+    - name: "security_audit_report"
+      format: "markdown"
+      includes: ["vulnerability_report", "auth_security_assessment", "crypto_security_report"]
+      
+    - name: "security_metrics"
+      format: "json"
+      includes: ["vulnerability_counts", "compliance_scores", "risk_ratings"]
+      
+    - name: "remediation_plan"
+      format: "yaml"
+      includes: ["fix_priorities", "implementation_steps", "validation_tests"]
+
+  handoff:
+    success:
+      next_workflow: "performance-optimization"
+      trigger_condition: "all_blocking_gates_passed"
+      handoff_data: ["security_metrics", "remediation_plan"]
+      
+    failure:
+      escalation: "security-team-lead"
+      notification: "critical-security-issues-found"
+      blocking_workflows: ["deployment", "release"]
+
+  monitoring:
+    metrics:
+      - "vulnerability_scan_duration"
+      - "critical_vulnerability_count"
+      - "security_gate_pass_rate"
+      - "time_to_remediation"
+      
+    alerts:
+      - condition: "critical_vulnerability_count > 0"
+        severity: "critical"
+        recipients: ["security-team", "development-leads"]
+        
+      - condition: "scan_duration > 30m"
+        severity: "warning" 
+        recipients: ["devops-team"]
+
+  rollback:
+    conditions:
+      - "quality_gates_failed"
+      - "scan_timeout_exceeded"
+    actions:
+      - "revert_security_changes"
+      - "restore_previous_configuration"
+      - "notify_security_team"

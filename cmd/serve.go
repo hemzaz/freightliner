@@ -26,13 +26,13 @@ func newServeCmd() *cobra.Command {
 
 			// Load configuration from file if specified
 			if configFile != "" {
-				logger.Info("Loading configuration from file", map[string]interface{}{
+				logger.WithFields(map[string]interface{}{
 					"file": configFile,
-				})
+				}).Info("Loading configuration from file")
 
 				loadedCfg, err := config.LoadFromFile(configFile)
 				if err != nil {
-					logger.Error("Failed to load configuration", err, nil)
+					logger.Error("Failed to load configuration", err)
 					fmt.Printf("Error loading configuration: %s\n", err)
 					os.Exit(1)
 				}
@@ -41,10 +41,10 @@ func newServeCmd() *cobra.Command {
 				cfg = loadedCfg
 			}
 
-			logger.Info("Starting replication server", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"port":    cfg.Server.Port,
 				"workers": cfg.Workers.ServeWorkers,
-			})
+			}).Info("Starting replication server")
 
 			// Create services
 			replicationSvc := service.NewReplicationService(cfg, logger)
@@ -54,14 +54,14 @@ func newServeCmd() *cobra.Command {
 			// Create server
 			srv, err := server.NewServer(ctx, cfg, logger, replicationSvc, treeReplicationSvc, checkpointSvc)
 			if err != nil {
-				logger.Error("Failed to create server", err, nil)
+				logger.Error("Failed to create server", err)
 				fmt.Printf("Error creating server: %s\n", err)
 				os.Exit(1)
 			}
 
 			// Start server (this will block until the server is shut down)
 			if err := srv.Start(); err != nil {
-				logger.Error("Server failed", err, nil)
+				logger.Error("Server failed", err)
 				fmt.Printf("Server error: %s\n", err)
 				os.Exit(1)
 			}

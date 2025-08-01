@@ -7,6 +7,9 @@ import (
 // Status represents the status of a replication task
 type Status string
 
+// CheckpointStatus is an alias for Status for backward compatibility
+type CheckpointStatus = Status
+
 const (
 	// StatusPending indicates a task is pending
 	StatusPending Status = "pending"

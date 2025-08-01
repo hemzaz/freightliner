@@ -16,7 +16,7 @@ import (
 type BaseRepository struct {
 	name       string
 	repository name.Repository
-	logger     *log.Logger
+	logger     log.Logger
 
 	// Cache for tags and images
 	tagsMutex sync.RWMutex
@@ -30,13 +30,13 @@ type BaseRepository struct {
 type BaseRepositoryOptions struct {
 	Name       string
 	Repository name.Repository
-	Logger     *log.Logger
+	Logger     log.Logger
 }
 
 // NewBaseRepository creates a new base repository for registry operations
 func NewBaseRepository(opts BaseRepositoryOptions) *BaseRepository {
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	return &BaseRepository{
@@ -69,9 +69,9 @@ func (r *BaseRepository) ListTags(ctx context.Context) ([]string, error) {
 	}
 	r.tagsMutex.RUnlock()
 
-	r.logger.Debug("Listing tags for repository", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
-	})
+	}).Debug("Listing tags for repository")
 
 	// List tags using go-containerregistry
 	tags, err := remote.List(r.repository)
@@ -85,10 +85,10 @@ func (r *BaseRepository) ListTags(ctx context.Context) ([]string, error) {
 	copy(r.tags, tags)
 	r.tagsMutex.Unlock()
 
-	r.logger.Debug("Successfully listed tags", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag_count":  len(tags),
-	})
+	}).Debug("Successfully listed tags")
 
 	return tags, nil
 }
@@ -118,10 +118,10 @@ func (r *BaseRepository) GetTag(ctx context.Context, tagName string) (v1.Image, 
 		return nil, errors.Wrap(err, "failed to create tag reference")
 	}
 
-	r.logger.Debug("Getting tagged image", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag":        tagName,
-	})
+	}).Debug("Getting tagged image")
 
 	// Get the image using remote.Image
 	img, err = remote.Image(tagRef)
@@ -132,10 +132,10 @@ func (r *BaseRepository) GetTag(ctx context.Context, tagName string) (v1.Image, 
 	// Cache the image
 	r.CacheImage(tagName, img)
 
-	r.logger.Debug("Successfully retrieved tagged image", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag":        tagName,
-	})
+	}).Debug("Successfully retrieved tagged image")
 
 	return img, nil
 }
@@ -146,10 +146,10 @@ func (r *BaseRepository) GetImage(ctx context.Context, digest string) (v1.Image,
 		return nil, errors.InvalidInputf("digest cannot be empty")
 	}
 
-	r.logger.Debug("Getting image by digest", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"digest":     digest,
-	})
+	}).Debug("Getting image by digest")
 
 	// Create digest reference
 	digestRef, err := name.NewDigest(r.repository.String() + "@" + digest)
@@ -163,10 +163,10 @@ func (r *BaseRepository) GetImage(ctx context.Context, digest string) (v1.Image,
 		return nil, errors.Wrap(err, "failed to get image by digest from registry")
 	}
 
-	r.logger.Debug("Successfully retrieved image by digest", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"digest":     digest,
-	})
+	}).Debug("Successfully retrieved image by digest")
 
 	return img, nil
 }
@@ -177,10 +177,10 @@ func (r *BaseRepository) DeleteTag(ctx context.Context, tagName string) error {
 		return errors.InvalidInputf("tag name cannot be empty")
 	}
 
-	r.logger.Debug("Deleting tag from repository", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag":        tagName,
-	})
+	}).Debug("Deleting tag from repository")
 
 	// Create tag reference
 	tagRef, err := r.CreateTagReference(tagName)
@@ -208,10 +208,10 @@ func (r *BaseRepository) DeleteTag(ctx context.Context, tagName string) error {
 		r.tags = nil
 	}()
 
-	r.logger.Info("Successfully deleted tag", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag":        tagName,
-	})
+	}).Info("Successfully deleted tag")
 
 	return nil
 }
@@ -226,10 +226,10 @@ func (r *BaseRepository) PutImage(ctx context.Context, img v1.Image, tagName str
 		return errors.InvalidInputf("tag name cannot be empty")
 	}
 
-	r.logger.Debug("Putting image to repository", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag":        tagName,
-	})
+	}).Debug("Putting image to repository")
 
 	// Create tag reference
 	tagRef, err := r.CreateTagReference(tagName)
@@ -253,10 +253,10 @@ func (r *BaseRepository) PutImage(ctx context.Context, img v1.Image, tagName str
 		r.tags = nil
 	}()
 
-	r.logger.Info("Successfully pushed image", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"repository": r.name,
 		"tag":        tagName,
-	})
+	}).Info("Successfully pushed image")
 
 	return nil
 }

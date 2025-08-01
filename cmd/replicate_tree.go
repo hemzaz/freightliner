@@ -29,18 +29,18 @@ func newReplicateTreeCmd() *cobra.Command {
 			treeReplicationSvc := service.NewTreeReplicationService(cfg, logger)
 
 			// Execute tree replication
-			logger.Info("Starting tree replication", map[string]interface{}{
+			logger.WithFields(map[string]interface{}{
 				"source":      source,
 				"destination": destination,
 				"force":       cfg.TreeReplicate.Force,
 				"dry_run":     cfg.TreeReplicate.DryRun,
 				"checkpoint":  cfg.TreeReplicate.EnableCheckpoint,
 				"resume_id":   cfg.TreeReplicate.ResumeID,
-			})
+			}).Info("Starting tree replication")
 
 			result, err := treeReplicationSvc.ReplicateTree(ctx, source, destination)
 			if err != nil {
-				logger.Error("Tree replication failed", err, nil)
+				logger.Error("Tree replication failed", err)
 				fmt.Printf("Error during tree replication: %s\n", err)
 				os.Exit(1)
 			}

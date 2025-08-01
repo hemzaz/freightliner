@@ -72,6 +72,7 @@ func init() {
 
 	// Add commands
 	rootCmd.AddCommand(newVersionCmd())
+	rootCmd.AddCommand(newHealthCheckCmd())
 	rootCmd.AddCommand(newReplicateCmd())
 	rootCmd.AddCommand(newReplicateTreeCmd())
 	rootCmd.AddCommand(newCheckpointCmd())
@@ -79,7 +80,7 @@ func init() {
 }
 
 // setupCommand creates a logger and a cancellable context
-func setupCommand(ctx context.Context) (*log.Logger, context.Context, context.CancelFunc) {
+func setupCommand(ctx context.Context) (log.Logger, context.Context, context.CancelFunc) {
 	logger := createLogger(cfg.LogLevel)
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -89,7 +90,7 @@ func setupCommand(ctx context.Context) (*log.Logger, context.Context, context.Ca
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		select {
 		case <-sigCh:
-			logger.Info("Received termination signal, shutting down", nil)
+			logger.Info("Received termination signal, shutting down")
 			cancel()
 		case <-ctx.Done():
 			return
@@ -100,7 +101,7 @@ func setupCommand(ctx context.Context) (*log.Logger, context.Context, context.Ca
 }
 
 // createLogger creates a new logger with the specified level
-func createLogger(level string) *log.Logger {
+func createLogger(level string) log.Logger {
 	var logLevel log.Level
 	switch level {
 	case "debug":
@@ -114,5 +115,5 @@ func createLogger(level string) *log.Logger {
 	default:
 		logLevel = log.InfoLevel
 	}
-	return log.NewLogger(logLevel)
+	return log.NewBasicLogger(logLevel)
 }

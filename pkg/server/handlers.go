@@ -155,17 +155,19 @@ func (s *Server) listJobsHandler(w http.ResponseWriter, r *http.Request) {
 		// Convert job to JSON and parse it back to a map
 		jsonData, err := job.ToJSON()
 		if err != nil {
-			s.logger.Error("Failed to convert job to JSON", err, map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"job_id": job.GetID(),
-			})
+				"error":  err.Error(),
+			}).Error("Failed to convert job to JSON", err)
 			continue
 		}
 
 		var jobMap map[string]interface{}
 		if err := json.Unmarshal(jsonData, &jobMap); err != nil {
-			s.logger.Error("Failed to parse job JSON", err, map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"job_id": job.GetID(),
-			})
+				"error":  err.Error(),
+			}).Error("Failed to parse job JSON", err)
 			continue
 		}
 
@@ -195,9 +197,10 @@ func (s *Server) getJobHandler(w http.ResponseWriter, r *http.Request) {
 	// Convert job to JSON
 	jsonData, err := job.ToJSON()
 	if err != nil {
-		s.logger.Error("Failed to convert job to JSON", err, map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"job_id": job.GetID(),
-		})
+			"error":  err.Error(),
+		}).Error("Failed to convert job to JSON", err)
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to convert job to JSON")
 		return
 	}
@@ -205,9 +208,10 @@ func (s *Server) getJobHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse job JSON to map
 	var jobMap map[string]interface{}
 	if err := json.Unmarshal(jsonData, &jobMap); err != nil {
-		s.logger.Error("Failed to parse job JSON", err, map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"job_id": job.GetID(),
-		})
+			"error":  err.Error(),
+		}).Error("Failed to parse job JSON", err)
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to parse job JSON")
 		return
 	}
@@ -221,7 +225,7 @@ func (s *Server) listCheckpointsHandler(w http.ResponseWriter, r *http.Request) 
 	// Get checkpoints
 	checkpoints, err := s.checkpointSvc.ListCheckpoints(r.Context())
 	if err != nil {
-		s.logger.Error("Failed to list checkpoints", err, nil)
+		s.logger.Error("Failed to list checkpoints", err)
 		s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to list checkpoints")
 		return
 	}
@@ -245,9 +249,10 @@ func (s *Server) getCheckpointHandler(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(err.Error(), "not found") {
 			s.writeErrorResponse(w, http.StatusNotFound, "Checkpoint not found")
 		} else {
-			s.logger.Error("Failed to get checkpoint", err, map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"checkpoint_id": checkpointID,
-			})
+				"error":         err.Error(),
+			}).Error("Failed to get checkpoint", err)
 			s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to get checkpoint")
 		}
 		return
@@ -269,9 +274,10 @@ func (s *Server) deleteCheckpointHandler(w http.ResponseWriter, r *http.Request)
 		if strings.Contains(err.Error(), "not found") {
 			s.writeErrorResponse(w, http.StatusNotFound, "Checkpoint not found")
 		} else {
-			s.logger.Error("Failed to delete checkpoint", err, map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"checkpoint_id": checkpointID,
-			})
+				"error":         err.Error(),
+			}).Error("Failed to delete checkpoint", err)
 			s.writeErrorResponse(w, http.StatusInternalServerError, "Failed to delete checkpoint")
 		}
 		return

@@ -15,13 +15,13 @@ import (
 
 // RegistryUtil provides common functionality for registry clients
 type RegistryUtil struct {
-	logger *log.Logger
+	logger log.Logger
 }
 
 // NewRegistryUtil creates a new registry utility instance
-func NewRegistryUtil(logger *log.Logger) *RegistryUtil {
+func NewRegistryUtil(logger log.Logger) *RegistryUtil {
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	return &RegistryUtil{
@@ -112,5 +112,5 @@ func (u *RegistryUtil) LogRegistryOperation(ctx context.Context, operation, regi
 		fields[k] = v
 	}
 
-	u.logger.Info(fmt.Sprintf("Registry operation: %s", operation), fields)
+	u.logger.WithFields(fields).Info(fmt.Sprintf("Registry operation: %s", operation))
 }

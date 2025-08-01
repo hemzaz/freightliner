@@ -2,6 +2,7 @@ package replication
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -44,12 +45,20 @@ func GetDestinationRepository(rule ReplicationRule, sourceRepository string) str
 		return sourceRepository
 	}
 
-	// Case 2: Many-to-one mapping (source has wildcard, destination doesn't)
-	if isWildcardPattern(rule.SourceRepository) && !isWildcardPattern(rule.DestinationRepository) {
+	// Case 2: Source has wildcards and destination has substitution patterns
+	if isWildcardPattern(rule.SourceRepository) && isSubstitutionPattern(rule.DestinationRepository) {
+		substitutedRepo := substituteWildcard(rule.SourceRepository, rule.DestinationRepository, sourceRepository)
+		if substitutedRepo != "" {
+			return substitutedRepo
+		}
+	}
+
+	// Case 3: Many-to-one mapping (source has wildcard, destination doesn't have wildcards or substitutions)
+	if isWildcardPattern(rule.SourceRepository) && !isWildcardPattern(rule.DestinationRepository) && !isSubstitutionPattern(rule.DestinationRepository) {
 		return rule.DestinationRepository
 	}
 
-	// Case 3: Both patterns have wildcards, try to substitute
+	// Case 4: Both patterns have wildcards, try to substitute
 	if isWildcardPattern(rule.SourceRepository) && isWildcardPattern(rule.DestinationRepository) {
 		substitutedRepo := substituteWildcard(rule.SourceRepository, rule.DestinationRepository, sourceRepository)
 		if substitutedRepo != "" {
@@ -66,9 +75,55 @@ func isWildcardPattern(pattern string) bool {
 	return strings.Contains(pattern, "*")
 }
 
-// substituteWildcard extracts the part matching the wildcard in the source pattern
-// and substitutes it into the destination pattern
+// isSubstitutionPattern checks if a pattern contains substitution placeholders ($1, $2, etc.)
+func isSubstitutionPattern(pattern string) bool {
+	// Check for $1, $2, $3, etc.
+	for i := 1; i <= 9; i++ {
+		if strings.Contains(pattern, "$"+string(rune('0'+i))) {
+			return true
+		}
+	}
+	return false
+}
+
+// substituteWildcard extracts the parts matching wildcards in the source pattern
+// and substitutes them into the destination pattern using $1, $2, etc.
 func substituteWildcard(sourcePattern, destPattern, sourceString string) string {
+	// Convert shell-style wildcards to regex pattern
+	regexPattern := strings.ReplaceAll(sourcePattern, "*", "([^/]+)")
+	regexPattern = "^" + regexPattern + "$"
+
+	// Compile the regex
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		// Fallback to simple wildcard replacement for invalid regex
+		return fallbackWildcardSubstitution(sourcePattern, destPattern, sourceString)
+	}
+
+	// Find matches
+	matches := re.FindStringSubmatch(sourceString)
+	if len(matches) < 2 {
+		// No capture groups found, fallback to simple substitution
+		return fallbackWildcardSubstitution(sourcePattern, destPattern, sourceString)
+	}
+
+	// Substitute capture groups in destination pattern
+	result := destPattern
+	for i := 1; i < len(matches); i++ {
+		placeholder := "$" + string(rune('0'+i))
+		result = strings.ReplaceAll(result, placeholder, matches[i])
+	}
+
+	// Also handle simple * replacement for backward compatibility
+	if strings.Contains(result, "*") && len(matches) >= 2 {
+		result = strings.ReplaceAll(result, "*", matches[1])
+	}
+
+	return result
+}
+
+// fallbackWildcardSubstitution provides simple single-wildcard substitution for backward compatibility
+func fallbackWildcardSubstitution(sourcePattern, destPattern, sourceString string) string {
 	// Split the source pattern at the wildcard
 	parts := strings.Split(sourcePattern, "*")
 	if len(parts) != 2 {

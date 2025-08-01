@@ -25,7 +25,7 @@ func ListResumableCheckpoints(store checkpoint.CheckpointStore) ([]checkpoint.Re
 // CheckpointManager handles checkpoint operations for tree replication
 type CheckpointManager struct {
 	store  checkpoint.CheckpointStore
-	logger *log.Logger
+	logger log.Logger
 
 	// Current checkpoint being used
 	current *checkpoint.TreeCheckpoint
@@ -38,9 +38,9 @@ type CheckpointManager struct {
 }
 
 // NewCheckpointManager creates a new checkpoint manager
-func NewCheckpointManager(store checkpoint.CheckpointStore, logger *log.Logger) *CheckpointManager {
+func NewCheckpointManager(store checkpoint.CheckpointStore, logger log.Logger) *CheckpointManager {
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	return &CheckpointManager{
@@ -218,9 +218,9 @@ func (m *CheckpointManager) updateCheckpoint(ctx context.Context) error {
 
 	m.current.LastUpdated = time.Now()
 	if err := m.store.SaveCheckpoint(m.current); err != nil {
-		m.logger.Error("Failed to save checkpoint", err, map[string]interface{}{
+		m.logger.WithFields(map[string]interface{}{
 			"checkpoint_id": m.current.ID,
-		})
+		}).Error("Failed to save checkpoint", err)
 		return errors.Wrap(err, "failed to save checkpoint")
 	}
 

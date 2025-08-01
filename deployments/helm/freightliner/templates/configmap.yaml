@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "freightliner.configMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "freightliner.labels" . | nindent 4 }}
+data:
+  # Application configuration
+  config.yaml: |
+    log_level: {{ .Values.config.logLevel | quote }}
+    port: {{ .Values.config.port }}
+    
+    # Registry configuration
+    aws:
+      region: {{ .Values.config.aws.region | quote }}
+      {{- if .Values.config.aws.ecrEndpoint }}
+      ecr_endpoint: {{ .Values.config.aws.ecrEndpoint | quote }}
+      {{- end }}
+    
+    gcp:
+      project_id: {{ .Values.config.gcp.projectId | quote }}
+      region: {{ .Values.config.gcp.region | quote }}
+    
+    # Performance tuning
+    worker_pool_size: {{ .Values.config.workerPoolSize }}
+    max_concurrent_replications: {{ .Values.config.maxConcurrentReplications }}
+    http_timeout: {{ .Values.config.httpTimeout | quote }}
+    retry_attempts: {{ .Values.config.retryAttempts }}
+    
+    # Monitoring
+    metrics:
+      enabled: {{ .Values.config.metricsEnabled }}
+      port: {{ .Values.config.metricsPort }}
+    
+    # Environment
+    environment: {{ .Values.environment | quote }}
+
+  # Health check script
+  health-check.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Check if the application is responding
+    curl -f -s "http://localhost:{{ .Values.config.port }}/health" > /dev/null
+    
+    # Check metrics endpoint if enabled
+    {{- if .Values.config.metricsEnabled }}
+    curl -f -s "http://localhost:{{ .Values.config.metricsPort }}/metrics" > /dev/null
+    {{- end }}
+    
+    echo "Health check passed"
+
+  # Startup script
+  startup.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Starting Freightliner Container Registry Replication..."
+    echo "Environment: {{ .Values.environment }}"
+    echo "Log Level: {{ .Values.config.logLevel }}"
+    
+    # Validate required environment variables
+    if [ -z "$AWS_REGION" ]; then
+      echo "Warning: AWS_REGION not set"
+    fi
+    
+    if [ -z "$GCP_PROJECT_ID" ]; then
+      echo "Warning: GCP_PROJECT_ID not set"
+    fi
+    
+    # Check if credentials are available
+    if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+      echo "AWS credentials detected"
+    else
+      echo "Warning: AWS credentials not found"
+    fi
+    
+    if [ -f "/etc/gcp-sa/service-account-key.json" ]; then
+      echo "GCP service account key detected"
+    else
+      echo "Warning: GCP service account key not found"
+    fi
+    
+    # Start the application
+    exec /app/freightliner

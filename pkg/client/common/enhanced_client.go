@@ -17,7 +17,7 @@ import (
 type EnhancedClientOptions struct {
 	// Basic options
 	RegistryName string
-	Logger       *log.Logger
+	Logger       log.Logger
 
 	// Authentication options
 	Authenticator            authn.Authenticator
@@ -68,7 +68,7 @@ type TransportOption func(*http.Transport)
 // NewEnhancedClient creates a new enhanced client
 func NewEnhancedClient(opts EnhancedClientOptions) *EnhancedClient {
 	if opts.Logger == nil {
-		opts.Logger = log.NewLogger(log.InfoLevel)
+		opts.Logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	// Create base client

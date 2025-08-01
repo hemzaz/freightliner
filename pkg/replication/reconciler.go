@@ -19,7 +19,7 @@ import (
 
 // Reconciler handles reconciling repositories between registries
 type Reconciler struct {
-	logger      *log.Logger
+	logger      log.Logger
 	copier      *copy.Copier
 	workerPool  *WorkerPool
 	metrics     metrics.MetricsCollector
@@ -30,7 +30,7 @@ type Reconciler struct {
 
 // ReconcilerOptions configures the reconciler behavior
 type ReconcilerOptions struct {
-	Logger      *log.Logger
+	Logger      log.Logger
 	Copier      *copy.Copier
 	WorkerPool  *WorkerPool
 	Metrics     metrics.MetricsCollector
@@ -160,20 +160,20 @@ func (r *Reconciler) tagNeedsReplica(
 	// Get the source manifest
 	sourceManifest, err := sourceRepo.GetManifest(ctx, tag)
 	if err != nil {
-		r.logger.Warn("Failed to get source manifest, skipping tag", map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"tag":   tag,
 			"error": err.Error(),
-		})
+		}).Warn("Failed to get source manifest, skipping tag")
 		return false, err
 	}
 
 	// Get the destination manifest
 	destManifest, err := destRepo.GetManifest(ctx, tag)
 	if err != nil {
-		r.logger.Warn("Failed to get destination manifest, will re-copy", map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"tag":   tag,
 			"error": err.Error(),
-		})
+		}).Warn("Failed to get destination manifest, will re-copy")
 		return true, nil
 	}
 
@@ -182,23 +182,23 @@ func (r *Reconciler) tagNeedsReplica(
 	destDigest := destManifest.Digest
 
 	if sourceDigest == destDigest {
-		r.logger.Debug("Skipping tag, already exists with same digest", map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"tag":           tag,
 			"source_digest": sourceDigest,
 			"dest_digest":   destDigest,
 			"source":        rule.SourceRepository,
 			"destination":   rule.DestinationRepository,
-		})
+		}).Debug("Skipping tag, already exists with same digest")
 		return false, nil
 	}
 
-	r.logger.Info("Tag exists but has different digest, will re-copy", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"tag":           tag,
 		"source_digest": sourceDigest,
 		"dest_digest":   destDigest,
 		"source":        rule.SourceRepository,
 		"destination":   rule.DestinationRepository,
-	})
+	}).Info("Tag exists but has different digest, will re-copy")
 	return true, nil
 }
 
@@ -211,11 +211,11 @@ func (r *Reconciler) processTagTask(
 	tag string,
 	results *util.Results) error {
 
-	r.logger.Info("Copying tag", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"source_repository":      rule.SourceRepository,
 		"destination_repository": rule.DestinationRepository,
 		"tag":                    tag,
-	})
+	}).Info("Copying tag")
 
 	// Track metrics for this tag copy operation
 	if r.metrics != nil {
@@ -233,11 +233,11 @@ func (r *Reconciler) processTagTask(
 
 	// Skip the actual copy in dry run mode
 	if r.dryRun {
-		r.logger.Info("Dry run - would copy image", map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"source_repo": sourceRepo.GetRepositoryName(),
 			"dest_repo":   destRepo.GetRepositoryName(),
 			"tag":         tag,
-		})
+		}).Info("Dry run - would copy image")
 		results.AddMetric("copiedTags", 1)
 
 		if r.metrics != nil {
@@ -255,14 +255,14 @@ func (r *Reconciler) processTagTask(
 	}
 
 	// Log success
-	r.logger.Info("Successfully copied tag", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"source_repository":      rule.SourceRepository,
 		"destination_repository": rule.DestinationRepository,
 		"tag":                    tag,
 		"bytes_transferred":      copyResult.Stats.BytesTransferred,
 		"layers":                 copyResult.Stats.Layers,
 		"duration":               time.Since(startTime),
-	})
+	}).Info("Successfully copied tag")
 
 	results.AddMetric("copiedTags", 1)
 	results.AddMetric("bytesTransferred", copyResult.Stats.BytesTransferred)
@@ -292,10 +292,10 @@ func (r *Reconciler) prepareReferences(
 	var srcRefTemp name.Reference
 	srcRefRaw, err := sourceRepo.GetImageReference(tag)
 	if err != nil {
-		r.logger.Error("Failed to get source image reference", err, map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"source_repository": rule.SourceRepository,
 			"tag":               tag,
-		})
+		}).Error("Failed to get source image reference", err)
 
 		if r.metrics != nil {
 			r.metrics.TagCopyFailed(rule.SourceRepository, rule.DestinationRepository, tag)
@@ -309,10 +309,10 @@ func (r *Reconciler) prepareReferences(
 	var destRefTemp name.Reference
 	destRefRaw, err := destRepo.GetImageReference(tag)
 	if err != nil {
-		r.logger.Error("Failed to get destination image reference", err, map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"dest_repository": rule.DestinationRepository,
 			"tag":             tag,
-		})
+		}).Error("Failed to get destination image reference", err)
 
 		if r.metrics != nil {
 			r.metrics.TagCopyFailed(rule.SourceRepository, rule.DestinationRepository, tag)
@@ -325,10 +325,10 @@ func (r *Reconciler) prepareReferences(
 	// Get source and destination options
 	srcOptsRaw, err := sourceRepo.GetRemoteOptions()
 	if err != nil {
-		r.logger.Error("Failed to get source remote options", err, map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"source_repository": rule.SourceRepository,
 			"tag":               tag,
-		})
+		}).Error("Failed to get source remote options", err)
 
 		if r.metrics != nil {
 			r.metrics.TagCopyFailed(rule.SourceRepository, rule.DestinationRepository, tag)
@@ -339,10 +339,10 @@ func (r *Reconciler) prepareReferences(
 
 	destOptsRaw, err := destRepo.GetRemoteOptions()
 	if err != nil {
-		r.logger.Error("Failed to get destination remote options", err, map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"dest_repository": rule.DestinationRepository,
 			"tag":             tag,
-		})
+		}).Error("Failed to get destination remote options", err)
 
 		if r.metrics != nil {
 			r.metrics.TagCopyFailed(rule.SourceRepository, rule.DestinationRepository, tag)
@@ -381,11 +381,11 @@ func (r *Reconciler) performCopy(
 	)
 
 	if err != nil {
-		r.logger.Error("Failed to copy tag", err, map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"source_repository":      rule.SourceRepository,
 			"destination_repository": rule.DestinationRepository,
 			"tag":                    tag,
-		})
+		}).Error("Failed to copy tag", err)
 
 		if r.metrics != nil {
 			r.metrics.TagCopyFailed(rule.SourceRepository, rule.DestinationRepository, tag)
@@ -430,10 +430,10 @@ func (r *Reconciler) processAndReplicateTags(
 		needsReplica, err := r.tagNeedsReplica(ctx, rule, tag, sourceRepo, destRepo, destTagMap)
 		if err != nil || !needsReplica {
 			if err != nil {
-				r.logger.Debug("Error checking if tag needs replica", map[string]interface{}{
+				r.logger.WithFields(map[string]interface{}{
 					"tag":   tag,
 					"error": err.Error(),
-				})
+				}).Debug("Error checking if tag needs replica")
 			}
 			results.AddMetric("skippedTags", 1)
 			continue
@@ -450,10 +450,10 @@ func (r *Reconciler) processAndReplicateTags(
 
 	// Wait for all copy operations to complete and collect any errors
 	if err := g.Wait(); err != nil {
-		r.logger.Error("Error processing one or more tags", err, map[string]interface{}{
+		r.logger.WithFields(map[string]interface{}{
 			"source_repository":      rule.SourceRepository,
 			"destination_repository": rule.DestinationRepository,
-		})
+		}).Error("Error processing one or more tags", err)
 		return err
 	}
 
@@ -475,14 +475,14 @@ func (r *Reconciler) logCompletionAndUpdateMetrics(
 	totalTags, copiedTags, skippedTags, failedTags int) {
 
 	// Log final summary
-	r.logger.Info("Reconciliation complete", map[string]interface{}{
+	r.logger.WithFields(map[string]interface{}{
 		"source_repository":      rule.SourceRepository,
 		"destination_repository": rule.DestinationRepository,
 		"total_tags":             totalTags,
 		"copied_tags":            copiedTags,
 		"skipped_tags":           skippedTags,
 		"failed_tags":            failedTags,
-	})
+	}).Info("Reconciliation complete")
 
 	// Update metrics
 	if r.metrics != nil {
@@ -523,9 +523,9 @@ func (r *Reconciler) ReconcileAllRepositories(
 		if !ok {
 			err := errors.NotFoundf("source registry client not found: %s", rule.SourceRegistry)
 			reconcileErrors = append(reconcileErrors, err)
-			r.logger.Error("Source registry client not found", err, map[string]interface{}{
+			r.logger.WithFields(map[string]interface{}{
 				"registry": rule.SourceRegistry,
-			})
+			}).Error("Source registry client not found", err)
 			continue
 		}
 
@@ -534,9 +534,9 @@ func (r *Reconciler) ReconcileAllRepositories(
 		if !ok {
 			err := errors.NotFoundf("destination registry client not found: %s", rule.DestinationRegistry)
 			reconcileErrors = append(reconcileErrors, err)
-			r.logger.Error("Destination registry client not found", err, map[string]interface{}{
+			r.logger.WithFields(map[string]interface{}{
 				"registry": rule.DestinationRegistry,
-			})
+			}).Error("Destination registry client not found", err)
 			continue
 		}
 
@@ -544,12 +544,12 @@ func (r *Reconciler) ReconcileAllRepositories(
 		err := r.ReconcileRepository(ctx, rule, sourceClient, destClient)
 		if err != nil {
 			reconcileErrors = append(reconcileErrors, err)
-			r.logger.Error("Failed to reconcile repository", err, map[string]interface{}{
+			r.logger.WithFields(map[string]interface{}{
 				"source_registry":        rule.SourceRegistry,
 				"source_repository":      rule.SourceRepository,
 				"destination_registry":   rule.DestinationRegistry,
 				"destination_repository": rule.DestinationRepository,
-			})
+			}).Error("Failed to reconcile repository", err)
 		}
 	}
 

@@ -58,7 +58,8 @@ func (c *ReplicationConfig) GetDestinationRepository(sourceRepo string) (string,
 	// Check all rules for a matching source repository
 	for _, rule := range c.Rules {
 		if MatchPattern(rule.SourceRepository, sourceRepo) {
-			return rule.DestinationRepository, true
+			// Perform wildcard substitution to get the actual destination
+			return GetDestinationRepository(rule, sourceRepo), true
 		}
 	}
 	return "", false

@@ -5,6 +5,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Common error types that can be used across the application
@@ -131,4 +132,70 @@ func Canceledf(format string, args ...interface{}) error {
 // This is an alias for NotSupportedf for backward compatibility.
 func NotImplementedf(format string, args ...interface{}) error {
 	return NotSupportedf(format, args...)
+}
+
+// Newf creates a new error with a formatted message.
+// This is equivalent to fmt.Errorf without any wrapped errors.
+func Newf(format string, args ...interface{}) error {
+	return fmt.Errorf(format, args...)
+}
+
+// Multiple combines multiple errors into a single error.
+// If no errors are provided, returns nil.
+// If only one error is provided, returns that error.
+// If multiple errors are provided, returns an error that contains all of them.
+func Multiple(errs ...error) error {
+	// Filter out nil errors
+	validErrors := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil {
+			validErrors = append(validErrors, err)
+		}
+	}
+
+	// Return based on number of valid errors
+	switch len(validErrors) {
+	case 0:
+		return nil
+	case 1:
+		return validErrors[0]
+	default:
+		return &multiError{errors: validErrors}
+	}
+}
+
+// multiError is an error that wraps multiple errors
+type multiError struct {
+	errors []error
+}
+
+// Error returns a string representation of all errors
+func (me *multiError) Error() string {
+	if len(me.errors) == 0 {
+		return ""
+	}
+
+	if len(me.errors) == 1 {
+		return me.errors[0].Error()
+	}
+
+	messages := make([]string, len(me.errors))
+	for i, err := range me.errors {
+		messages[i] = err.Error()
+	}
+
+	return strings.Join(messages, "; ")
+}
+
+// Unwrap returns the first error for error unwrapping
+func (me *multiError) Unwrap() error {
+	if len(me.errors) == 0 {
+		return nil
+	}
+	return me.errors[0]
+}
+
+// Errors returns all wrapped errors
+func (me *multiError) Errors() []error {
+	return me.errors
 }

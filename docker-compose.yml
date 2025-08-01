@@ -1,0 +1,154 @@
+# Docker Compose for local development and testing
+version: '3.8'
+
+services:
+  # Freightliner application
+  freightliner:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: freightliner-dev
+    ports:
+      - "8080:8080"
+      - "2345:2345"  # Delve debugger port
+    volumes:
+      - .:/app
+      - freightliner-cache:/go/pkg/mod
+    environment:
+      - LOG_LEVEL=debug
+      - PORT=8080
+      - ENVIRONMENT=development
+      - AWS_REGION=us-west-2
+      - GCP_PROJECT_ID=freightliner-dev
+      - GCP_REGION=us-central1
+      - WORKER_POOL_SIZE=5
+      - MAX_CONCURRENT_REPLICATIONS=3
+      - HTTP_TIMEOUT=300s
+      - RETRY_ATTEMPTS=3
+      - METRICS_ENABLED=true
+      - METRICS_PORT=2112
+      # AWS credentials (use AWS CLI config or IAM roles in production)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # GCP credentials (mount service account key)
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/config/gcp-sa-key.json
+    volumes:
+      - .:/app
+      - ~/.aws:/home/appuser/.aws:ro
+      - ./config:/app/config:ro
+    depends_on:
+      - redis
+      - prometheus
+    networks:
+      - freightliner-network
+    restart: unless-stopped
+
+  # Redis for caching and coordination
+  redis:
+    image: redis:7-alpine
+    container_name: freightliner-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - freightliner-network
+    restart: unless-stopped
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: freightliner-prometheus-dev
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - freightliner-network
+    restart: unless-stopped
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: freightliner-grafana-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    networks:
+      - freightliner-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: freightliner-jaeger-dev
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - freightliner-network
+    restart: unless-stopped
+
+  # MinIO for S3-compatible local storage
+  minio:
+    image: minio/minio:latest
+    container_name: freightliner-minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    command: server /data --console-address ":9001"
+    networks:
+      - freightliner-network
+    restart: unless-stopped
+
+  # Create MinIO buckets
+  minio-setup:
+    image: minio/mc:latest
+    container_name: freightliner-minio-setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/freightliner-checkpoints || true;
+      /usr/bin/mc policy set public myminio/freightliner-checkpoints || true;
+      exit 0;
+      "
+    networks:
+      - freightliner-network
+
+volumes:
+  freightliner-cache:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+  minio-data:
+
+networks:
+  freightliner-network:
+    driver: bridge

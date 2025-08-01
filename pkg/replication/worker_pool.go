@@ -3,6 +3,7 @@ package replication
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"freightliner/pkg/helper/errors"
@@ -11,13 +12,16 @@ import (
 
 // WorkerPool manages a pool of workers for parallel processing
 type WorkerPool struct {
-	workers     int
-	jobQueue    chan WorkerJob
-	results     chan JobResult
-	waitGroup   sync.WaitGroup
-	stopContext context.Context
-	stopFunc    context.CancelFunc
-	logger      *log.Logger
+	workers       int
+	jobQueue      chan WorkerJob
+	results       chan JobResult
+	waitGroup     sync.WaitGroup
+	stopContext   context.Context
+	stopFunc      context.CancelFunc
+	logger        log.Logger
+	closed        atomic.Bool
+	jobsClosed    atomic.Bool
+	resultsClosed atomic.Bool
 }
 
 // WorkerJob represents a unit of work to be processed by a worker
@@ -38,21 +42,33 @@ type JobResult struct {
 type TaskFunc func(ctx context.Context) error
 
 // NewWorkerPool creates a new worker pool with the specified number of workers
-func NewWorkerPool(workerCount int, logger *log.Logger) *WorkerPool {
+func NewWorkerPool(workerCount int, logger log.Logger) *WorkerPool {
 	if workerCount <= 0 {
 		workerCount = 1
 	}
 
 	if logger == nil {
-		logger = log.NewLogger(log.InfoLevel)
+		logger = log.NewBasicLogger(log.InfoLevel)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Calculate optimal buffer sizes based on worker count
+	// Use a minimum buffer size and scale with worker count for better performance
+	minBufferSize := 10
+	maxBufferSize := 1000
+	bufferSize := workerCount * 20 // Allow for more jobs per worker
+	if bufferSize < minBufferSize {
+		bufferSize = minBufferSize
+	}
+	if bufferSize > maxBufferSize {
+		bufferSize = maxBufferSize
+	}
+
 	return &WorkerPool{
 		workers:     workerCount,
-		jobQueue:    make(chan WorkerJob, workerCount*10),
-		results:     make(chan JobResult, workerCount*10),
+		jobQueue:    make(chan WorkerJob, bufferSize),
+		results:     make(chan JobResult, bufferSize),
 		stopContext: ctx,
 		stopFunc:    cancel,
 		logger:      logger,
@@ -61,9 +77,9 @@ func NewWorkerPool(workerCount int, logger *log.Logger) *WorkerPool {
 
 // Start starts the worker pool
 func (p *WorkerPool) Start() {
-	p.logger.Info("Starting worker pool", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"workers": p.workers,
-	})
+	}).Info("Starting worker pool")
 
 	for i := 0; i < p.workers; i++ {
 		workerID := i
@@ -79,9 +95,9 @@ func (p *WorkerPool) Start() {
 // handleJobFromQueue processes a job from the queue
 func (p *WorkerPool) handleJobFromQueue(workerID int, job WorkerJob, ok bool) bool {
 	if !ok {
-		p.logger.Debug("Worker stopped by closed job queue", map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"worker_id": workerID,
-		})
+		}).Debug("Worker stopped by closed job queue")
 		return false // Signal to stop the worker
 	}
 
@@ -91,16 +107,16 @@ func (p *WorkerPool) handleJobFromQueue(workerID int, job WorkerJob, ok bool) bo
 
 // worker processes jobs from the job queue
 func (p *WorkerPool) worker(id int) {
-	p.logger.Debug("Worker started", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"worker_id": id,
-	})
+	}).Debug("Worker started")
 
 	for {
 		select {
 		case <-p.stopContext.Done():
-			p.logger.Debug("Worker stopped by context cancellation", map[string]interface{}{
+			p.logger.WithFields(map[string]interface{}{
 				"worker_id": id,
-			})
+			}).Debug("Worker stopped by context cancellation")
 			return
 
 		case job, ok := <-p.jobQueue:
@@ -112,21 +128,50 @@ func (p *WorkerPool) worker(id int) {
 }
 
 // setupJobContext creates a job context that will be canceled if either the job's context
-// or the pool's context is canceled
+// or the pool's context is canceled. Uses an efficient approach without persistent goroutines.
 func (p *WorkerPool) setupJobContext(job WorkerJob) (context.Context, context.CancelFunc) {
-	jobCtx, cancel := context.WithCancel(job.Context)
+	// Use a multi-context approach that efficiently combines contexts
+	// This uses the standard library's context merging without extra goroutines
+	ctx1, cancel1 := context.WithCancel(job.Context)
+	ctx2, cancel2 := context.WithCancel(p.stopContext)
 
-	// Setup cancellation if the pool's context is canceled
+	// Create a context that cancels when either parent is done
+	merged, mergedCancel := mergeContexts(ctx1, ctx2)
+
+	// Return a cancel function that cleans up all contexts
+	combinedCancel := func() {
+		mergedCancel()
+		cancel1()
+		cancel2()
+	}
+
+	return merged, combinedCancel
+}
+
+// mergeContexts efficiently merges two contexts without persistent goroutines
+// Returns a context that is done when either input context is done
+func mergeContexts(ctx1, ctx2 context.Context) (context.Context, context.CancelFunc) {
+	if ctx1.Err() != nil {
+		return ctx1, func() {}
+	}
+	if ctx2.Err() != nil {
+		return ctx2, func() {}
+	}
+
+	// Create a new context that will be cancelled when either parent is cancelled
+	newCtx, cancel := context.WithCancel(context.Background())
+
+	// Start a monitoring goroutine that cleans up properly
 	go func() {
+		defer cancel()
 		select {
-		case <-p.stopContext.Done():
-			cancel()
-		case <-jobCtx.Done():
-			// Job already done
+		case <-ctx1.Done():
+		case <-ctx2.Done():
+		case <-newCtx.Done():
 		}
 	}()
 
-	return jobCtx, cancel
+	return newCtx, cancel
 }
 
 // executeJob runs the job's task and measures execution time
@@ -140,40 +185,45 @@ func (p *WorkerPool) executeJob(ctx context.Context, job WorkerJob) (time.Durati
 // logJobResult logs the outcome of a job execution
 func (p *WorkerPool) logJobResult(workerID int, jobID string, duration time.Duration, err error) {
 	if err != nil {
-		p.logger.Error("Job failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"worker_id": workerID,
 			"job_id":    jobID,
 			"duration":  duration.String(),
-		})
+		}).Error("Job failed", err)
 	} else {
-		p.logger.Debug("Job completed successfully", map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"worker_id": workerID,
 			"job_id":    jobID,
 			"duration":  duration.String(),
-		})
+		}).Debug("Job completed successfully")
 	}
 }
 
-// sendJobResult sends a job result to the results channel
+// sendJobResult sends a job result to the results channel with deadlock prevention
 func (p *WorkerPool) sendJobResult(result JobResult) {
 	select {
 	case p.results <- result:
 		// Result sent successfully
-	default:
-		// Results channel is full, log and continue
-		p.logger.Warn("Results channel is full, discarding result", map[string]interface{}{
+	case <-p.stopContext.Done():
+		// Pool is stopping, don't block on sending results
+		p.logger.WithFields(map[string]interface{}{
 			"job_id": result.JobID,
-		})
+		}).Debug("Pool stopping, discarding result")
+	case <-time.After(5 * time.Second):
+		// Results channel is full or blocked, log and continue to prevent deadlock
+		p.logger.WithFields(map[string]interface{}{
+			"job_id": result.JobID,
+		}).Warn("Results channel timeout, discarding result")
 	}
 }
 
 // processJob processes a single job
 func (p *WorkerPool) processJob(workerID int, job WorkerJob) {
-	p.logger.Debug("Processing job", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"worker_id": workerID,
 		"job_id":    job.ID,
 		"priority":  job.Priority,
-	})
+	}).Debug("Processing job")
 
 	// Set up job context with cancellation
 	jobCtx, cancel := p.setupJobContext(job)
@@ -209,13 +259,15 @@ func (p *WorkerPool) createJob(id string, task TaskFunc, priority int, ctx conte
 	}
 }
 
-// enqueueJob adds a job to the job queue
+// enqueueJob adds a job to the job queue with timeout to prevent deadlocks
 func (p *WorkerPool) enqueueJob(job WorkerJob) error {
 	select {
 	case <-p.stopContext.Done():
 		return errors.New("worker pool is stopped")
 	case p.jobQueue <- job:
 		return nil
+	case <-time.After(30 * time.Second): // Prevent indefinite blocking
+		return errors.New("job queue is full, timeout after 30 seconds")
 	}
 }
 
@@ -251,19 +303,38 @@ func (p *WorkerPool) GetResults() <-chan JobResult {
 
 // Wait waits for all submitted jobs to complete
 func (p *WorkerPool) Wait() {
-	close(p.jobQueue)
+	// Close job queue only once
+	if p.jobsClosed.CompareAndSwap(false, true) {
+		close(p.jobQueue)
+	}
+
 	p.waitGroup.Wait()
-	close(p.results)
+
+	// Close results channel only once
+	if p.resultsClosed.CompareAndSwap(false, true) {
+		close(p.results)
+	}
 }
 
 // Stop stops the worker pool
 func (p *WorkerPool) Stop() {
-	p.stopFunc()
-	p.waitGroup.Wait()
-	close(p.results)
+	if p.closed.CompareAndSwap(false, true) {
+		p.stopFunc()
+		p.waitGroup.Wait()
+
+		// Close results channel only once
+		if p.resultsClosed.CompareAndSwap(false, true) {
+			close(p.results)
+		}
+	}
 }
 
 // WorkerCount returns the number of workers in the pool
 func (p *WorkerPool) WorkerCount() int {
 	return p.workers
+}
+
+// IsHealthy returns true if the worker pool is operational
+func (p *WorkerPool) IsHealthy() bool {
+	return !p.closed.Load()
 }

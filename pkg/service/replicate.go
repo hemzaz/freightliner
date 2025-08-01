@@ -30,26 +30,18 @@ import (
 	"google.golang.org/api/option"
 )
 
-// ReplicationService handles repository replication
-type ReplicationService struct {
+// replicationService handles repository replication (concrete implementation)
+type replicationService struct {
 	cfg    *freightlinerConfig.Config
-	logger *log.Logger
+	logger log.Logger
 }
 
 // NewReplicationService creates a new replication service
-func NewReplicationService(cfg *freightlinerConfig.Config, logger *log.Logger) *ReplicationService {
-	return &ReplicationService{
+func NewReplicationService(cfg *freightlinerConfig.Config, logger log.Logger) ReplicationService {
+	return &replicationService{
 		cfg:    cfg,
 		logger: logger,
 	}
-}
-
-// ReplicationResult contains the results of a replication operation
-type ReplicationResult struct {
-	TagsCopied       int
-	TagsSkipped      int
-	Errors           int
-	BytesTransferred int64
 }
 
 // RepositoryReplicationOptions holds configuration for repository replication
@@ -73,7 +65,7 @@ type RepositoryReplicationOptions struct {
 }
 
 // ReplicateRepository replicates a repository from source to destination
-func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, destination string) (*ReplicationResult, error) {
+func (s *replicationService) ReplicateRepository(ctx context.Context, source, destination string) (*ReplicationResult, error) {
 	// Create options from configuration
 	options := RepositoryReplicationOptions{
 		Source:           source,
@@ -123,9 +115,9 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	destClient := clients[destRegistry]
 	destRepository, err := destClient.GetRepository(ctx, destRepo)
 	if err != nil {
-		s.logger.Info("Destination repository does not exist, attempting to create", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"repository": destRepo,
-		})
+		}).Info("Destination repository does not exist, attempting to create")
 
 		// If we have a type-specific client with creation capability, use it
 		creator, ok := destClient.(RepositoryCreator)
@@ -151,9 +143,9 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	// Auto-detect worker count if needed
 	if options.WorkerCount == 0 && s.cfg.Workers.AutoDetect {
 		options.WorkerCount = freightlinerConfig.GetOptimalWorkerCount()
-		s.logger.Info("Auto-detected worker count", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"workers": options.WorkerCount,
-		})
+		}).Info("Auto-detected worker count")
 	}
 
 	// Create copier
@@ -202,24 +194,26 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 
 		if len(copyErrors) > 0 {
 			return &ReplicationResult{
-				TagsCopied:  tagsCopied,
-				TagsSkipped: 0,
-				Errors:      len(copyErrors),
+				Success:      false,
+				Error:        fmt.Errorf("errors occurred during replication: %s", strings.Join(copyErrors, "; ")),
+				BytesCopied:  0,
+				LayersCopied: tagsCopied,
 			}, fmt.Errorf("errors occurred during replication: %s", strings.Join(copyErrors, "; "))
 		}
 
 		return &ReplicationResult{
-			TagsCopied:  tagsCopied,
-			TagsSkipped: 0,
-			Errors:      0,
+			Success:      true,
+			Error:        nil,
+			BytesCopied:  0,
+			LayersCopied: tagsCopied,
 		}, nil
 	}
 
 	// Get all tags from the source repository
-	s.logger.Info("Listing all tags for full repository replication", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"source_repository":      sourceRepo,
 		"destination_repository": destRepo,
-	})
+	}).Info("Listing all tags for full repository replication")
 
 	sourceTags, err := sourceRepository.ListTags(ctx)
 	if err != nil {
@@ -227,23 +221,24 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	}
 
 	if len(sourceTags) == 0 {
-		s.logger.Info("No tags found in source repository", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"repository": sourceRepo,
-		})
+		}).Info("No tags found in source repository")
 		return &ReplicationResult{
-			TagsCopied:  0,
-			TagsSkipped: 0,
-			Errors:      0,
+			Success:      true,
+			Error:        nil,
+			BytesCopied:  0,
+			LayersCopied: 0,
 		}, nil
 	}
 
-	s.logger.Info("Starting full repository replication", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"source_repository":      sourceRepo,
 		"destination_repository": destRepo,
 		"tag_count":              len(sourceTags),
 		"dry_run":                options.DryRun,
 		"force_overwrite":        options.ForceOverwrite,
-	})
+	}).Info("Starting full repository replication")
 
 	// Create a results collector for metrics
 	results := util.NewResults()
@@ -260,17 +255,17 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			// Create source and destination references
 			srcRef, err := sourceRepository.GetImageReference(currentTag)
 			if err != nil {
-				s.logger.Error("Failed to get source image reference", err, map[string]interface{}{
+				s.logger.WithFields(map[string]interface{}{
 					"tag": currentTag,
-				})
+				}).Error("Failed to get source image reference", err)
 				return err
 			}
 
 			destRef, err := destRepository.GetImageReference(currentTag)
 			if err != nil {
-				s.logger.Error("Failed to get destination image reference", err, map[string]interface{}{
+				s.logger.WithFields(map[string]interface{}{
 					"tag": currentTag,
-				})
+				}).Error("Failed to get destination image reference", err)
 				return err
 			}
 
@@ -278,10 +273,10 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			if !options.ForceOverwrite {
 				skipTag, skipErr := s.shouldSkipTag(ctx, currentTag, sourceRepository, destRepository)
 				if skipErr != nil {
-					s.logger.Warn("Error checking if tag should be skipped, will attempt to copy", map[string]interface{}{
+					s.logger.WithFields(map[string]interface{}{
 						"tag":   currentTag,
 						"error": skipErr.Error(),
-					})
+					}).Warn("Error checking if tag should be skipped, will attempt to copy")
 				} else if skipTag {
 					results.AddMetric("tagsSkipped", 1)
 					return nil
@@ -310,9 +305,9 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			// Execute copy
 			result, err := copier.CopyImage(ctx, srcRef, destRef, srcOpts, destOpts, copyOpts)
 			if err != nil {
-				s.logger.Error("Failed to copy tag", err, map[string]interface{}{
+				s.logger.WithFields(map[string]interface{}{
 					"tag": currentTag,
-				})
+				}).Error("Failed to copy tag", err)
 				return err
 			}
 
@@ -320,11 +315,11 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 			results.AddMetric("tagsCopied", 1)
 			results.AddMetric("bytesTransferred", result.Stats.BytesTransferred)
 
-			s.logger.Info("Tag copied successfully", map[string]interface{}{
+			s.logger.WithFields(map[string]interface{}{
 				"tag":    currentTag,
 				"bytes":  result.Stats.BytesTransferred,
 				"layers": result.Stats.Layers,
-			})
+			}).Info("Tag copied successfully")
 
 			return nil
 		})
@@ -334,10 +329,10 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	if err := g.Wait(); err != nil {
 		// If there was an error, we still continue and return the results
 		// but also log the error
-		s.logger.Error("Error during tag replication", err, map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"source_repository":      sourceRepo,
 			"destination_repository": destRepo,
-		})
+		}).Error("Error during tag replication", err)
 
 		// Count this as an error
 		results.AddMetric("errorCount", 1)
@@ -349,25 +344,80 @@ func (s *ReplicationService) ReplicateRepository(ctx context.Context, source, de
 	errorCount := int(results.GetMetric("errorCount"))
 	bytesTransferred := results.GetMetric("bytesTransferred")
 
-	s.logger.Info("Repository replication completed", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"source_repository":      sourceRepo,
 		"destination_repository": destRepo,
 		"tags_copied":            tagsCopied,
 		"tags_skipped":           tagsSkipped,
 		"errors":                 errorCount,
 		"bytes_transferred":      bytesTransferred,
-	})
+	}).Info("Repository replication completed")
 
 	return &ReplicationResult{
-		TagsCopied:       tagsCopied,
-		TagsSkipped:      tagsSkipped,
-		Errors:           errorCount,
-		BytesTransferred: bytesTransferred,
+		Success:      errorCount == 0,
+		Error:        nil,
+		BytesCopied:  bytesTransferred,
+		LayersCopied: tagsCopied,
 	}, nil
 }
 
+// ReplicateImage replicates a single image between registries (interface implementation)
+func (s *replicationService) ReplicateImage(ctx context.Context, request *ReplicationRequest) (*ReplicationResult, error) {
+	// Convert ReplicationRequest to repository paths
+	sourcePath := request.SourceRegistry + "/" + request.SourceRepository
+	destPath := request.DestinationRegistry + "/" + request.DestinationRepository
+
+	// Use the existing ReplicateRepository method
+	return s.ReplicateRepository(ctx, sourcePath, destPath)
+}
+
+// ReplicateImagesBatch replicates multiple images in a batch (interface implementation)
+func (s *replicationService) ReplicateImagesBatch(ctx context.Context, requests []*ReplicationRequest) ([]*ReplicationResult, error) {
+	results := make([]*ReplicationResult, len(requests))
+
+	// Simple sequential implementation - could be parallelized in the future
+	for i, request := range requests {
+		result, err := s.ReplicateImage(ctx, request)
+		if err != nil {
+			// Create error result
+			results[i] = &ReplicationResult{
+				Success:      false,
+				Error:        err,
+				BytesCopied:  0,
+				LayersCopied: 0,
+			}
+		} else {
+			results[i] = result
+		}
+	}
+
+	return results, nil
+}
+
+// StreamReplication provides streaming replication for large operations (interface implementation)
+func (s *replicationService) StreamReplication(ctx context.Context, requests <-chan *ReplicationRequest) (<-chan *ReplicationResult, <-chan error) {
+	resultsChan := make(chan *ReplicationResult)
+	errorsChan := make(chan error)
+
+	go func() {
+		defer close(resultsChan)
+		defer close(errorsChan)
+
+		for request := range requests {
+			result, err := s.ReplicateImage(ctx, request)
+			if err != nil {
+				errorsChan <- err
+			} else {
+				resultsChan <- result
+			}
+		}
+	}()
+
+	return resultsChan, errorsChan
+}
+
 // createWorkerPool creates a worker pool for parallel processing
-func (s *ReplicationService) createWorkerPool(workerCount int) *replication.WorkerPool {
+func (s *replicationService) createWorkerPool(workerCount int) *replication.WorkerPool {
 	if workerCount <= 0 {
 		workerCount = 1
 	}
@@ -375,7 +425,7 @@ func (s *ReplicationService) createWorkerPool(workerCount int) *replication.Work
 }
 
 // shouldSkipTag checks if a tag should be skipped during replication
-func (s *ReplicationService) shouldSkipTag(
+func (s *replicationService) shouldSkipTag(
 	ctx context.Context,
 	tag string,
 	sourceRepo Repository,
@@ -396,19 +446,19 @@ func (s *ReplicationService) shouldSkipTag(
 
 	// If both manifests have the same digest, we can skip copying
 	if sourceManifest.Digest == destManifest.Digest {
-		s.logger.Debug("Skipping tag, already exists with same digest", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"tag":           tag,
 			"source_digest": sourceManifest.Digest,
 			"dest_digest":   destManifest.Digest,
-		})
+		}).Debug("Skipping tag, already exists with same digest")
 		return true, nil
 	}
 
-	s.logger.Debug("Tag exists but has different digest, will re-copy", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"tag":           tag,
 		"source_digest": sourceManifest.Digest,
 		"dest_digest":   destManifest.Digest,
-	})
+	}).Debug("Tag exists but has different digest, will re-copy")
 
 	return false, nil
 }
@@ -430,7 +480,7 @@ func isValidRegistryType(registry string) bool {
 }
 
 // createRegistryClients creates registry clients for the specified registry types
-func (s *ReplicationService) createRegistryClients(ctx context.Context, registries ...string) (map[string]RegistryClient, error) {
+func (s *replicationService) createRegistryClients(ctx context.Context, registries ...string) (map[string]RegistryClient, error) {
 	registrySet := make(map[string]bool)
 	for _, r := range registries {
 		registrySet[r] = true
@@ -466,7 +516,7 @@ func (s *ReplicationService) createRegistryClients(ctx context.Context, registri
 }
 
 // setupEncryptionManager creates an encryption manager if encryption is enabled
-func (s *ReplicationService) setupEncryptionManager(ctx context.Context, destRegistry string) (*encryption.Manager, error) {
+func (s *replicationService) setupEncryptionManager(ctx context.Context, destRegistry string) (*encryption.Manager, error) {
 	if !s.cfg.Encryption.Enabled {
 		// Create an empty manager with no providers instead of returning nil
 		return encryption.NewManager(make(map[string]encryption.Provider), encryption.EncryptionConfig{}), nil
@@ -500,11 +550,11 @@ func (s *ReplicationService) setupEncryptionManager(ctx context.Context, destReg
 
 		encProviders["aws-kms"] = awsKms
 
-		s.logger.Info("AWS KMS encryption enabled", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"region": s.cfg.ECR.Region,
 			"key_id": s.cfg.Encryption.AWSKMSKeyID,
 			"cmk":    s.cfg.Encryption.CustomerManagedKeys,
-		})
+		}).Info("AWS KMS encryption enabled")
 	} else if s.cfg.Encryption.GCPKMSKeyID != "" || destRegistry == "gcr" {
 		// Configure for GCP KMS
 		encConfig.Provider = "gcp-kms"
@@ -524,13 +574,13 @@ func (s *ReplicationService) setupEncryptionManager(ctx context.Context, destReg
 
 		encProviders["gcp-kms"] = gcpKms
 
-		s.logger.Info("GCP KMS encryption enabled", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"project":  s.cfg.GCR.Project,
 			"location": s.cfg.GCR.Location,
 			"key_ring": s.cfg.Encryption.GCPKeyRing,
 			"key_name": s.cfg.Encryption.GCPKeyName,
 			"cmk":      s.cfg.Encryption.CustomerManagedKeys,
-		})
+		}).Info("GCP KMS encryption enabled")
 	}
 
 	// Create encryption manager if we have providers
@@ -548,7 +598,7 @@ type SecretsProvider = secrets.Provider
 // Note: This is a simplified implementation that should be replaced with pkg/secrets/aws
 type awsSecretsProvider struct {
 	client    *secretsmanager.Client
-	logger    *log.Logger
+	logger    log.Logger
 	validator *validation.SecretsValidator
 }
 
@@ -602,9 +652,9 @@ func (p *awsSecretsProvider) GetJSONSecret(ctx context.Context, secretName strin
 func (p *awsSecretsProvider) PutSecret(ctx context.Context, secretName, secretValue string) error {
 	// Validate the secret operation using the comprehensive validation framework
 	if err := p.validator.ValidateSecretOperation("create", "aws", secretName, secretValue, nil); err != nil {
-		p.logger.Error("AWS secret validation failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
-		})
+		}).Error("AWS secret validation failed", err)
 		return err
 	}
 
@@ -627,16 +677,16 @@ func (p *awsSecretsProvider) PutSecret(ctx context.Context, secretName, secretVa
 
 			_, updateErr := p.client.UpdateSecret(ctx, updateInput)
 			if updateErr != nil {
-				p.logger.Error("failed to update AWS secret", err, map[string]interface{}{
+				p.logger.WithFields(map[string]interface{}{
 					"secret_name": secretName,
 					"error":       updateErr.Error(),
-				})
+				}).Error("failed to update AWS secret", err)
 				return errors.Wrap(updateErr, "failed to update secret in AWS Secrets Manager")
 			}
 
-			p.logger.Info("successfully updated AWS secret", map[string]interface{}{
+			p.logger.WithFields(map[string]interface{}{
 				"secret_name": secretName,
-			})
+			}).Info("successfully updated AWS secret")
 			return nil
 		}
 
@@ -646,16 +696,16 @@ func (p *awsSecretsProvider) PutSecret(ctx context.Context, secretName, secretVa
 			return errors.Forbiddenf("insufficient permissions to create secret %s: %v", secretName, err)
 		}
 
-		p.logger.Error("failed to create AWS secret", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"error":       err.Error(),
-		})
+		}).Error("failed to create AWS secret", err)
 		return errors.Wrap(err, "failed to create secret in AWS Secrets Manager")
 	}
 
-	p.logger.Info("successfully created AWS secret", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"secret_name": secretName,
-	})
+	}).Info("successfully created AWS secret")
 	return nil
 }
 
@@ -663,10 +713,10 @@ func (p *awsSecretsProvider) PutSecret(ctx context.Context, secretName, secretVa
 func (p *awsSecretsProvider) PutJSONSecret(ctx context.Context, secretName string, v interface{}) error {
 	// Validate the JSON secret using the comprehensive validation framework
 	if err := p.validator.ValidateJSONSecret("aws", secretName, v, nil); err != nil {
-		p.logger.Error("AWS JSON secret validation failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"error":       err.Error(),
-		})
+		}).Error("AWS JSON secret validation failed", err)
 		return err
 	}
 
@@ -684,10 +734,10 @@ func (p *awsSecretsProvider) PutJSONSecret(ctx context.Context, secretName strin
 func (p *awsSecretsProvider) DeleteSecret(ctx context.Context, secretName string) error {
 	// Validate the delete operation using the comprehensive validation framework
 	if err := p.validator.ValidateSecretOperation("delete", "aws", secretName, "", nil); err != nil {
-		p.logger.Error("AWS secret delete validation failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"error":       err.Error(),
-		})
+		}).Error("AWS secret delete validation failed", err)
 		return err
 	}
 
@@ -701,9 +751,9 @@ func (p *awsSecretsProvider) DeleteSecret(ctx context.Context, secretName string
 	if err != nil {
 		var resourceNotFound *types.ResourceNotFoundException
 		if errors.As(err, &resourceNotFound) {
-			p.logger.Warn("attempted to delete non-existent AWS secret", map[string]interface{}{
+			p.logger.WithFields(map[string]interface{}{
 				"secret_name": secretName,
-			})
+			}).Warn("attempted to delete non-existent AWS secret")
 			return errors.NotFoundf("secret not found: %s", secretName)
 		}
 
@@ -713,16 +763,16 @@ func (p *awsSecretsProvider) DeleteSecret(ctx context.Context, secretName string
 			return errors.Forbiddenf("insufficient permissions to delete secret %s: %v", secretName, err)
 		}
 
-		p.logger.Error("failed to delete AWS secret", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"error":       err.Error(),
-		})
+		}).Error("failed to delete AWS secret", err)
 		return errors.Wrap(err, "failed to delete secret from AWS Secrets Manager")
 	}
 
-	p.logger.Info("successfully deleted AWS secret", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"secret_name": secretName,
-	})
+	}).Info("successfully deleted AWS secret")
 	return nil
 }
 
@@ -731,7 +781,7 @@ func (p *awsSecretsProvider) DeleteSecret(ctx context.Context, secretName string
 type gcpSecretsProvider struct {
 	client    *secretmanager.Client
 	project   string
-	logger    *log.Logger
+	logger    log.Logger
 	validator *validation.SecretsValidator
 }
 
@@ -770,11 +820,11 @@ func (p *gcpSecretsProvider) GetJSONSecret(ctx context.Context, secretName strin
 func (p *gcpSecretsProvider) PutSecret(ctx context.Context, secretName, secretValue string) error {
 	// Validate the secret operation using the comprehensive validation framework
 	if err := p.validator.ValidateSecretOperation("create", "gcp", secretName, secretValue, nil); err != nil {
-		p.logger.Error("GCP secret validation failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"project":     p.project,
 			"error":       err.Error(),
-		})
+		}).Error("GCP secret validation failed", err)
 		return err
 	}
 
@@ -806,11 +856,11 @@ func (p *gcpSecretsProvider) PutSecret(ctx context.Context, secretName, secretVa
 
 		_, createErr := p.client.CreateSecret(ctx, createReq)
 		if createErr != nil {
-			p.logger.Error("failed to create GCP secret", err, map[string]interface{}{
+			p.logger.WithFields(map[string]interface{}{
 				"secret_name": secretName,
 				"project":     p.project,
 				"error":       createErr.Error(),
-			})
+			}).Error("failed to create GCP secret", createErr)
 			return errors.Wrap(createErr, "failed to create secret in Google Secret Manager")
 		}
 	}
@@ -825,18 +875,18 @@ func (p *gcpSecretsProvider) PutSecret(ctx context.Context, secretName, secretVa
 
 	_, err = p.client.AddSecretVersion(ctx, addVersionReq)
 	if err != nil {
-		p.logger.Error("failed to add secret version in GCP", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"project":     p.project,
 			"error":       err.Error(),
-		})
+		}).Error("failed to add secret version in GCP", err)
 		return errors.Wrap(err, "failed to add secret version in Google Secret Manager")
 	}
 
-	p.logger.Info("successfully created/updated GCP secret", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"secret_name": secretName,
 		"project":     p.project,
-	})
+	}).Info("successfully created/updated GCP secret")
 	return nil
 }
 
@@ -844,11 +894,11 @@ func (p *gcpSecretsProvider) PutSecret(ctx context.Context, secretName, secretVa
 func (p *gcpSecretsProvider) PutJSONSecret(ctx context.Context, secretName string, v interface{}) error {
 	// Validate the JSON secret using the comprehensive validation framework
 	if err := p.validator.ValidateJSONSecret("gcp", secretName, v, nil); err != nil {
-		p.logger.Error("GCP JSON secret validation failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"project":     p.project,
 			"error":       err.Error(),
-		})
+		}).Error("GCP JSON secret validation failed", err)
 		return err
 	}
 
@@ -866,11 +916,11 @@ func (p *gcpSecretsProvider) PutJSONSecret(ctx context.Context, secretName strin
 func (p *gcpSecretsProvider) DeleteSecret(ctx context.Context, secretName string) error {
 	// Validate the delete operation using the comprehensive validation framework
 	if err := p.validator.ValidateSecretOperation("delete", "gcp", secretName, "", nil); err != nil {
-		p.logger.Error("GCP secret delete validation failed", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"project":     p.project,
 			"error":       err.Error(),
-		})
+		}).Error("GCP secret delete validation failed", err)
 		return err
 	}
 
@@ -886,10 +936,10 @@ func (p *gcpSecretsProvider) DeleteSecret(ctx context.Context, secretName string
 	if err != nil {
 		// Check if the secret doesn't exist
 		if strings.Contains(err.Error(), "not found") {
-			p.logger.Warn("attempted to delete non-existent GCP secret", map[string]interface{}{
+			p.logger.WithFields(map[string]interface{}{
 				"secret_name": secretName,
 				"project":     p.project,
-			})
+			}).Warn("attempted to delete non-existent GCP secret")
 			return errors.NotFoundf("secret not found: %s", secretName)
 		}
 
@@ -898,18 +948,18 @@ func (p *gcpSecretsProvider) DeleteSecret(ctx context.Context, secretName string
 			return errors.Forbiddenf("insufficient permissions to delete secret %s: %v", secretName, err)
 		}
 
-		p.logger.Error("failed to delete GCP secret", err, map[string]interface{}{
+		p.logger.WithFields(map[string]interface{}{
 			"secret_name": secretName,
 			"project":     p.project,
 			"error":       err.Error(),
-		})
+		}).Error("failed to delete GCP secret", err)
 		return errors.Wrap(err, "failed to delete secret from Google Secret Manager")
 	}
 
-	p.logger.Info("successfully deleted GCP secret", map[string]interface{}{
+	p.logger.WithFields(map[string]interface{}{
 		"secret_name": secretName,
 		"project":     p.project,
-	})
+	}).Info("successfully deleted GCP secret")
 	return nil
 }
 
@@ -944,14 +994,14 @@ type EncryptionKeys struct {
 }
 
 // initializeCredentials initializes credentials from secrets manager if enabled
-func (s *ReplicationService) initializeCredentials(ctx context.Context) error {
+func (s *replicationService) initializeCredentials(ctx context.Context) error {
 	if !s.cfg.Secrets.UseSecretsManager {
 		return nil
 	}
 
-	s.logger.Info("Using secrets manager for credentials", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"provider": s.cfg.Secrets.SecretsManagerType,
-	})
+	}).Info("Using secrets manager for credentials")
 
 	secretsProvider, err := s.initializeSecretsManager(ctx)
 	if err != nil {
@@ -978,7 +1028,7 @@ func (s *ReplicationService) initializeCredentials(ctx context.Context) error {
 }
 
 // initializeSecretsManager creates a secrets provider based on configuration
-func (s *ReplicationService) initializeSecretsManager(ctx context.Context) (SecretsProvider, error) {
+func (s *replicationService) initializeSecretsManager(ctx context.Context) (SecretsProvider, error) {
 	// Determine provider type
 	switch s.cfg.Secrets.SecretsManagerType {
 	case "aws":
@@ -988,9 +1038,9 @@ func (s *ReplicationService) initializeSecretsManager(ctx context.Context) (Secr
 			awsRegion = s.cfg.ECR.Region
 		}
 
-		s.logger.Info("Initializing AWS Secrets Manager", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"region": awsRegion,
-		})
+		}).Info("Initializing AWS Secrets Manager")
 
 		// Create AWS Secrets Manager provider
 		awsProvider, err := s.createAWSSecretsProvider(ctx, awsRegion)
@@ -1006,10 +1056,10 @@ func (s *ReplicationService) initializeSecretsManager(ctx context.Context) (Secr
 			gcpProject = s.cfg.GCR.Project
 		}
 
-		s.logger.Info("Initializing Google Secret Manager", map[string]interface{}{
+		s.logger.WithFields(map[string]interface{}{
 			"project":    gcpProject,
 			"creds_file": s.cfg.Secrets.GCPCredentialsFile,
-		})
+		}).Info("Initializing Google Secret Manager")
 
 		// Create Google Secret Manager provider
 		gcpProvider, err := s.createGCPSecretsProvider(ctx, gcpProject, s.cfg.Secrets.GCPCredentialsFile)
@@ -1024,7 +1074,7 @@ func (s *ReplicationService) initializeSecretsManager(ctx context.Context) (Secr
 }
 
 // createAWSSecretsProvider creates an AWS Secrets Manager provider
-func (s *ReplicationService) createAWSSecretsProvider(ctx context.Context, region string) (SecretsProvider, error) {
+func (s *replicationService) createAWSSecretsProvider(ctx context.Context, region string) (SecretsProvider, error) {
 	// Configure AWS SDK options
 	configOpts := []func(*awsconfig.LoadOptions) error{
 		awsconfig.WithRegion(region),
@@ -1048,7 +1098,7 @@ func (s *ReplicationService) createAWSSecretsProvider(ctx context.Context, regio
 }
 
 // createGCPSecretsProvider creates a Google Secret Manager provider
-func (s *ReplicationService) createGCPSecretsProvider(ctx context.Context, project, credentialsFile string) (SecretsProvider, error) {
+func (s *replicationService) createGCPSecretsProvider(ctx context.Context, project, credentialsFile string) (SecretsProvider, error) {
 	// Configure client options
 	var clientOpts []option.ClientOption
 	if credentialsFile != "" {
@@ -1071,7 +1121,7 @@ func (s *ReplicationService) createGCPSecretsProvider(ctx context.Context, proje
 }
 
 // loadRegistryCredentials loads registry credentials from a secrets provider
-func (s *ReplicationService) loadRegistryCredentials(ctx context.Context, provider SecretsProvider) (RegistryCredentials, error) {
+func (s *replicationService) loadRegistryCredentials(ctx context.Context, provider SecretsProvider) (RegistryCredentials, error) {
 	// Get the registry credentials from the secrets provider
 	registryCredsJson, err := provider.GetSecret(ctx, s.cfg.Secrets.RegistryCredsSecret)
 	if err != nil {
@@ -1089,27 +1139,27 @@ func (s *ReplicationService) loadRegistryCredentials(ctx context.Context, provid
 	}
 
 	// Log successful retrieval
-	s.logger.Info("Successfully loaded registry credentials from secrets provider", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"secret_name": s.cfg.Secrets.RegistryCredsSecret,
-	})
+	}).Info("Successfully loaded registry credentials from secrets provider")
 
 	return creds, nil
 }
 
 // applyRegistryCredentials applies registry credentials to the environment
-func (s *ReplicationService) applyRegistryCredentials(creds RegistryCredentials) {
+func (s *replicationService) applyRegistryCredentials(creds RegistryCredentials) {
 	// Apply AWS credentials if provided
 	if creds.ECR.AccessKey != "" && creds.ECR.SecretKey != "" {
 		if err := os.Setenv("AWS_ACCESS_KEY_ID", creds.ECR.AccessKey); err != nil {
-			s.logger.Warn("Failed to set AWS_ACCESS_KEY_ID environment variable", map[string]interface{}{"error": err.Error()})
+			s.logger.WithFields(map[string]interface{}{"error": err.Error()}).Warn("Failed to set AWS_ACCESS_KEY_ID environment variable")
 		}
 		if err := os.Setenv("AWS_SECRET_ACCESS_KEY", creds.ECR.SecretKey); err != nil {
-			s.logger.Warn("Failed to set AWS_SECRET_ACCESS_KEY environment variable", map[string]interface{}{"error": err.Error()})
+			s.logger.WithFields(map[string]interface{}{"error": err.Error()}).Warn("Failed to set AWS_SECRET_ACCESS_KEY environment variable")
 		}
 
 		if creds.ECR.SessionToken != "" {
 			if err := os.Setenv("AWS_SESSION_TOKEN", creds.ECR.SessionToken); err != nil {
-				s.logger.Warn("Failed to set AWS_SESSION_TOKEN environment variable", map[string]interface{}{"error": err.Error()})
+				s.logger.WithFields(map[string]interface{}{"error": err.Error()}).Warn("Failed to set AWS_SESSION_TOKEN environment variable")
 			}
 		}
 	}
@@ -1147,7 +1197,7 @@ func (s *ReplicationService) applyRegistryCredentials(creds RegistryCredentials)
 			if err == nil {
 				if _, err := tmpFile.Write(decoded); err == nil {
 					if setEnvErr := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFilePath); setEnvErr != nil {
-						s.logger.Warn("Failed to set GOOGLE_APPLICATION_CREDENTIALS environment variable", map[string]interface{}{"error": setEnvErr.Error()})
+						s.logger.WithFields(map[string]interface{}{"error": setEnvErr.Error()}).Warn("Failed to set GOOGLE_APPLICATION_CREDENTIALS environment variable")
 					}
 				}
 			}
@@ -1156,7 +1206,7 @@ func (s *ReplicationService) applyRegistryCredentials(creds RegistryCredentials)
 }
 
 // loadEncryptionKeys loads encryption keys from a secrets provider
-func (s *ReplicationService) loadEncryptionKeys(ctx context.Context, provider SecretsProvider) (EncryptionKeys, error) {
+func (s *replicationService) loadEncryptionKeys(ctx context.Context, provider SecretsProvider) (EncryptionKeys, error) {
 	// Get the encryption keys from the secrets provider
 	encryptionKeysJson, err := provider.GetSecret(ctx, s.cfg.Secrets.EncryptionKeysSecret)
 	if err != nil {
@@ -1174,15 +1224,15 @@ func (s *ReplicationService) loadEncryptionKeys(ctx context.Context, provider Se
 	}
 
 	// Log successful retrieval
-	s.logger.Info("Successfully loaded encryption keys from secrets provider", map[string]interface{}{
+	s.logger.WithFields(map[string]interface{}{
 		"secret_name": s.cfg.Secrets.EncryptionKeysSecret,
-	})
+	}).Info("Successfully loaded encryption keys from secrets provider")
 
 	return keys, nil
 }
 
 // applyEncryptionKeys applies encryption keys to the configuration
-func (s *ReplicationService) applyEncryptionKeys(keys EncryptionKeys) {
+func (s *replicationService) applyEncryptionKeys(keys EncryptionKeys) {
 	// Apply AWS KMS key if provided
 	if keys.AWS.KMSKeyID != "" {
 		s.cfg.Encryption.AWSKMSKeyID = keys.AWS.KMSKeyID
