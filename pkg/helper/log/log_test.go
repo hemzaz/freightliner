@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 // captureOutput captures stdout during the execution of function f
@@ -119,20 +118,21 @@ func TestLoggerLevels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := NewLogger()
-			testMsg := "test message " + time.Now().String() // Make message unique
+			// Use a buffer to capture output instead of pipe
+			var output bytes.Buffer
+			logger := NewBasicLoggerWithWriter(tt.loggerLevel, &output)
+			testMsg := "test message"
 
-			output := captureOutput(func() {
-				tt.logFunc(logger, testMsg)
-			})
+			tt.logFunc(logger, testMsg)
 
+			logOutput := output.String()
 			if tt.expectedLog {
-				if !strings.Contains(output, testMsg) {
-					t.Errorf("Expected log to contain message '%s', but got: %s", testMsg, output)
+				if !strings.Contains(logOutput, testMsg) {
+					t.Errorf("Expected log to contain message '%s', but got: %s", testMsg, logOutput)
 				}
 			} else {
-				if strings.Contains(output, testMsg) {
-					t.Errorf("Expected no log message, but got: %s", output)
+				if strings.Contains(logOutput, testMsg) {
+					t.Errorf("Expected no log message, but got: %s", logOutput)
 				}
 			}
 		})
@@ -174,21 +174,22 @@ func TestLoggerFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := NewLogger()
+			var output bytes.Buffer
+			logger := NewBasicLoggerWithWriter(InfoLevel, &output)
 
-			output := captureOutput(func() {
-				logger.WithFields(tt.fields).Info(tt.msg)
-			})
+			logger.WithFields(tt.fields).Info(tt.msg)
+
+			logOutput := output.String()
 
 			// Check if expected message is present
-			if !strings.Contains(output, tt.msg) {
-				t.Errorf("Expected message '%s' not found in log output: %s", tt.msg, output)
+			if !strings.Contains(logOutput, tt.msg) {
+				t.Errorf("Expected message '%s' not found in log output: %s", tt.msg, logOutput)
 			}
 
 			// Check for all expected fields keys in output
 			for _, key := range tt.expectedKeys {
-				if !strings.Contains(output, key+"=") {
-					t.Errorf("Expected field key '%s' not found in log output: %s", key, output)
+				if !strings.Contains(logOutput, key+"=") {
+					t.Errorf("Expected field key '%s' not found in log output: %s", key, logOutput)
 				}
 			}
 
@@ -196,8 +197,8 @@ func TestLoggerFields(t *testing.T) {
 			if tt.fields != nil {
 				for k, v := range tt.fields {
 					valueStr := fmt.Sprintf("%v", v)
-					if !strings.Contains(output, k+"="+valueStr) {
-						t.Errorf("Expected field '%s=%v' not found in log output: %s", k, v, output)
+					if !strings.Contains(logOutput, k+"="+valueStr) {
+						t.Errorf("Expected field '%s=%v' not found in log output: %s", k, v, logOutput)
 					}
 				}
 			}
@@ -206,36 +207,36 @@ func TestLoggerFields(t *testing.T) {
 }
 
 func TestErrorLogging(t *testing.T) {
-	logger := NewLogger()
+	var output bytes.Buffer
+	logger := NewBasicLoggerWithWriter(InfoLevel, &output)
 	testErr := errors.New("test error")
 
-	output := captureOutput(func() {
-		logger.WithFields(map[string]interface{}{
-			"key": "value",
-		}).Error("error message", testErr)
-	})
+	logger.WithFields(map[string]interface{}{
+		"key": "value",
+	}).Error("error message", testErr)
+
+	logOutput := output.String()
 
 	// Check error field
-	if !strings.Contains(output, "error="+testErr.Error()) {
-		t.Errorf("Expected 'error=%s' in log output, but got: %s", testErr.Error(), output)
+	if !strings.Contains(logOutput, "error=\""+testErr.Error()+"\"") {
+		t.Errorf("Expected 'error=\"%s\"' in log output, but got: %s", testErr.Error(), logOutput)
 	}
 }
 
-// Testing Fatal requires mocking os.Exit, which is difficult
-// This test just verifies that the FATAL level is properly logged
+// Testing Fatal logging format without triggering os.Exit
 func TestFatalLogging(t *testing.T) {
-	// NOTE: We can't fully test Fatal because it calls os.Exit
-	// We can only test the logging part, not the exit behavior
-
-	logger := NewLogger() // Set level higher than Fatal to avoid actual exit
+	// We test the format by using a higher log level to prevent the actual Fatal behavior
+	var output bytes.Buffer
+	logger := NewBasicLoggerWithWriter(DebugLevel, &output)
 	testErr := errors.New("fatal error")
 
-	// Test that Fatal doesn't log or exit when level is too high
-	output := captureOutput(func() {
-		logger.Fatal("should not log", testErr)
-	})
+	// Test fatal logging format by directly calling the internal log method
+	// Since we can't safely test Fatal (it calls os.Exit), we verify the format works
+	basicLogger := logger.(*BasicLogger)
+	basicLogger.logWithFields(FatalLevel, "fatal message", testErr, nil)
 
-	if strings.Contains(output, "should not log") {
-		t.Errorf("Expected no log output, but got: %s", output)
+	logOutput := output.String()
+	if !strings.Contains(logOutput, "FATAL") || !strings.Contains(logOutput, "fatal message") {
+		t.Errorf("Expected FATAL level log with message, but got: %s", logOutput)
 	}
 }

@@ -310,8 +310,8 @@ func (p *WorkerPool) Wait() {
 
 	p.waitGroup.Wait()
 
-	// Close results channel only once
-	if p.resultsClosed.CompareAndSwap(false, true) {
+	// Close results channel only once, and only if pool isn't stopped
+	if !p.closed.Load() && p.resultsClosed.CompareAndSwap(false, true) {
 		close(p.results)
 	}
 }
@@ -320,6 +320,12 @@ func (p *WorkerPool) Wait() {
 func (p *WorkerPool) Stop() {
 	if p.closed.CompareAndSwap(false, true) {
 		p.stopFunc()
+
+		// Close job queue if not already closed
+		if p.jobsClosed.CompareAndSwap(false, true) {
+			close(p.jobQueue)
+		}
+
 		p.waitGroup.Wait()
 
 		// Close results channel only once
