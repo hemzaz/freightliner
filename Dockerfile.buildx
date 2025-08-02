@@ -1,8 +1,8 @@
 # Multi-stage Docker build using buildx for consistent Go module environment
 FROM golang:1.24.5-alpine AS base
 
-# Install necessary tools
-RUN apk add --no-cache git curl make bash
+# Install necessary tools including gcc for CGO support and race detection
+RUN apk add --no-cache git curl make bash gcc musl-dev
 
 # Set working directory
 WORKDIR /workspace
@@ -12,6 +12,8 @@ ENV GO111MODULE=on
 ENV GOFLAGS=-mod=mod
 ENV GOPATH=
 ENV GOPROXY=https://proxy.golang.org,direct
+# Enable CGO for race detection in Docker environment
+ENV CGO_ENABLED=1
 
 # Copy go module files first for better caching
 COPY go.mod go.sum ./
@@ -31,16 +33,18 @@ RUN go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@v0.29.0 &
 
 # Build stage - verify all packages compile
 FROM base AS build
+# Disable CGO for static binary in production
+ENV CGO_ENABLED=0
 RUN go build ./...
 RUN go build -o /tmp/freightliner main.go
 
-# Test stage with manifest filtering
+# Test stage with manifest filtering and race detection
 FROM base AS test
 # Set CI environment variables for test manifest
 ENV CI=true
 ENV GITHUB_ACTIONS=true
-# Run Docker-optimized tests (without race detection due to CGO requirement)
-RUN make test-docker
+# Run CI-optimized tests with race detection (CGO enabled above)
+RUN make test-ci
 
 # Lint stage
 FROM base AS lint
