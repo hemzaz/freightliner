@@ -149,7 +149,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"Unauthorized","message":"Valid API key required"}`))
+			if _, err := w.Write([]byte(`{"error":"Unauthorized","message":"Valid API key required"}`)); err != nil {
+				s.logger.WithFields(map[string]interface{}{
+					"error": err.Error(),
+				}).Error("Failed to write unauthorized response")
+			}
 			return
 		}
 

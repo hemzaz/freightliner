@@ -336,7 +336,7 @@ func (bs *BenchmarkSuite) generateK6Scripts(scenarios []ScenarioConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to create k6 script file %s: %w", scriptFile, err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		if err := tmpl.Execute(file, scriptData); err != nil {
 			return fmt.Errorf("failed to execute k6 script template for %s: %w", scenario.Name, err)
@@ -474,7 +474,7 @@ function executeScenario(scenario) {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	return tmpl.Execute(file, scriptData)
 }
@@ -515,7 +515,7 @@ func GenerateK6ThresholdsConfig(scenario ScenarioConfig, outputPath string) erro
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data := map[string]interface{}{
 		"thresholds": thresholds,

@@ -88,7 +88,14 @@ func NewBenchmarkSuite(resultsDir string, logger log.Logger) *BenchmarkSuite {
 	}
 
 	// Ensure results directory exists
-	os.MkdirAll(resultsDir, 0755)
+	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+		if logger != nil {
+			logger.WithFields(map[string]interface{}{
+				"error":      err.Error(),
+				"resultsDir": resultsDir,
+			}).Error("Failed to create results directory")
+		}
+	}
 
 	return &BenchmarkSuite{
 		logger:       logger,

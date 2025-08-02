@@ -504,7 +504,9 @@ func (bm *BaselineManager) LoadBaselines() error {
 	defer bm.mutex.Unlock()
 
 	if _, err := os.Stat(bm.baselineDir); os.IsNotExist(err) {
-		os.MkdirAll(bm.baselineDir, 0755)
+		if err := os.MkdirAll(bm.baselineDir, 0755); err != nil {
+			return fmt.Errorf("failed to create baseline directory: %w", err)
+		}
 		return nil
 	}
 
@@ -590,10 +592,16 @@ func (bm *BaselineManager) cleanupOldBaselines() {
 		}
 
 		if info.ModTime().Before(cutoff) {
-			os.Remove(file)
-			bm.logger.Debug("Removed old baseline", map[string]interface{}{
-				"file": file,
-			})
+			if err := os.Remove(file); err != nil {
+				bm.logger.WithFields(map[string]interface{}{
+					"file":  file,
+					"error": err.Error(),
+				}).Error("Failed to remove old baseline file")
+			} else {
+				bm.logger.Debug("Removed old baseline", map[string]interface{}{
+					"file": file,
+				})
+			}
 		}
 	}
 }
@@ -759,7 +767,9 @@ func (rts *RegressionTestSuite) generateRecommendations(result *RegressionTestRe
 
 func (rts *RegressionTestSuite) saveRegressionResults(result *RegressionTestResult) error {
 	resultsDir := filepath.Join(rts.baselineManager.baselineDir, "regression_results")
-	os.MkdirAll(resultsDir, 0755)
+	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create regression results directory: %w", err)
+	}
 
 	filename := filepath.Join(resultsDir, fmt.Sprintf("%s.json", result.TestID))
 	data, err := json.MarshalIndent(result, "", "  ")
@@ -788,7 +798,12 @@ func (rts *RegressionTestSuite) updateBaselinesIfImproved(result *RegressionTest
 					ValidationPassed: scenarioResult.CurrentResult.ValidationPassed,
 				}
 
-				rts.baselineManager.UpdateBaseline(scenarioResult.ScenarioName, baselineResult)
+				if err := rts.baselineManager.UpdateBaseline(scenarioResult.ScenarioName, baselineResult); err != nil {
+					rts.logger.WithFields(map[string]interface{}{
+						"scenario": scenarioResult.ScenarioName,
+						"error":    err.Error(),
+					}).Error("Failed to update baseline")
+				}
 				rts.logger.Info("Updated baseline due to performance improvement", map[string]interface{}{
 					"scenario":            scenarioResult.ScenarioName,
 					"improvement_percent": improvement.ImprovementPercent,
@@ -804,15 +819,30 @@ func (am *AlertManager) SendRegressionAlerts(result RegressionTestResult) {
 		switch channel {
 		case "email":
 			if am.emailChannel != nil {
-				am.emailChannel.SendRegressionAlert(result)
+				if err := am.emailChannel.SendRegressionAlert(result); err != nil {
+					am.logger.WithFields(map[string]interface{}{
+						"error":   err.Error(),
+						"channel": "email",
+					}).Error("Failed to send regression alert")
+				}
 			}
 		case "slack":
 			if am.slackChannel != nil {
-				am.slackChannel.PostRegressionAlert(result)
+				if err := am.slackChannel.PostRegressionAlert(result); err != nil {
+					am.logger.WithFields(map[string]interface{}{
+						"error":   err.Error(),
+						"channel": "slack",
+					}).Error("Failed to send regression alert")
+				}
 			}
 		case "webhook":
 			if am.webhookChannel != nil {
-				am.webhookChannel.SendWebhookAlert(result)
+				if err := am.webhookChannel.SendWebhookAlert(result); err != nil {
+					am.logger.WithFields(map[string]interface{}{
+						"error":   err.Error(),
+						"channel": "webhook",
+					}).Error("Failed to send regression alert")
+				}
 			}
 		}
 	}

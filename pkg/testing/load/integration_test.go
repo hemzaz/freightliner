@@ -18,7 +18,7 @@ func TestLoadTestFrameworkIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logger := log.NewLogger()
 
@@ -125,7 +125,7 @@ func testPrometheusIntegration(t *testing.T, tempDir string, logger log.Logger) 
 	if err != nil {
 		t.Fatalf("Failed to start metrics server: %v", err)
 	}
-	defer collector.StopMetricsServer()
+	defer func() { _ = collector.StopMetricsServer() }()
 
 	// Create test scenario result
 	testResult := &LoadTestResults{
@@ -268,7 +268,7 @@ func BenchmarkLoadTestFramework(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logger := log.NewLogger()
 
@@ -323,7 +323,7 @@ func TestLoadTestFrameworkStress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logger := log.NewLogger()
 	collector := NewPrometheusLoadTestCollector(":0", logger)
@@ -335,7 +335,7 @@ func TestLoadTestFrameworkStress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start metrics server: %v", err)
 	}
-	defer collector.StopMetricsServer()
+	defer func() { _ = collector.StopMetricsServer() }()
 
 	// Simulate high-frequency metrics collection
 	const numScenarios = 10
@@ -380,7 +380,7 @@ func TestLoadTestFrameworkConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logger := log.NewLogger()
 	collector := NewPrometheusLoadTestCollector(":0", logger)
@@ -392,7 +392,7 @@ func TestLoadTestFrameworkConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start metrics server: %v", err)
 	}
-	defer collector.StopMetricsServer()
+	defer func() { _ = collector.StopMetricsServer() }()
 
 	// Test concurrent metrics recording
 	const numGoroutines = 50

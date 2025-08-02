@@ -303,10 +303,19 @@ func (pc *PrometheusLoadTestCollector) handleMetrics(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 
 	// Generate Prometheus formatted metrics
-	fmt.Fprintf(w, "# HELP load_test_scenario_executions_total Total number of scenario executions\n")
-	fmt.Fprintf(w, "# TYPE load_test_scenario_executions_total counter\n")
+	if _, err := fmt.Fprintf(w, "# HELP load_test_scenario_executions_total Total number of scenario executions\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write metrics help")
+		return
+	}
+	if _, err := fmt.Fprintf(w, "# TYPE load_test_scenario_executions_total counter\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write metrics type")
+		return
+	}
 	for scenario, count := range pc.loadTestMetrics.ScenarioExecutions {
-		fmt.Fprintf(w, "load_test_scenario_executions_total{scenario=\"%s\"} %d\n", scenario, count)
+		if _, err := fmt.Fprintf(w, "load_test_scenario_executions_total{scenario=\"%s\"} %d\n", scenario, count); err != nil {
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write scenario execution metrics")
+			return
+		}
 	}
 
 	fmt.Fprintf(w, "\n# HELP load_test_throughput_mbps Current throughput in MB/s\n")
@@ -355,7 +364,10 @@ func (pc *PrometheusLoadTestCollector) handleScenarioMetrics(w http.ResponseWrit
 		"latency_p99_ms":   pc.loadTestMetrics.LatencyPercentiles,
 	}
 
-	json.NewEncoder(w).Encode(scenarioData)
+	if err := json.NewEncoder(w).Encode(scenarioData); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to encode scenario data")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func (pc *PrometheusLoadTestCollector) handlePerformanceMetrics(w http.ResponseWriter, r *http.Request) {
@@ -374,12 +386,15 @@ func (pc *PrometheusLoadTestCollector) handlePerformanceMetrics(w http.ResponseW
 		}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"trends":          recentTrends,
 		"cpu_utilization": pc.loadTestMetrics.CPUUtilization,
 		"network_usage":   pc.loadTestMetrics.NetworkUtilization,
 		"disk_iops":       pc.loadTestMetrics.DiskIOPS,
-	})
+	}); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to encode performance metrics")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func (pc *PrometheusLoadTestCollector) handleRegressionMetrics(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +402,10 @@ func (pc *PrometheusLoadTestCollector) handleRegressionMetrics(w http.ResponseWr
 	defer pc.loadTestMetrics.mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pc.loadTestMetrics.BaselineComparison)
+	if err := json.NewEncoder(w).Encode(pc.loadTestMetrics.BaselineComparison); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to encode baseline comparison")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func (pc *PrometheusLoadTestCollector) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
