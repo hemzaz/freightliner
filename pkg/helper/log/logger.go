@@ -49,12 +49,12 @@ func (l Level) String() string {
 
 // Logger represents a logger instance
 type Logger interface {
-	Debug(message string)
-	Info(message string)
-	Warn(message string)
-	Error(message string, err error)
-	Fatal(message string, err error)
-	Panic(message string, err error)
+	Debug(message string, fields ...map[string]interface{})
+	Info(message string, fields ...map[string]interface{})
+	Warn(message string, fields ...map[string]interface{})
+	Error(message string, err error, fields ...map[string]interface{})
+	Fatal(message string, err error, fields ...map[string]interface{})
+	Panic(message string, err error, fields ...map[string]interface{})
 	WithField(key string, value interface{}) Logger
 	WithFields(fields map[string]interface{}) Logger
 	WithError(err error) Logger
@@ -155,39 +155,63 @@ func (l *BasicLogger) WithContext(ctx context.Context) Logger {
 }
 
 // Debug logs a debug message
-func (l *BasicLogger) Debug(message string) {
-	l.log(DebugLevel, message, nil)
+func (l *BasicLogger) Debug(message string, fields ...map[string]interface{}) {
+	var fieldMap map[string]interface{}
+	if len(fields) > 0 {
+		fieldMap = fields[0]
+	}
+	l.logWithFields(DebugLevel, message, nil, fieldMap)
 }
 
 // Info logs an info message
-func (l *BasicLogger) Info(message string) {
-	l.log(InfoLevel, message, nil)
+func (l *BasicLogger) Info(message string, fields ...map[string]interface{}) {
+	var fieldMap map[string]interface{}
+	if len(fields) > 0 {
+		fieldMap = fields[0]
+	}
+	l.logWithFields(InfoLevel, message, nil, fieldMap)
 }
 
 // Warn logs a warning message
-func (l *BasicLogger) Warn(message string) {
-	l.log(WarnLevel, message, nil)
+func (l *BasicLogger) Warn(message string, fields ...map[string]interface{}) {
+	var fieldMap map[string]interface{}
+	if len(fields) > 0 {
+		fieldMap = fields[0]
+	}
+	l.logWithFields(WarnLevel, message, nil, fieldMap)
 }
 
 // Error logs an error message
-func (l *BasicLogger) Error(message string, err error) {
-	l.log(ErrorLevel, message, err)
+func (l *BasicLogger) Error(message string, err error, fields ...map[string]interface{}) {
+	var fieldMap map[string]interface{}
+	if len(fields) > 0 {
+		fieldMap = fields[0]
+	}
+	l.logWithFields(ErrorLevel, message, err, fieldMap)
 }
 
 // Fatal logs a fatal message and exits
-func (l *BasicLogger) Fatal(message string, err error) {
-	l.log(FatalLevel, message, err)
+func (l *BasicLogger) Fatal(message string, err error, fields ...map[string]interface{}) {
+	var fieldMap map[string]interface{}
+	if len(fields) > 0 {
+		fieldMap = fields[0]
+	}
+	l.logWithFields(FatalLevel, message, err, fieldMap)
 	os.Exit(1)
 }
 
 // Panic logs a panic message and panics
-func (l *BasicLogger) Panic(message string, err error) {
-	l.log(PanicLevel, message, err)
+func (l *BasicLogger) Panic(message string, err error, fields ...map[string]interface{}) {
+	var fieldMap map[string]interface{}
+	if len(fields) > 0 {
+		fieldMap = fields[0]
+	}
+	l.logWithFields(PanicLevel, message, err, fieldMap)
 	panic(message)
 }
 
-// log is the internal logging method
-func (l *BasicLogger) log(level Level, message string, err error) {
+// logWithFields is the internal logging method with field support
+func (l *BasicLogger) logWithFields(level Level, message string, err error, fields map[string]interface{}) {
 	// Check if we should log at this level
 	if level < l.level {
 		return
@@ -196,25 +220,34 @@ func (l *BasicLogger) log(level Level, message string, err error) {
 	timestamp := time.Now().Format(time.RFC3339)
 	levelStr := strings.ToUpper(level.String())
 
-	// Build the log message
-	output := fmt.Sprintf("%s [%s] %s", timestamp, levelStr, message)
+	// Build the log line
+	logLine := fmt.Sprintf("[%s] %s: %s", timestamp, levelStr, message)
 
 	// Add error if present
 	if err != nil {
-		output += fmt.Sprintf(" error=%s", err.Error())
+		logLine += fmt.Sprintf(" error=\"%v\"", err)
 	}
 
 	// Add fields if present
-	if len(l.fields) > 0 {
-		for k, v := range l.fields {
-			output += fmt.Sprintf(" %s=%v", k, v)
+	if fields != nil {
+		for k, v := range fields {
+			logLine += fmt.Sprintf(" %s=%v", k, v)
 		}
 	}
 
-	output += "\n"
+	// Add logger's own fields
+	for k, v := range l.fields {
+		logLine += fmt.Sprintf(" %s=%v", k, v)
+	}
 
-	// Write to output
-	l.writer.Write([]byte(output))
+	logLine += "\n"
+
+	l.writer.Write([]byte(logLine))
+}
+
+// log is the internal logging method (kept for backward compatibility)
+func (l *BasicLogger) log(level Level, message string, err error) {
+	l.logWithFields(level, message, err, nil)
 }
 
 // NewLogger creates a new logger with INFO level by default

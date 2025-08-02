@@ -171,8 +171,8 @@ func BenchmarkInterfaceUsage(b *testing.B) {
 	})
 }
 
-// ExampleInterfaceComposition demonstrates proper interface composition usage
-func ExampleInterfaceComposition() {
+// ExampleReader demonstrates proper interface composition usage
+func ExampleReader() {
 	// Example of how to use composed interfaces
 
 	// Function that only needs to read from repository
@@ -199,8 +199,8 @@ func ExampleInterfaceComposition() {
 	_ = imageOperation
 }
 
-// ExampleContextualInterfaceUsage demonstrates context-aware interface usage
-func ExampleContextualInterfaceUsage() {
+// ExampleContextualTagLister demonstrates context-aware interface usage
+func ExampleContextualTagLister() {
 	ctx := context.Background()
 
 	// Example of using contextual interfaces with proper timeout handling

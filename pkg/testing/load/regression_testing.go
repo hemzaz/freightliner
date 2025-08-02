@@ -118,7 +118,7 @@ type BaselineManager struct {
 type TestScheduler struct {
 	config    RegressionConfig
 	testSuite *RegressionTestSuite
-	logger    *log.Logger
+	logger    log.Logger
 
 	// Scheduling state
 	lastRun   time.Time
@@ -130,7 +130,7 @@ type TestScheduler struct {
 // AlertManager handles regression test alerts and notifications
 type AlertManager struct {
 	config RegressionConfig
-	logger *log.Logger
+	logger log.Logger
 
 	// Alert channels
 	emailChannel   EmailNotifier
@@ -288,7 +288,7 @@ func (rts *RegressionTestSuite) RunRegressionTest(ctx context.Context, triggerRe
 
 	// Save results to disk
 	if err := rts.saveRegressionResults(result); err != nil {
-		rts.logger.Error("Failed to save regression results", map[string]interface{}{"error": err.Error()})
+		rts.logger.Error("Failed to save regression results", err, map[string]interface{}{})
 	}
 
 	// Send alerts if necessary
@@ -377,9 +377,8 @@ func (rts *RegressionTestSuite) runSingleScenarioRegression(ctx context.Context,
 	}
 
 	if err != nil {
-		rts.logger.Error("Scenario execution failed", map[string]interface{}{
+		rts.logger.Error("Scenario execution failed", err, map[string]interface{}{
 			"scenario": scenario.Name,
-			"error":    err.Error(),
 		})
 		result.ValidationStatus = "fail"
 		return result
@@ -619,7 +618,7 @@ func (ts *TestScheduler) Start(ctx context.Context) {
 				go func() {
 					_, err := ts.testSuite.RunRegressionTest(ctx, "scheduled")
 					if err != nil {
-						ts.logger.Error("Scheduled regression test failed", map[string]interface{}{"error": err.Error()})
+						ts.logger.Error("Scheduled regression test failed", err, map[string]interface{}{})
 					}
 
 					ts.mutex.Lock()

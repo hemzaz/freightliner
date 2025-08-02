@@ -43,7 +43,7 @@ func TestLoadTestFrameworkIntegration(t *testing.T) {
 	})
 }
 
-func testScenarioExecution(t *testing.T, tempDir string, logger *log.Logger) {
+func testScenarioExecution(t *testing.T, tempDir string, logger log.Logger) {
 	// Test high-volume replication scenario
 	scenario := CreateHighVolumeReplicationScenario()
 	// Reduce duration for testing
@@ -74,7 +74,7 @@ func testScenarioExecution(t *testing.T, tempDir string, logger *log.Logger) {
 		result.ProcessedImages, result.AverageThroughputMBps)
 }
 
-func testBenchmarkSuite(t *testing.T, tempDir string, logger *log.Logger) {
+func testBenchmarkSuite(t *testing.T, tempDir string, logger log.Logger) {
 	suite := NewBenchmarkSuite(tempDir, logger)
 
 	// Create minimal scenarios for testing
@@ -114,7 +114,7 @@ func testBenchmarkSuite(t *testing.T, tempDir string, logger *log.Logger) {
 	}
 }
 
-func testPrometheusIntegration(t *testing.T, tempDir string, logger *log.Logger) {
+func testPrometheusIntegration(t *testing.T, tempDir string, logger log.Logger) {
 	collector := NewPrometheusLoadTestCollector(":0", logger) // Use port 0 for testing
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -162,7 +162,7 @@ func testPrometheusIntegration(t *testing.T, tempDir string, logger *log.Logger)
 	t.Logf("Prometheus integration test completed successfully")
 }
 
-func testRegressionTesting(t *testing.T, tempDir string, logger *log.Logger) {
+func testRegressionTesting(t *testing.T, tempDir string, logger log.Logger) {
 	suite := NewRegressionTestSuite(tempDir, logger)
 
 	// Create and save a baseline for testing
@@ -201,7 +201,7 @@ func testRegressionTesting(t *testing.T, tempDir string, logger *log.Logger) {
 	t.Logf("Regression testing setup completed successfully")
 }
 
-func testBaselineEstablishment(t *testing.T, tempDir string, logger *log.Logger) {
+func testBaselineEstablishment(t *testing.T, tempDir string, logger log.Logger) {
 	suite := NewBaselineEstablishmentSuite(tempDir, logger)
 
 	// Reduce configuration for testing

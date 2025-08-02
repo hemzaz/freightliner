@@ -13,120 +13,6 @@ import (
 	"freightliner/pkg/replication"
 )
 
-// LoadTestConfig defines configuration for load testing
-type LoadTestConfig struct {
-	// ConcurrentJobs is the number of concurrent replication jobs
-	ConcurrentJobs int
-
-	// RepositoriesPerJob is the number of repositories per job
-	RepositoriesPerJob int
-
-	// TestDuration is how long to run the load test
-	TestDuration time.Duration
-
-	// RampUpTime is the time to gradually increase load
-	RampUpTime time.Duration
-
-	// RampDownTime is the time to gradually decrease load
-	RampDownTime time.Duration
-
-	// ErrorRate is the expected error rate (0.0-1.0)
-	ErrorRate float64
-
-	// MetricsInterval is how often to collect metrics
-	MetricsInterval time.Duration
-}
-
-// LoadTestMetrics tracks metrics during load testing
-type LoadTestMetrics struct {
-	mu sync.RWMutex
-
-	// Counters
-	TotalJobs         int64
-	CompletedJobs     int64
-	FailedJobs        int64
-	TotalRepositories int64
-
-	// Timing
-	StartTime      time.Time
-	EndTime        time.Time
-	MinJobDuration time.Duration
-	MaxJobDuration time.Duration
-	TotalJobTime   time.Duration
-
-	// Concurrency
-	CurrentConcurrency int64
-	MaxConcurrency     int64
-
-	// Error tracking
-	ErrorsByType map[string]int64
-
-	// Memory and resource tracking
-	PeakMemoryMB   int64
-	PeakGoroutines int64
-}
-
-// NewLoadTestMetrics creates a new metrics tracker
-func NewLoadTestMetrics() *LoadTestMetrics {
-	return &LoadTestMetrics{
-		StartTime:      time.Now(),
-		ErrorsByType:   make(map[string]int64),
-		MinJobDuration: time.Hour, // Initialize to a large value
-	}
-}
-
-// UpdateJobCompleted updates metrics when a job completes
-func (m *LoadTestMetrics) UpdateJobCompleted(duration time.Duration, repositories int) {
-	atomic.AddInt64(&m.CompletedJobs, 1)
-	atomic.AddInt64(&m.TotalRepositories, int64(repositories))
-	atomic.AddInt64(&m.TotalJobTime, int64(duration))
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if duration < m.MinJobDuration {
-		m.MinJobDuration = duration
-	}
-	if duration > m.MaxJobDuration {
-		m.MaxJobDuration = duration
-	}
-}
-
-// UpdateJobFailed updates metrics when a job fails
-func (m *LoadTestMetrics) UpdateJobFailed(errorType string) {
-	atomic.AddInt64(&m.FailedJobs, 1)
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.ErrorsByType[errorType]++
-}
-
-// UpdateConcurrency updates concurrency tracking
-func (m *LoadTestMetrics) UpdateConcurrency(current int64) {
-	atomic.StoreInt64(&m.CurrentConcurrency, current)
-
-	for {
-		max := atomic.LoadInt64(&m.MaxConcurrency)
-		if current <= max || atomic.CompareAndSwapInt64(&m.MaxConcurrency, max, current) {
-			break
-		}
-	}
-}
-
-// GetSnapshot returns a snapshot of current metrics
-func (m *LoadTestMetrics) GetSnapshot() LoadTestMetrics {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	snapshot := *m
-	snapshot.ErrorsByType = make(map[string]int64)
-	for k, v := range m.ErrorsByType {
-		snapshot.ErrorsByType[k] = v
-	}
-
-	return snapshot
-}
-
 // MockReplicationJob simulates a replication job for load testing
 type MockReplicationJob struct {
 	ID           string
@@ -154,7 +40,7 @@ func (j *MockReplicationJob) Execute(ctx context.Context) error {
 type LoadTestRunner struct {
 	config  LoadTestConfig
 	metrics *LoadTestMetrics
-	logger  *log.Logger
+	logger  log.Logger
 
 	// Control channels
 	stopCh   chan struct{}
@@ -163,7 +49,7 @@ type LoadTestRunner struct {
 }
 
 // NewLoadTestRunner creates a new load test runner
-func NewLoadTestRunner(config LoadTestConfig, logger *log.Logger) *LoadTestRunner {
+func NewLoadTestRunner(config LoadTestConfig, logger log.Logger) *LoadTestRunner {
 	if logger == nil {
 		logger = log.NewLogger()
 	}
@@ -297,14 +183,14 @@ func (r *LoadTestRunner) metricsCollector(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			snapshot := r.metrics.GetSnapshot()
+			summary := r.metrics.GetSummary()
 
-			completedJobs := atomic.LoadInt64(&snapshot.CompletedJobs)
-			failedJobs := atomic.LoadInt64(&snapshot.FailedJobs)
-			totalJobs := atomic.LoadInt64(&snapshot.TotalJobs)
-			currentConcurrency := atomic.LoadInt64(&snapshot.CurrentConcurrency)
+			completedJobs := summary.CompletedJobs
+			failedJobs := summary.FailedJobs
+			totalJobs := summary.TotalJobs
+			currentConcurrency := summary.CurrentConcurrency
 
-			elapsed := time.Since(snapshot.StartTime)
+			elapsed := time.Since(summary.StartTime)
 
 			r.logger.Info("Load test metrics", map[string]interface{}{
 				"elapsed_time":        elapsed.String(),
@@ -319,7 +205,7 @@ func (r *LoadTestRunner) metricsCollector(ctx context.Context) {
 }
 
 // Run executes the load test
-func (r *LoadTestRunner) Run() *LoadTestMetrics {
+func (r *LoadTestRunner) Run() *LoadTestSummary {
 	ctx, cancel := context.WithTimeout(context.Background(), r.config.TestDuration)
 	defer cancel()
 
@@ -360,26 +246,23 @@ func (r *LoadTestRunner) Run() *LoadTestMetrics {
 	r.metrics.EndTime = time.Now()
 
 	// Final metrics
-	finalMetrics := r.metrics.GetSnapshot()
-	r.logFinalResults(finalMetrics)
+	finalSummary := r.metrics.GetSummary()
+	r.logFinalResults(finalSummary)
 
-	return &finalMetrics
+	return &finalSummary
 }
 
 // logFinalResults logs the final test results
-func (r *LoadTestRunner) logFinalResults(metrics LoadTestMetrics) {
-	totalDuration := metrics.EndTime.Sub(metrics.StartTime)
-	completedJobs := atomic.LoadInt64(&metrics.CompletedJobs)
-	failedJobs := atomic.LoadInt64(&metrics.FailedJobs)
-	totalJobs := atomic.LoadInt64(&metrics.TotalJobs)
+func (r *LoadTestRunner) logFinalResults(summary LoadTestSummary) {
+	totalDuration := summary.Duration
+	completedJobs := summary.CompletedJobs
+	failedJobs := summary.FailedJobs
+	totalJobs := summary.TotalJobs
 
 	jobsPerSecond := float64(completedJobs) / totalDuration.Seconds()
 	errorRate := float64(failedJobs) / float64(totalJobs)
 
-	avgJobDuration := time.Duration(0)
-	if completedJobs > 0 {
-		avgJobDuration = time.Duration(atomic.LoadInt64(&metrics.TotalJobTime) / completedJobs)
-	}
+	avgJobDuration := summary.AvgJobDuration
 
 	r.logger.Info("Load test completed", map[string]interface{}{
 		"total_duration":   totalDuration.String(),
@@ -389,14 +272,18 @@ func (r *LoadTestRunner) logFinalResults(metrics LoadTestMetrics) {
 		"jobs_per_second":  fmt.Sprintf("%.2f", jobsPerSecond),
 		"error_rate":       fmt.Sprintf("%.2f%%", errorRate*100),
 		"avg_job_duration": avgJobDuration.String(),
-		"min_job_duration": metrics.MinJobDuration.String(),
-		"max_job_duration": metrics.MaxJobDuration.String(),
-		"max_concurrency":  atomic.LoadInt64(&metrics.MaxConcurrency),
+		"min_job_duration": summary.MinJobDuration.String(),
+		"max_job_duration": summary.MaxJobDuration.String(),
+		"max_concurrency":  summary.MaxConcurrency,
 	})
 
 	// Log error breakdown
-	if len(metrics.ErrorsByType) > 0 {
-		r.logger.Info("Error breakdown by type", map[string]interface{}(metrics.ErrorsByType))
+	if len(summary.ErrorsByType) > 0 {
+		errorFields := make(map[string]interface{})
+		for k, v := range summary.ErrorsByType {
+			errorFields[k] = v
+		}
+		r.logger.Info("Error breakdown by type", errorFields)
 	}
 }
 
@@ -420,7 +307,7 @@ func BenchmarkReplicationLoad(b *testing.B) {
 		metrics := runner.Run()
 
 		// Verify that the load test performed as expected
-		completedJobs := atomic.LoadInt64(&metrics.CompletedJobs)
+		completedJobs := metrics.CompletedJobs
 		if completedJobs == 0 {
 			b.Fatal("No jobs completed during load test")
 		}
@@ -442,9 +329,9 @@ func TestLoadTestHighConcurrency(t *testing.T) {
 	metrics := runner.Run()
 
 	// Validate results
-	completedJobs := atomic.LoadInt64(&metrics.CompletedJobs)
-	failedJobs := atomic.LoadInt64(&metrics.FailedJobs)
-	totalJobs := atomic.LoadInt64(&metrics.TotalJobs)
+	completedJobs := metrics.CompletedJobs
+	failedJobs := metrics.FailedJobs
+	totalJobs := metrics.TotalJobs
 
 	if totalJobs == 0 {
 		t.Fatal("No jobs were created")
@@ -463,7 +350,7 @@ func TestLoadTestHighConcurrency(t *testing.T) {
 			expectedErrorRate*100, errorRate*100)
 	}
 
-	maxConcurrency := atomic.LoadInt64(&metrics.MaxConcurrency)
+	maxConcurrency := metrics.MaxConcurrency
 	if maxConcurrency > int64(config.ConcurrentJobs) {
 		t.Errorf("Max concurrency %d exceeded configured limit %d",
 			maxConcurrency, config.ConcurrentJobs)
@@ -475,7 +362,7 @@ func TestLoadTestHighConcurrency(t *testing.T) {
 	t.Logf("  Failed: %d", failedJobs)
 	t.Logf("  Error rate: %.2f%%", errorRate*100)
 	t.Logf("  Max concurrency: %d", maxConcurrency)
-	t.Logf("  Duration: %v", metrics.EndTime.Sub(metrics.StartTime))
+	t.Logf("  Duration: %v", metrics.Duration)
 }
 
 func TestLoadTestWithRealWorkerPool(t *testing.T) {
