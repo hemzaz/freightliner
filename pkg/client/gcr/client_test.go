@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"testing"
 
 	freightliner_log "freightliner/pkg/helper/log"
@@ -114,9 +115,13 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClientListRepositories(t *testing.T) {
-	// This function uses mock repositories in the implementation
-	// because of that, we're just testing that it doesn't crash
-	// and returns the expected mock data without using mocks for this test
+	// Skip this test unless integration tests are explicitly enabled
+	// This test makes real API calls to GCR and requires valid GCP credentials
+	if os.Getenv("ENABLE_GCR_INTEGRATION_TESTS") != "true" {
+		t.Skip("GCR integration tests disabled. Set ENABLE_GCR_INTEGRATION_TESTS=true to enable")
+	}
+
+	// This function uses real GCR API calls and requires valid credentials
 	tests := []struct {
 		name        string
 		location    string

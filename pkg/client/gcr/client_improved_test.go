@@ -3,6 +3,7 @@ package gcr
 import (
 	"context"
 	"net/http"
+	"os"
 	"testing"
 
 	freightliner_log "freightliner/pkg/helper/log"
@@ -286,6 +287,12 @@ func TestGCRRepositoryOperationsWithMocks(t *testing.T) {
 }
 
 func TestGCRClientWithDifferentRegistryTypes(t *testing.T) {
+	// Skip this test unless integration tests are explicitly enabled
+	// This test creates real GCP clients and may require credentials
+	if os.Getenv("ENABLE_GCR_INTEGRATION_TESTS") != "true" {
+		t.Skip("GCR integration tests disabled. Set ENABLE_GCR_INTEGRATION_TESTS=true to enable")
+	}
+
 	tests := []struct {
 		name         string
 		location     string
