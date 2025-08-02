@@ -596,7 +596,7 @@ func (bm *BaselineManager) cleanupOldBaselines() {
 				bm.logger.WithFields(map[string]interface{}{
 					"file":  file,
 					"error": err.Error(),
-				}).Error("Failed to remove old baseline file")
+				}).Error("Failed to remove old baseline file", err)
 			} else {
 				bm.logger.Debug("Removed old baseline", map[string]interface{}{
 					"file": file,
@@ -802,7 +802,7 @@ func (rts *RegressionTestSuite) updateBaselinesIfImproved(result *RegressionTest
 					rts.logger.WithFields(map[string]interface{}{
 						"scenario": scenarioResult.ScenarioName,
 						"error":    err.Error(),
-					}).Error("Failed to update baseline")
+					}).Error("Failed to update baseline", err)
 				}
 				rts.logger.Info("Updated baseline due to performance improvement", map[string]interface{}{
 					"scenario":            scenarioResult.ScenarioName,
@@ -823,7 +823,7 @@ func (am *AlertManager) SendRegressionAlerts(result RegressionTestResult) {
 					am.logger.WithFields(map[string]interface{}{
 						"error":   err.Error(),
 						"channel": "email",
-					}).Error("Failed to send regression alert")
+					}).Error("Failed to send regression alert", err)
 				}
 			}
 		case "slack":
@@ -832,7 +832,7 @@ func (am *AlertManager) SendRegressionAlerts(result RegressionTestResult) {
 					am.logger.WithFields(map[string]interface{}{
 						"error":   err.Error(),
 						"channel": "slack",
-					}).Error("Failed to send regression alert")
+					}).Error("Failed to send regression alert", err)
 				}
 			}
 		case "webhook":
@@ -841,7 +841,7 @@ func (am *AlertManager) SendRegressionAlerts(result RegressionTestResult) {
 					am.logger.WithFields(map[string]interface{}{
 						"error":   err.Error(),
 						"channel": "webhook",
-					}).Error("Failed to send regression alert")
+					}).Error("Failed to send regression alert", err)
 				}
 			}
 		}

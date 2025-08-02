@@ -152,7 +152,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			if _, err := w.Write([]byte(`{"error":"Unauthorized","message":"Valid API key required"}`)); err != nil {
 				s.logger.WithFields(map[string]interface{}{
 					"error": err.Error(),
-				}).Error("Failed to write unauthorized response")
+				}).Error("Failed to write unauthorized response", err)
 			}
 			return
 		}

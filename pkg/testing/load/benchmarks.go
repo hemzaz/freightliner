@@ -93,7 +93,7 @@ func NewBenchmarkSuite(resultsDir string, logger log.Logger) *BenchmarkSuite {
 			logger.WithFields(map[string]interface{}{
 				"error":      err.Error(),
 				"resultsDir": resultsDir,
-			}).Error("Failed to create results directory")
+			}).Error("Failed to create results directory", err)
 		}
 	}
 
