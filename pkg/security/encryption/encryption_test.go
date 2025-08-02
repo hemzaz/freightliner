@@ -85,8 +85,8 @@ func TestProviderInterface(t *testing.T) {
 
 func TestAWSKMSConstructor(t *testing.T) {
 	// Skip if not running in a real test environment with AWS credentials
-	if os.Getenv("AWS_TEST_KMS") != "true" {
-		t.Skip("Skipping AWS KMS tests, set AWS_TEST_KMS=true to run")
+	if os.Getenv("ENABLE_AWS_KMS_INTEGRATION_TESTS") != "true" {
+		t.Skip("Skipping AWS KMS integration test. Set ENABLE_AWS_KMS_INTEGRATION_TESTS=true to run.")
 	}
 
 	ctx := context.Background()
@@ -102,8 +102,8 @@ func TestAWSKMSConstructor(t *testing.T) {
 
 func TestGCPKMSConstructor(t *testing.T) {
 	// Skip if not running in a real test environment with GCP credentials
-	if os.Getenv("GCP_TEST_KMS") != "true" {
-		t.Skip("Skipping GCP KMS tests, set GCP_TEST_KMS=true to run")
+	if os.Getenv("ENABLE_GCP_KMS_INTEGRATION_TESTS") != "true" {
+		t.Skip("Skipping GCP KMS integration test. Set ENABLE_GCP_KMS_INTEGRATION_TESTS=true to run.")
 	}
 
 	_, err := NewGCPKMS(context.Background(), GCPOpts{
