@@ -164,14 +164,24 @@ func TestFileStoreConcurrency(t *testing.T) {
 	}
 
 	// Simulate concurrent updates
-	done := make(chan bool)
+	type result struct {
+		idx int
+		err error
+	}
+	results := make(chan result, 5)
+
 	for i := 0; i < 5; i++ {
 		go func(idx int) {
+			defer func() {
+				if r := recover(); r != nil {
+					results <- result{idx: idx, err: err}
+				}
+			}()
+
 			// Update the checkpoint
 			cp, loadErr := store.LoadCheckpoint("test-concurrent")
 			if loadErr != nil {
-				t.Errorf("LoadCheckpoint failed in goroutine %d: %v", idx, loadErr)
-				done <- true
+				results <- result{idx: idx, err: loadErr}
 				return
 			}
 
@@ -180,18 +190,17 @@ func TestFileStoreConcurrency(t *testing.T) {
 			cp.LastUpdated = time.Now()
 
 			// Save the updated checkpoint
-			err = store.SaveCheckpoint(cp)
-			if err != nil {
-				t.Errorf("SaveCheckpoint failed in goroutine %d: %v", idx, err)
-			}
-
-			done <- true
+			saveErr := store.SaveCheckpoint(cp)
+			results <- result{idx: idx, err: saveErr}
 		}(i)
 	}
 
-	// Wait for all goroutines to finish
+	// Wait for all goroutines to finish and check for errors
 	for i := 0; i < 5; i++ {
-		<-done
+		res := <-results
+		if res.err != nil {
+			t.Errorf("Goroutine %d failed: %v", res.idx, res.err)
+		}
 	}
 
 	// Load the final checkpoint

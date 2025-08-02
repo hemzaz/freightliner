@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"freightliner/pkg/copy"
@@ -21,6 +22,7 @@ import (
 type MockRegistryClient struct {
 	Repositories map[string]*MockRepository
 	RegistryName string
+	mu           sync.RWMutex
 }
 
 // GetRegistryName returns the name of this registry
@@ -30,6 +32,9 @@ func (m *MockRegistryClient) GetRegistryName() string {
 
 // ListRepositories returns all repositories in the registry with the given prefix
 func (m *MockRegistryClient) ListRepositories(ctx context.Context, prefix string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	repos := []string{}
 	for name := range m.Repositories {
 		if prefix == "" || strings.HasPrefix(name, prefix) {
@@ -41,12 +46,16 @@ func (m *MockRegistryClient) ListRepositories(ctx context.Context, prefix string
 
 // GetRepository returns a repository interface for the given repository name
 func (m *MockRegistryClient) GetRepository(ctx context.Context, name string) (interfaces.Repository, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	repo, ok := m.Repositories[name]
 	if !ok {
 		// Create a new empty repository if it doesn't exist
 		repo = &MockRepository{
 			Tags: make(map[string][]byte),
 			Name: name,
+			mu:   sync.RWMutex{},
 		}
 		m.Repositories[name] = repo
 	}
@@ -57,6 +66,7 @@ func (m *MockRegistryClient) GetRepository(ctx context.Context, name string) (in
 type MockRepository struct {
 	Tags map[string][]byte // map of tag -> manifest
 	Name string
+	mu   sync.RWMutex
 }
 
 // GetImage returns an image for testing
@@ -66,6 +76,9 @@ func (m *MockRepository) GetImage(ctx context.Context, tag string) (v1.Image, er
 
 // GetManifest returns the manifest for the given tag
 func (m *MockRepository) GetManifest(ctx context.Context, tag string) (*interfaces.Manifest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	manifest, ok := m.Tags[tag]
 	if !ok {
 		// Return empty manifest for non-existent tags
@@ -86,6 +99,9 @@ func (m *MockRepository) GetManifest(ctx context.Context, tag string) (*interfac
 
 // PutManifest uploads a manifest with the given tag
 func (m *MockRepository) PutManifest(ctx context.Context, tag string, manifest *interfaces.Manifest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.Tags[tag] = manifest.Content
 	return nil
 }
@@ -98,6 +114,9 @@ func (m *MockRepository) GetLayerReader(ctx context.Context, digest string) (io.
 
 // DeleteManifest deletes the manifest for the given tag
 func (m *MockRepository) DeleteManifest(ctx context.Context, tag string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	delete(m.Tags, tag)
 	return nil
 }
@@ -114,6 +133,9 @@ func (m *MockRepository) GetName() string {
 
 // ListTags returns all tags in this repository
 func (m *MockRepository) ListTags(ctx context.Context) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	tags := []string{}
 	for tag := range m.Tags {
 		tags = append(tags, tag)
@@ -204,6 +226,7 @@ func TestReplicateTree(t *testing.T) {
 					"latest": []byte("manifest-latest"),
 				},
 				Name: "project-a/service-1",
+				mu:   sync.RWMutex{},
 			},
 			"project-a/service-2": {
 				Tags: map[string][]byte{
@@ -211,6 +234,7 @@ func TestReplicateTree(t *testing.T) {
 					"latest": []byte("manifest-latest"),
 				},
 				Name: "project-a/service-2",
+				mu:   sync.RWMutex{},
 			},
 			"project-b/service-3": {
 				Tags: map[string][]byte{
@@ -218,6 +242,7 @@ func TestReplicateTree(t *testing.T) {
 					"latest": []byte("manifest-latest"),
 				},
 				Name: "project-b/service-3",
+				mu:   sync.RWMutex{},
 			},
 		},
 		RegistryName: "source.registry.com",
@@ -281,6 +306,7 @@ func TestReplicateTreeWithPrefix(t *testing.T) {
 					"latest": []byte("manifest-latest"),
 				},
 				Name: "project-a/service-1",
+				mu:   sync.RWMutex{},
 			},
 			"project-a/service-2": {
 				Tags: map[string][]byte{
@@ -288,6 +314,7 @@ func TestReplicateTreeWithPrefix(t *testing.T) {
 					"latest": []byte("manifest-latest"),
 				},
 				Name: "project-a/service-2",
+				mu:   sync.RWMutex{},
 			},
 			"project-b/service-3": {
 				Tags: map[string][]byte{
@@ -295,6 +322,7 @@ func TestReplicateTreeWithPrefix(t *testing.T) {
 					"latest": []byte("manifest-latest"),
 				},
 				Name: "project-b/service-3",
+				mu:   sync.RWMutex{},
 			},
 		},
 		RegistryName: "source.registry.com",

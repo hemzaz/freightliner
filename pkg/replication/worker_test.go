@@ -115,7 +115,9 @@ func TestWorkerPoolScaling(t *testing.T) {
 			var resultsReceived int32
 
 			// Start result consumer to prevent deadlock
+			resultsDone := make(chan struct{})
 			go func() {
+				defer close(resultsDone)
 				for range pool.GetResults() {
 					atomic.AddInt32(&resultsReceived, 1)
 				}
@@ -137,6 +139,9 @@ func TestWorkerPoolScaling(t *testing.T) {
 
 			// Wait for all jobs to complete
 			pool.Wait()
+
+			// Wait for result consumer to finish
+			<-resultsDone
 
 			// Verify all jobs completed
 			if atomic.LoadInt32(&completed) != 100 {

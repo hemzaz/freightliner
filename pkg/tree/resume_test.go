@@ -2,6 +2,7 @@ package tree
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,16 +23,19 @@ func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryCli
 					"v1.0":   []byte("manifest-1.0"),
 					"latest": []byte("manifest-latest"),
 				},
+				mu: sync.RWMutex{},
 			},
 			"project/repo2": {
 				Tags: map[string][]byte{
 					"v2.0": []byte("manifest-2.0"),
 				},
+				mu: sync.RWMutex{},
 			},
 			"project/repo3": {
 				Tags: map[string][]byte{
 					"v3.0": []byte("manifest-3.0"),
 				},
+				mu: sync.RWMutex{},
 			},
 		},
 	}

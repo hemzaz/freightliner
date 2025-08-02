@@ -211,7 +211,7 @@ func TestWorkerPool_Stop(t *testing.T) {
 	pool.Start()
 
 	var completedTasks atomic.Int32
-	var cancelled bool
+	var cancelled atomic.Bool
 
 	// Submit tasks that respect context cancellation
 	for i := 0; i < 4; i++ {
@@ -221,7 +221,7 @@ func TestWorkerPool_Stop(t *testing.T) {
 				completedTasks.Add(1)
 				return nil
 			case <-ctx.Done():
-				cancelled = true
+				cancelled.Store(true)
 				return ctx.Err()
 			}
 		})
@@ -241,11 +241,11 @@ func TestWorkerPool_Stop(t *testing.T) {
 
 	// Some tasks should have been cancelled or not all should have completed naturally
 	completed := completedTasks.Load()
-	if completed == 4 && !cancelled {
+	if completed == 4 && !cancelled.Load() {
 		t.Error("Expected some tasks to be interrupted by Stop() or cancelled due to context")
 	}
 
-	t.Logf("Completed tasks: %d, Cancelled: %v", completed, cancelled)
+	t.Logf("Completed tasks: %d, Cancelled: %v", completed, cancelled.Load())
 }
 
 // TestWorkerPool_RaceConditions focuses on detecting race conditions with the race detector
