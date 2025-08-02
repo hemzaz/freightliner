@@ -81,6 +81,12 @@ test-ci: ## Run tests optimized for CI environment
 	mkdir -p $(COVERAGE_DIR)
 	go test -v -race -short -timeout=10m -covermode=atomic -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
 
+.PHONY: test-docker
+test-docker: ## Run tests optimized for Docker environment (no race detection)
+	@echo "Running Docker tests..."
+	mkdir -p $(COVERAGE_DIR)
+	go test -v -short -timeout=10m -covermode=atomic -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
+
 .PHONY: bench
 bench: ## Run benchmarks
 	@echo "Running benchmarks..."

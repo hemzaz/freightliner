@@ -39,8 +39,8 @@ FROM base AS test
 # Set CI environment variables for test manifest
 ENV CI=true
 ENV GITHUB_ACTIONS=true
-# Run CI-optimized tests using manifest system
-RUN make test-ci
+# Run Docker-optimized tests (without race detection due to CGO requirement)
+RUN make test-docker
 
 # Lint stage
 FROM base AS lint
