@@ -36,12 +36,12 @@ type CheckpointOptions struct {
 type TreeReplicationResult struct {
 	// Total repositories that were processed
 	Repositories int
-	// Total images that were replicated successfully
-	ImagesReplicated int
-	// Total images that were skipped (already exist or filtered)
-	ImagesSkipped int
-	// Total images that failed to replicate
-	ImagesFailed int
+	// Total images that were replicated successfully (atomic counter)
+	ImagesReplicated atomic.Int64
+	// Total images that were skipped (already exist or filtered) (atomic counter)
+	ImagesSkipped atomic.Int64
+	// Total images that failed to replicate (atomic counter)
+	ImagesFailed atomic.Int64
 	// Progress percentage (0-100)
 	Progress float64
 	// Start time of the replication
@@ -118,7 +118,8 @@ type TreeReplicator struct {
 	checkpointing     CheckpointOptions
 	checkpointStore   checkpoint.CheckpointStore
 	dryRun            bool
-	metrics           interface{} // Metrics interface for tracking replication stats
+	metrics           interface{}  // Metrics interface for tracking replication stats
+	checkpointMu      sync.RWMutex // Protects concurrent access to checkpoint data
 }
 
 // SetMetrics sets the metrics interface for the tree replicator
@@ -198,13 +199,13 @@ func (t *TreeReplicator) ReplicateTree(
 func (t *TreeReplicator) initReplication(ctx context.Context) (*TreeReplicationResult, func()) {
 	startTime := time.Now()
 	result := &TreeReplicationResult{
-		Repositories:     0,
-		ImagesReplicated: 0,
-		ImagesSkipped:    0,
-		ImagesFailed:     0,
-		Progress:         0,
-		StartTime:        startTime,
+		Repositories: 0,
+		Progress:     0,
+		StartTime:    startTime,
 	}
+	result.ImagesReplicated.Store(0)
+	result.ImagesSkipped.Store(0)
+	result.ImagesFailed.Store(0)
 
 	// Setup context with cancellation
 	_, cancel := context.WithCancel(ctx)
@@ -866,13 +867,18 @@ func (t *TreeReplicator) processRepository(opts repositoryProcessOptions) error 
 
 	// Update checkpoint if enabled
 	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
+		t.checkpointMu.Lock()
 		opts.TreeCheckpoint.Repositories[opts.SourceRepo] = checkpoint.RepoStatus{
 			Status:     checkpoint.StatusInProgress,
 			SourceRepo: opts.SourceRepo,
 			DestRepo:   opts.DestRepo,
 		}
 
-		if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
+		// Save checkpoint while still holding the lock to prevent concurrent access during serialization
+		err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint)
+		t.checkpointMu.Unlock()
+
+		if err != nil {
 			wrappedErr := errors.Wrap(err, "failed to update repository checkpoint")
 			t.logger.WithFields(map[string]interface{}{
 				"checkpoint_id": opts.TreeCheckpoint.ID,
@@ -1016,12 +1022,12 @@ func (t *TreeReplicator) replicateTags(
 				}).Info("Successfully replicated tag")
 			}
 
-			// Update result statistics
+			// Update result statistics atomically
 			if opts.Result != nil {
 				if err != nil {
-					opts.Result.ImagesFailed++
+					opts.Result.ImagesFailed.Add(1)
 				} else {
-					opts.Result.ImagesReplicated++
+					opts.Result.ImagesReplicated.Add(1)
 				}
 			}
 			mu.Unlock()
@@ -1125,19 +1131,24 @@ func (t *TreeReplicator) replicateTag(
 // markRepositoryCompleted updates checkpoint to mark repository as completed
 func (t *TreeReplicator) markRepositoryCompleted(opts repositoryProcessOptions) {
 	if t.checkpointing.Enabled && t.checkpointStore != nil && opts.TreeCheckpoint != nil {
+		t.checkpointMu.Lock()
 		if repo, ok := opts.TreeCheckpoint.Repositories[opts.SourceRepo]; ok {
 			repo.Status = checkpoint.StatusCompleted
 			opts.TreeCheckpoint.Repositories[opts.SourceRepo] = repo
 			opts.TreeCheckpoint.CompletedRepositories = append(opts.TreeCheckpoint.CompletedRepositories, opts.SourceRepo)
+		}
 
-			if err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint); err != nil {
-				t.logger.WithFields(map[string]interface{}{
-					"checkpoint_id": opts.TreeCheckpoint.ID,
-					"source_repo":   opts.SourceRepo,
-					"dest_repo":     opts.DestRepo,
-					"error":         err.Error(),
-				}).Warn("Failed to save completion checkpoint")
-			}
+		// Save checkpoint while still holding the lock to prevent concurrent access during serialization
+		err := t.checkpointStore.SaveCheckpoint(opts.TreeCheckpoint)
+		t.checkpointMu.Unlock()
+
+		if err != nil {
+			t.logger.WithFields(map[string]interface{}{
+				"checkpoint_id": opts.TreeCheckpoint.ID,
+				"source_repo":   opts.SourceRepo,
+				"dest_repo":     opts.DestRepo,
+				"error":         err.Error(),
+			}).Warn("Failed to save completion checkpoint")
 		}
 	}
 }

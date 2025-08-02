@@ -133,6 +133,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		}).Warn("Failed to save updated checkpoint")
 	}
 
+	// Mutex to protect concurrent access to checkpoint data
+	var checkpointMu sync.RWMutex
+
 	// Set up checkpoint timer for periodic updates (every 30 seconds)
 	checkpointTicker := time.NewTicker(30 * time.Second)
 	checkpointDone := make(chan bool)
@@ -143,7 +146,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 			select {
 			case <-checkpointTicker.C:
 				// Update and save the checkpoint
+				checkpointMu.Lock()
 				savedCheckpoint.LastUpdated = time.Now()
+				checkpointMu.Unlock()
 				if err := t.checkpointStore.SaveCheckpoint(savedCheckpoint); err != nil {
 					t.logger.WithFields(map[string]interface{}{
 						"error": err.Error(),
@@ -183,7 +188,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 		repoName := repo
 
 		// Find the repository status in the checkpoint
+		checkpointMu.RLock()
 		repoStatus, exists := savedCheckpoint.Repositories[repoName]
+		checkpointMu.RUnlock()
 		if !exists {
 			t.logger.WithFields(map[string]interface{}{
 				"repository": repoName,
@@ -203,9 +210,11 @@ func (t *TreeReplicator) ResumeTreeReplication(
 			_ = repoStatus.DestRepo
 
 			// Update checkpoint for this repository
+			checkpointMu.Lock()
 			repoStatus.Status = checkpoint.StatusInProgress
 			repoStatus.LastUpdated = time.Now()
 			savedCheckpoint.Repositories[repoName] = repoStatus
+			checkpointMu.Unlock()
 
 			// Mock implementation for now
 			// In a real implementation, we would call the actual replication logic
@@ -216,6 +225,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 			imagesReplicated = 1
 
 			// Update checkpoint for this repository with results
+			checkpointMu.Lock()
 			if err != nil {
 				repoStatus.Status = checkpoint.StatusFailed
 				repoStatus.Error = err.Error()
@@ -233,6 +243,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 				savedCheckpoint.Progress = float64(completed) / float64(total) * 100
 				result.Progress = savedCheckpoint.Progress
 			}
+			checkpointMu.Unlock()
 
 			// Send results back
 			results <- repoResult{
@@ -257,9 +268,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	for res := range results {
 		result.Repositories++
-		result.ImagesReplicated += res.imagesReplicated
-		result.ImagesSkipped += res.imagesSkipped
-		result.ImagesFailed += res.imagesFailed
+		result.ImagesReplicated.Add(int64(res.imagesReplicated))
+		result.ImagesSkipped.Add(int64(res.imagesSkipped))
+		result.ImagesFailed.Add(int64(res.imagesFailed))
 
 		if res.err != nil {
 			errs = append(errs, errors.Wrapf(res.err, "failed to replicate repository %s", res.repo))
@@ -273,6 +284,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 	checkpointDone <- true
 
 	// Update final checkpoint status
+	checkpointMu.Lock()
 	if interrupted {
 		savedCheckpoint.Status = checkpoint.StatusInterrupted
 		result.Interrupted = true
@@ -285,6 +297,7 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	savedCheckpoint.LastUpdated = time.Now()
 	savedCheckpoint.Progress = result.Progress
+	checkpointMu.Unlock()
 
 	// Save final checkpoint
 	if err := t.checkpointStore.SaveCheckpoint(savedCheckpoint); err != nil {
@@ -308,9 +321,9 @@ func (t *TreeReplicator) ResumeTreeReplication(
 
 	t.logger.WithFields(map[string]interface{}{
 		"repositories":      result.Repositories,
-		"images_replicated": result.ImagesReplicated,
-		"images_skipped":    result.ImagesSkipped,
-		"images_failed":     result.ImagesFailed,
+		"images_replicated": result.ImagesReplicated.Load(),
+		"images_skipped":    result.ImagesSkipped.Load(),
+		"images_failed":     result.ImagesFailed.Load(),
 		"duration_ms":       result.Duration.Milliseconds(),
 		"progress":          result.Progress,
 		"interrupted":       result.Interrupted,
