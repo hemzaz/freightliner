@@ -506,7 +506,7 @@ func TestLoadTestFrameworkResourceCleanup(t *testing.T) {
 	}
 
 	// Manual cleanup
-	os.RemoveAll(tempDir)
+	_ = os.RemoveAll(tempDir)
 
 	t.Logf("Resource cleanup test completed successfully")
 }

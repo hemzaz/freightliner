@@ -318,34 +318,79 @@ func (pc *PrometheusLoadTestCollector) handleMetrics(w http.ResponseWriter, r *h
 		}
 	}
 
-	fmt.Fprintf(w, "\n# HELP load_test_throughput_mbps Current throughput in MB/s\n")
-	fmt.Fprintf(w, "# TYPE load_test_throughput_mbps gauge\n")
+	if _, err := fmt.Fprintf(w, "\n# HELP load_test_throughput_mbps Current throughput in MB/s\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write throughput help", err)
+		return
+	}
+	if _, err := fmt.Fprintf(w, "# TYPE load_test_throughput_mbps gauge\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write throughput type", err)
+		return
+	}
 	for scenario, throughput := range pc.loadTestMetrics.ThroughputMBps {
-		fmt.Fprintf(w, "load_test_throughput_mbps{scenario=\"%s\"} %.2f\n", scenario, throughput)
+		if _, err := fmt.Fprintf(w, "load_test_throughput_mbps{scenario=\"%s\"} %.2f\n", scenario, throughput); err != nil {
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write throughput metrics", err)
+			return
+		}
 	}
 
-	fmt.Fprintf(w, "\n# HELP load_test_memory_usage_mb Current memory usage in MB\n")
-	fmt.Fprintf(w, "# TYPE load_test_memory_usage_mb gauge\n")
+	if _, err := fmt.Fprintf(w, "\n# HELP load_test_memory_usage_mb Current memory usage in MB\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write memory help", err)
+		return
+	}
+	if _, err := fmt.Fprintf(w, "# TYPE load_test_memory_usage_mb gauge\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write memory type", err)
+		return
+	}
 	for scenario, memory := range pc.loadTestMetrics.MemoryUsageMB {
-		fmt.Fprintf(w, "load_test_memory_usage_mb{scenario=\"%s\"} %d\n", scenario, memory)
+		if _, err := fmt.Fprintf(w, "load_test_memory_usage_mb{scenario=\"%s\"} %d\n", scenario, memory); err != nil {
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write memory metrics", err)
+			return
+		}
 	}
 
-	fmt.Fprintf(w, "\n# HELP load_test_success_rate Success rate for scenarios\n")
-	fmt.Fprintf(w, "# TYPE load_test_success_rate gauge\n")
+	if _, err := fmt.Fprintf(w, "\n# HELP load_test_success_rate Success rate for scenarios\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write success rate help", err)
+		return
+	}
+	if _, err := fmt.Fprintf(w, "# TYPE load_test_success_rate gauge\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write success rate type", err)
+		return
+	}
 	for scenario, rate := range pc.loadTestMetrics.ScenarioSuccessRate {
-		fmt.Fprintf(w, "load_test_success_rate{scenario=\"%s\"} %.4f\n", scenario, rate)
+		if _, err := fmt.Fprintf(w, "load_test_success_rate{scenario=\"%s\"} %.4f\n", scenario, rate); err != nil {
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write success rate metrics", err)
+			return
+		}
 	}
 
-	fmt.Fprintf(w, "\n# HELP load_test_connection_reuse_rate Connection reuse rate\n")
-	fmt.Fprintf(w, "# TYPE load_test_connection_reuse_rate gauge\n")
+	if _, err := fmt.Fprintf(w, "\n# HELP load_test_connection_reuse_rate Connection reuse rate\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write connection reuse help", err)
+		return
+	}
+	if _, err := fmt.Fprintf(w, "# TYPE load_test_connection_reuse_rate gauge\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write connection reuse type", err)
+		return
+	}
 	for scenario, rate := range pc.loadTestMetrics.ConnectionReuseRate {
-		fmt.Fprintf(w, "load_test_connection_reuse_rate{scenario=\"%s\"} %.4f\n", scenario, rate)
+		if _, err := fmt.Fprintf(w, "load_test_connection_reuse_rate{scenario=\"%s\"} %.4f\n", scenario, rate); err != nil {
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write connection reuse metrics", err)
+			return
+		}
 	}
 
-	fmt.Fprintf(w, "\n# HELP load_test_latency_p99_ms 99th percentile latency in milliseconds\n")
-	fmt.Fprintf(w, "# TYPE load_test_latency_p99_ms gauge\n")
+	if _, err := fmt.Fprintf(w, "\n# HELP load_test_latency_p99_ms 99th percentile latency in milliseconds\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write latency help", err)
+		return
+	}
+	if _, err := fmt.Fprintf(w, "# TYPE load_test_latency_p99_ms gauge\n"); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write latency type", err)
+		return
+	}
 	for scenario, latency := range pc.loadTestMetrics.LatencyPercentiles {
-		fmt.Fprintf(w, "load_test_latency_p99_ms{scenario=\"%s\"} %d\n", scenario, latency.P99Ms)
+		if _, err := fmt.Fprintf(w, "load_test_latency_p99_ms{scenario=\"%s\"} %d\n", scenario, latency.P99Ms); err != nil {
+			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to write latency metrics", err)
+			return
+		}
 	}
 }
 
@@ -410,11 +455,14 @@ func (pc *PrometheusLoadTestCollector) handleRegressionMetrics(w http.ResponseWr
 
 func (pc *PrometheusLoadTestCollector) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now(),
 		"version":   "1.0.0",
-	})
+	}); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to encode health check response", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func (pc *PrometheusLoadTestCollector) handleDashboardData(w http.ResponseWriter, r *http.Request) {
@@ -433,7 +481,10 @@ func (pc *PrometheusLoadTestCollector) handleDashboardData(w http.ResponseWriter
 		"alert_thresholds": pc.alertThresholds,
 	}
 
-	json.NewEncoder(w).Encode(dashboardData)
+	if err := json.NewEncoder(w).Encode(dashboardData); err != nil {
+		pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Failed to encode dashboard data", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 // Background monitoring functions

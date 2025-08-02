@@ -62,7 +62,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		// Log error but don't change response since headers are already written
+		fmt.Printf("Failed to encode health response: %v\n", err)
+	}
 }
 
 // handleReadiness handles readiness probe requests
@@ -117,7 +120,10 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		// Log error but don't change response since headers are already written
+		fmt.Printf("Failed to encode readiness response: %v\n", err)
+	}
 }
 
 // handleLiveness handles liveness probe requests
@@ -180,7 +186,10 @@ func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		// Log error but don't change response since headers are already written
+		fmt.Printf("Failed to encode liveness response: %v\n", err)
+	}
 }
 
 // handleSystemInfo handles system information requests
@@ -202,7 +211,10 @@ func (s *Server) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(info)
+	if err := json.NewEncoder(w).Encode(info); err != nil {
+		// Log error but don't change response since headers are already written
+		fmt.Printf("Failed to encode system info response: %v\n", err)
+	}
 }
 
 // handleVersion handles version information requests
@@ -217,7 +229,10 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(versionInfo)
+	if err := json.NewEncoder(w).Encode(versionInfo); err != nil {
+		// Log error but don't change response since headers are already written
+		fmt.Printf("Failed to encode version response: %v\n", err)
+	}
 }
 
 // checkServiceHealth performs a basic service health check
