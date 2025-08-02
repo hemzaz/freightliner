@@ -3,6 +3,7 @@ package ecr
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"freightliner/pkg/helper/log"
@@ -196,6 +197,11 @@ func TestRepositoryListTags(t *testing.T) {
 }
 
 func TestRepositoryGetManifest(t *testing.T) {
+	// Skip the test unless explicitly enabled via environment variable
+	if os.Getenv("ENABLE_ECR_INTEGRATION_TESTS") != "true" {
+		t.Skip("Skipping ECR integration test that requires AWS API calls. Set ENABLE_ECR_INTEGRATION_TESTS=true to run.")
+	}
+
 	// This test would require more extensive mocking of the remote.Get functionality
 	// which is difficult without a more sophisticated test framework.
 	// For now, we'll skip this test for brevity.
@@ -203,6 +209,11 @@ func TestRepositoryGetManifest(t *testing.T) {
 }
 
 func TestRepositoryPutManifest(t *testing.T) {
+	// Skip the test unless explicitly enabled via environment variable
+	if os.Getenv("ENABLE_ECR_INTEGRATION_TESTS") != "true" {
+		t.Skip("Skipping ECR integration test that requires AWS API calls. Set ENABLE_ECR_INTEGRATION_TESTS=true to run.")
+	}
+
 	// Similarly, this test would require extensive mocking.
 	t.Skip("Skipping test that requires extensive mocking of go-containerregistry remote operations")
 }

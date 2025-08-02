@@ -3,6 +3,7 @@ package ecr
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -106,8 +107,10 @@ func TestNewClient(t *testing.T) {
 			mockSTS := &mockSTSAPI{}
 			tc.mockSetup(mockSTS)
 
-			// Skip the test to avoid AWS API calls
-			t.Skip("Skipping test that requires AWS API calls")
+			// Skip the test unless explicitly enabled via environment variable
+			if os.Getenv("ENABLE_ECR_INTEGRATION_TESTS") != "true" {
+				t.Skip("Skipping ECR integration test. Set ENABLE_ECR_INTEGRATION_TESTS=true to run.")
+			}
 
 			client, err := NewClient(ClientOptions{
 				Region:    tc.region,
