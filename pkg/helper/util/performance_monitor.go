@@ -381,8 +381,7 @@ func (pm *PerformanceMonitor) GenerateReport() *PerformanceReport {
 
 	// Add GC optimizer stats
 	if pm.gcOptimizer != nil {
-		gcStats := pm.gcOptimizer.GetStats()
-		report.GCOptimizerStats = &gcStats
+		report.GCOptimizerStats = pm.gcOptimizer.GetStats()
 	}
 
 	return report

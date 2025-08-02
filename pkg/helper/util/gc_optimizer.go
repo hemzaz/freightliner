@@ -348,11 +348,11 @@ func (gco *GCOptimizer) ForceGC(reason string) {
 }
 
 // GetStats returns current GC optimization statistics
-func (gco *GCOptimizer) GetStats() GCOptimizerStats {
-	return GCOptimizerStats{
+func (gco *GCOptimizer) GetStats() *GCOptimizerStats {
+	return &GCOptimizerStats{
 		Enabled:        gco.enabled.Load(),
 		MemoryPressure: gco.memoryPressure.Load(),
-		GCStats:        gco.gcStats,
+		GCStats:        &gco.gcStats,
 	}
 }
 
@@ -360,7 +360,7 @@ func (gco *GCOptimizer) GetStats() GCOptimizerStats {
 type GCOptimizerStats struct {
 	Enabled        bool
 	MemoryPressure int64
-	GCStats        GCStats
+	GCStats        *GCStats
 }
 
 // MemoryEfficientProcessor provides memory-efficient data processing patterns

@@ -309,8 +309,8 @@ func (orm *OptimizedResourceManager) PerformWithTimeout(
 }
 
 // GetStats returns current resource usage statistics
-func (orm *OptimizedResourceManager) GetStats() ResourceStats {
-	return orm.stats
+func (orm *OptimizedResourceManager) GetStats() *ResourceStats {
+	return &orm.stats
 }
 
 // DetectLeaks logs any resources that haven't been properly cleaned up
