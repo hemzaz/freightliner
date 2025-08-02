@@ -79,8 +79,7 @@ jobs:
             echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/gcp-key.json
             export GOOGLE_APPLICATION_CREDENTIALS="/tmp/gcp-key.json"
           fi
-          ./scripts/test-with-manifest.sh --env integration
-          --categories external_deps
+          ./scripts/test-with-manifest.sh --env integration --categories external_deps
         env:
           REGISTRY_HOST: localhost:5100
           TEST_ENV: integration
@@ -100,8 +99,7 @@ jobs:
           TOTAL_RUNS=3
           for i in $(seq 1 $TOTAL_RUNS); do
             echo "=== Flaky Detection Run $i/$TOTAL_RUNS ==="
-            if ./scripts/test-with-manifest.sh --env integration
-              --categories flaky; then
+            if ./scripts/test-with-manifest.sh --env integration --categories flaky; then
               echo "✓ Run $i passed"
             else
               echo "✗ Run $i failed"
@@ -112,8 +110,7 @@ jobs:
           echo "=== Flaky Test Results ==="
           echo "Total runs: $TOTAL_RUNS"
           echo "Failed runs: $FAILED_RUNS"
-          echo "Success rate:
-          $(( (TOTAL_RUNS - FAILED_RUNS) * 100 / TOTAL_RUNS ))%"
+          echo "Success rate: $(( (TOTAL_RUNS - FAILED_RUNS) * 100 / TOTAL_RUNS ))%"
           if [ $FAILED_RUNS -gt 0 ]; then
             echo "⚠️ Flaky tests detected: $FAILED_RUNS/$TOTAL_RUNS runs failed"
           else
@@ -143,19 +140,14 @@ jobs:
           echo "Go Version: $(go version)" >> $GITHUB_STEP_SUMMARY
           echo "Test Coverage Results:" >> $GITHUB_STEP_SUMMARY
           if [ -f coverage/coverage.out ]; then
-            go tool cover -func=coverage/coverage.out | tail -1 >>
-            $GITHUB_STEP_SUMMARY
+            go tool cover -func=coverage/coverage.out | tail -1 >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Execution Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **External Dependencies**:
-          ${{ github.event.inputs.run_external_deps || 'auto' }}" >>
-          $GITHUB_STEP_SUMMARY
-          echo "- **Flaky Detection**:
-          ${{ github.event.inputs.run_flaky_detection || 'auto' }}" >>
-          $GITHUB_STEP_SUMMARY
+          echo "- **External Dependencies**: ${{ github.event.inputs.run_external_deps || 'auto' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Flaky Detection**: ${{ github.event.inputs.run_flaky_detection || 'auto' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment**: integration" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Generated at: $(date -u)" >> $GITHUB_STEP_SUMMARY
