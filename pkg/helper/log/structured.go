@@ -208,13 +208,13 @@ func (l *StructuredLogger) log(level Level, message string, err error, includeSt
 			fallback += fmt.Sprintf(" error=%s", entry.Error)
 		}
 		fallback += "\n"
-		l.writer.Write([]byte(fallback))
+		_, _ = l.writer.Write([]byte(fallback))
 		return
 	}
 
 	// Write JSON log entry
-	l.writer.Write(data)
-	l.writer.Write([]byte("\n"))
+	_, _ = l.writer.Write(data)
+	_, _ = l.writer.Write([]byte("\n"))
 }
 
 // getCaller returns information about the calling function

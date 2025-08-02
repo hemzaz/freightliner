@@ -217,7 +217,12 @@ func (t *TransferManager) createStreamingCompressor(reader io.Reader, opts Compr
 	pr, pw := io.Pipe()
 
 	go func() {
-		defer pw.Close()
+		defer func() {
+			if err := pw.Close(); err != nil {
+				// Log close error but don't propagate since we're in a goroutine
+				// and the main operation may have already failed
+			}
+		}()
 
 		compressor, err := NewCompressingWriter(pw, CompressorOptions{
 			Type:  opts.Type,
@@ -227,7 +232,11 @@ func (t *TransferManager) createStreamingCompressor(reader io.Reader, opts Compr
 			pw.CloseWithError(err)
 			return
 		}
-		defer compressor.Close()
+		defer func() {
+			if err := compressor.Close(); err != nil {
+				// Log compressor close error but don't propagate since we're in a goroutine
+			}
+		}()
 
 		// Use buffer pool for memory-efficient streaming compression
 		reusableBuffer := t.bufferMgr.GetOptimalBuffer(bufferSize, "compress")

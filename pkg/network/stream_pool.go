@@ -145,7 +145,12 @@ func (sc *StreamingCopier) StreamThroughPipe(src io.Reader, transform func(io.Re
 	pr, pw := io.Pipe()
 
 	go func() {
-		defer pw.Close()
+		defer func() {
+			if err := pw.Close(); err != nil {
+				// Log close error but don't propagate since we're in a goroutine
+				// and the main operation may have already failed
+			}
+		}()
 
 		// Apply transformation and use optimized copying
 		transformedReader := transform(src)

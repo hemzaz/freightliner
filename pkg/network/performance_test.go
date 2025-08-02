@@ -145,7 +145,7 @@ func generateTestData(size int) []byte {
 	randomSize := int(float64(size) * 0.7)
 
 	// Random data
-	rand.Read(data[:randomSize])
+	_, _ = rand.Read(data[:randomSize])
 
 	// Pattern data (more compressible)
 	pattern := []byte("This is a repeating pattern for compression testing. ")
@@ -379,8 +379,8 @@ func BenchmarkDecompressionOperations(b *testing.B) {
 		// Pre-compress the data
 		var compressedBuf bytes.Buffer
 		writer := gzip.NewWriter(&compressedBuf)
-		writer.Write(testData)
-		writer.Close()
+		_, _ = writer.Write(testData)
+		_ = writer.Close()
 		compressedData := compressedBuf.Bytes()
 
 		b.Run(fmt.Sprintf("Size_%dKB", size/1024), func(b *testing.B) {
@@ -398,7 +398,7 @@ func BenchmarkDecompressionOperations(b *testing.B) {
 					b.Fatal(err)
 				}
 
-				reader.Close()
+				_ = reader.Close()
 			}
 		})
 	}

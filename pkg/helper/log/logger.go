@@ -242,7 +242,7 @@ func (l *BasicLogger) logWithFields(level Level, message string, err error, fiel
 
 	logLine += "\n"
 
-	l.writer.Write([]byte(logLine))
+	_, _ = l.writer.Write([]byte(logLine))
 }
 
 // log is the internal logging method (kept for backward compatibility)

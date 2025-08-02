@@ -500,7 +500,7 @@ func TestIntegrationPerformanceImprovements(t *testing.T) {
 				// Simulate image processing work
 				data := buffer.Bytes()[:1024]
 				n, _ := reader.Read(data)
-				writer.Write(data[:n])
+				_, _ = writer.Write(data[:n])
 
 				tracker.AddBytes(int64(n))
 				tracker.AddItems(1)
