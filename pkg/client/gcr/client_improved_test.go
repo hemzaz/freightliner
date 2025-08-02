@@ -2,6 +2,7 @@ package gcr
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	freightliner_log "freightliner/pkg/helper/log"
@@ -21,6 +22,7 @@ func TestGCRClientListRepositoriesWithMocks(t *testing.T) {
 		setupMocks  func() (*mocks.MockGoogleCatalogClient, *mocks.MockGoogleAuth)
 		expectedLen int
 		expectErr   bool
+		testAuth    bool // Whether this test case involves authentication
 	}{
 		{
 			name:     "Successful GCR repository listing",
@@ -28,11 +30,14 @@ func TestGCRClientListRepositoriesWithMocks(t *testing.T) {
 			location: "us",
 			prefix:   "",
 			setupMocks: func() (*mocks.MockGoogleCatalogClient, *mocks.MockGoogleAuth) {
-				scenarios := &mocks.MockGCRTestScenarios{}
-				return scenarios.SuccessfulGCRListRepositories("test-project", 4)
+				// Only setup catalog mock expectations since we're only testing catalog functionality
+				builder := mocks.NewGCRMockBuilder()
+				builder.ExpectCatalog(mocks.CreateMockGCRRepositories("test-project", 4), nil)
+				return builder.BuildCatalogClient(), nil // Return nil for auth since we don't need it
 			},
 			expectedLen: 4,
 			expectErr:   false,
+			testAuth:    false,
 		},
 		{
 			name:     "GCR with prefix filter",
@@ -48,11 +53,11 @@ func TestGCRClientListRepositoriesWithMocks(t *testing.T) {
 				}
 				builder := mocks.NewGCRMockBuilder()
 				builder.ExpectCatalog(repos, nil)
-				builder.ExpectAuthSuccess()
-				return builder.BuildCatalogClient(), builder.BuildAuthTransport()
+				return builder.BuildCatalogClient(), nil // Return nil for auth since we don't need it
 			},
 			expectedLen: 2, // Only repos with "testing" prefix
 			expectErr:   false,
+			testAuth:    false,
 		},
 		{
 			name:     "Authentication failure",
@@ -60,11 +65,14 @@ func TestGCRClientListRepositoriesWithMocks(t *testing.T) {
 			location: "us",
 			prefix:   "",
 			setupMocks: func() (*mocks.MockGoogleCatalogClient, *mocks.MockGoogleAuth) {
-				scenarios := &mocks.MockGCRTestScenarios{}
-				return scenarios.FailedGCRAuthentication()
+				// For authentication failure, we test the auth transport directly
+				builder := mocks.NewGCRMockBuilder()
+				builder.ExpectAuthFailure(assert.AnError)
+				return nil, builder.BuildAuthTransport() // Return auth transport to test auth failure
 			},
 			expectedLen: 0,
 			expectErr:   true,
+			testAuth:    true,
 		},
 	}
 
@@ -76,31 +84,47 @@ func TestGCRClientListRepositoriesWithMocks(t *testing.T) {
 			// Note: In practice, you'd need dependency injection to replace the real clients
 			// For now, we test the mock directly rather than through the client
 
-			// Test the catalog mock directly to verify it works
-			if !tc.expectErr {
-				registry, err := name.NewRegistry("gcr.io")
-				assert.NoError(t, err)
+			if tc.testAuth {
+				// Test authentication failure scenario
+				if mockAuth != nil {
+					// Simulate an HTTP request that would trigger the auth failure
+					req, err := http.NewRequest("GET", "https://gcr.io/v2/token", nil)
+					assert.NoError(t, err)
 
-				repos, err := mockCatalog.Catalog(context.Background(), registry)
-				assert.NoError(t, err)
+					_, err = mockAuth.RoundTrip(req)
+					assert.Error(t, err, "Expected authentication to fail")
+				}
+			} else {
+				// Test the catalog mock directly to verify it works
+				if mockCatalog != nil {
+					registry, err := name.NewRegistry("gcr.io")
+					assert.NoError(t, err)
 
-				// Filter repos by prefix if specified
-				filteredRepos := repos
-				if tc.prefix != "" {
-					filteredRepos = []string{}
-					for _, repo := range repos {
-						if len(repo) >= len(tc.prefix) && repo[:len(tc.prefix)] == tc.prefix {
-							filteredRepos = append(filteredRepos, repo)
+					repos, err := mockCatalog.Catalog(context.Background(), registry)
+					assert.NoError(t, err)
+
+					// Filter repos by prefix if specified
+					filteredRepos := repos
+					if tc.prefix != "" {
+						filteredRepos = []string{}
+						for _, repo := range repos {
+							if len(repo) >= len(tc.prefix) && repo[:len(tc.prefix)] == tc.prefix {
+								filteredRepos = append(filteredRepos, repo)
+							}
 						}
 					}
-				}
 
-				assert.Len(t, filteredRepos, tc.expectedLen)
+					assert.Len(t, filteredRepos, tc.expectedLen)
+				}
 			}
 
-			// Verify mock expectations
-			mockCatalog.AssertExpectations(t)
-			mockAuth.AssertExpectations(t)
+			// Verify mock expectations only for the mocks that were used
+			if mockCatalog != nil {
+				mockCatalog.AssertExpectations(t)
+			}
+			if mockAuth != nil {
+				mockAuth.AssertExpectations(t)
+			}
 
 			// Note: In a real implementation, you would test:
 			// repos, err := client.ListRepositories(context.Background(), tc.prefix)
@@ -353,8 +377,13 @@ func TestGCRErrorHandling(t *testing.T) {
 				return nil, artifactClient
 			},
 			testFunc: func(catalog *mocks.MockGoogleCatalogClient, artifact *mocks.MockArtifactRegistryClient) error {
-				// TODO: Fix artifactregistry API - ListRepositoriesRequest type not found
-				// For now, just return an error as expected for this test case
+				// Test the artifact client by calling ListRepositories to trigger the expectation
+				if artifact != nil {
+					// Call the mock method to trigger the expectation
+					iterator := artifact.ListRepositories(context.Background(), "projects/test-project/locations/us-central1")
+					_, err := iterator.Next()
+					return err
+				}
 				return assert.AnError
 			},
 			expectErr: true,
