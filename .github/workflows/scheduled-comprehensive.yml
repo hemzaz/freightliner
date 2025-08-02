@@ -69,9 +69,7 @@ jobs:
       - name: Run external dependency tests
         if: >
           github.event.inputs.run_external_deps == 'true' ||
-          (github.event_name == 'schedule' &&
-          (secrets.AWS_ACCESS_KEY_ID != '' ||
-          secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON != ''))
+          github.event_name == 'schedule'
         run: |
           echo "=== Running External Dependency Tests ==="
           # Set up GCP credentials if provided
