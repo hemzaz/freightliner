@@ -172,9 +172,9 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 	// Return results, adapting TreeReplicationResult to our service-level type
 	return &TreeReplicationResult{
 		RepositoriesFound:      result.Repositories,
-		RepositoriesReplicated: result.ImagesReplicated,
-		RepositoriesSkipped:    result.ImagesSkipped,
-		RepositoriesFailed:     result.ImagesFailed,
+		RepositoriesReplicated: int(result.ImagesReplicated.Load()),
+		RepositoriesSkipped:    int(result.ImagesSkipped.Load()),
+		RepositoriesFailed:     int(result.ImagesFailed.Load()),
 		TotalTagsCopied:        0, // Not provided in tree.TreeReplicationResult
 		TotalTagsSkipped:       0, // Not provided in tree.TreeReplicationResult
 		TotalErrors:            0, // Not provided in tree.TreeReplicationResult
