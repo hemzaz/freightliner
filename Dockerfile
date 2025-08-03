@@ -2,7 +2,7 @@
 # Optimized multi-stage Dockerfile for CI/CD and production
 
 # Build stage
-FROM golang:1.23.4-alpine AS builder
+FROM golang:1.24.5-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev

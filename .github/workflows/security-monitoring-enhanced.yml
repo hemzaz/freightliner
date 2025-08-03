@@ -8,24 +8,7 @@ on:
   schedule:
     # SECURITY: Run comprehensive scans daily at 2 AM UTC
     - cron: '0 2 * * *'
-  workflow_dispatch:
-    inputs:
-      scan_type:
-        description: 'Type of security scan to run'
-        required: false
-        default: 'full'
-        type: choice
-        options:
-          - 'full'
-          - 'quick'
-          - 'dependencies'
-          - 'containers'
-          - 'secrets'
-      notify_on_success:
-        description: 'Send notifications on successful scans'
-        required: false
-        default: false
-        type: boolean
+  workflow_dispatch:  # Security: No inputs allowed (CKV_GHA_7)
 
 # SECURITY: Minimal required permissions
 permissions:
@@ -201,7 +184,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.4'
+          go-version: '1.24.5'
           check-latest: true
 
       # SECURITY: Enhanced govulncheck with detailed reporting

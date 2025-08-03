@@ -17,26 +17,7 @@ on:
         default: 'development'
         type: string
       
-  workflow_dispatch:
-    inputs:
-      cloud_provider:
-        description: 'Cloud provider for OIDC'
-        required: true
-        type: choice
-        options:
-          - 'aws'
-          - 'gcp'
-          - 'azure'
-          - 'all'
-      environment:
-        description: 'Deployment environment'
-        required: false
-        default: 'development'
-        type: choice
-        options:
-          - 'development'
-          - 'staging'
-          - 'production'
+  workflow_dispatch:  # Security: No inputs allowed (CKV_GHA_7)
 
 # SECURITY: Minimal permissions with OIDC token capability
 permissions:

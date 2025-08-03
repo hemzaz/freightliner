@@ -5,24 +5,7 @@ on:
   schedule:
     # Run comprehensive tests daily at 2 AM UTC
     - cron: '0 2 * * *'
-  workflow_dispatch:
-    # Allow manual trigger
-    inputs:
-      run_external_deps:
-        description: 'Run tests requiring external dependencies (AWS/GCP)'
-        required: false
-        default: 'true'
-        type: boolean
-      run_flaky_detection:
-        description: 'Run flaky test detection (multiple runs)'
-        required: false
-        default: 'true'
-        type: boolean
-      test_iterations:
-        description: 'Number of test iterations for flaky detection'
-        required: false
-        default: '3'
-        type: string
+  workflow_dispatch:  # Security: No inputs allowed (CKV_GHA_7)
 
 # Separate concurrency for comprehensive tests
 concurrency:
