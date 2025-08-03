@@ -51,7 +51,7 @@ This document tracks the standardized versions of all GitHub Actions and tools u
 | Tool | Current Version | Purpose | Notes |
 |------|----------------|---------|-------|
 | **Go** | `1.24.5` | Runtime version | Latest stable |
-| **golangci-lint** | `v1.62.2` | Linter version | Latest stable version |
+| **golangci-lint** | `latest` | Linter version | Use latest to support Go 1.24.5 |
 | **gosec** | `latest` | Security scanner | `github.com/securego/gosec/v2/cmd/gosec` |
 | **staticcheck** | `latest` | Static analyzer | `honnef.co/go/tools/cmd/staticcheck` |
 | **Node.js** | `20` | GitHub Actions runtime | Default in latest actions |
