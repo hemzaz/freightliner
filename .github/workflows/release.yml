@@ -132,7 +132,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          attestations: type=provenance,mode=max
+          attests: type=provenance,mode=max
           sbom: true
 
       - name: Generate SBOM
@@ -340,7 +340,7 @@ jobs:
     name: Cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [deploy-staging, deploy-production, create-release]
+    needs: [build-and-publish, deploy-staging, deploy-production, create-release]
     if: always()
     
     steps:

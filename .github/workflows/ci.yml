@@ -125,11 +125,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: quick-checks
-    if: |
-      contains(github.event.head_commit.modified, 'Dockerfile') ||
-      contains(github.event.head_commit.added, 'Dockerfile') ||
-      contains(github.event.head_commit.modified, 'docker-compose') ||
-      github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event.head_commit != null && (
+        contains(github.event.head_commit.modified, 'Dockerfile') ||
+        contains(github.event.head_commit.added, 'Dockerfile') ||
+        contains(github.event.head_commit.modified, 'docker-compose')
+      )
 
     services:
       registry:
