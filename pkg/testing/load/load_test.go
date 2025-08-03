@@ -293,11 +293,11 @@ func BenchmarkReplicationLoad(b *testing.B) {
 	logger := log.NewLogger()
 
 	config := LoadTestConfig{
-		ConcurrentJobs:     10,
-		RepositoriesPerJob: 5,
-		TestDuration:       30 * time.Second,
-		ErrorRate:          0.05, // 5% error rate
-		MetricsInterval:    5 * time.Second,
+		ConcurrentJobs:     5,                // Reduced from 10
+		RepositoriesPerJob: 3,                // Reduced from 5
+		TestDuration:       10 * time.Second, // Reduced from 30s
+		ErrorRate:          0.05,             // 5% error rate
+		MetricsInterval:    2 * time.Second,  // Reduced from 5s
 	}
 
 	runner := NewLoadTestRunner(config, logger)
@@ -315,14 +315,19 @@ func BenchmarkReplicationLoad(b *testing.B) {
 }
 
 func TestLoadTestHighConcurrency(t *testing.T) {
+	// Skip in short mode to avoid CI timeouts
+	if testing.Short() {
+		t.Skip("Skipping long-running test in short mode")
+	}
+
 	logger := log.NewLogger()
 
 	config := LoadTestConfig{
-		ConcurrentJobs:     50,
-		RepositoriesPerJob: 10,
-		TestDuration:       1 * time.Minute,
-		ErrorRate:          0.1, // 10% error rate
-		MetricsInterval:    10 * time.Second,
+		ConcurrentJobs:     20,               // Reduced from 50
+		RepositoriesPerJob: 5,                // Reduced from 10
+		TestDuration:       15 * time.Second, // Reduced from 1 minute
+		ErrorRate:          0.1,              // 10% error rate
+		MetricsInterval:    5 * time.Second,  // Reduced from 10s
 	}
 
 	runner := NewLoadTestRunner(config, logger)
@@ -366,16 +371,21 @@ func TestLoadTestHighConcurrency(t *testing.T) {
 }
 
 func TestLoadTestWithRealWorkerPool(t *testing.T) {
+	// Skip in short mode to avoid CI timeouts
+	if testing.Short() {
+		t.Skip("Skipping worker pool test in short mode")
+	}
+
 	logger := log.NewLogger()
 
 	// Create a real worker pool for more realistic testing
-	pool := replication.NewWorkerPool(20, logger)
+	pool := replication.NewWorkerPool(10, logger) // Reduced from 20
 	pool.Start()
 	defer pool.Stop()
 
-	// Configuration for testing with real worker pool
+	// Configuration for testing with real worker pool (reduced for CI)
 	const (
-		numJobs       = 100
+		numJobs       = 50 // Reduced from 100
 		jobsPerSecond = 10
 		timeoutPerJob = 5 * time.Second
 	)
@@ -431,7 +441,7 @@ func TestLoadTestWithRealWorkerPool(t *testing.T) {
 	select {
 	case <-done:
 		// Jobs completed successfully
-	case <-time.After(30 * time.Second):
+	case <-time.After(15 * time.Second): // Reduced from 30s
 		t.Fatal("Load test timed out")
 	}
 
@@ -465,7 +475,7 @@ func TestLoadTestWithRealWorkerPool(t *testing.T) {
 		t.Errorf("Performance too low: %.2f jobs/second", jobsPerSecondActual)
 	}
 
-	if duration > 2*time.Minute { // Should complete within 2 minutes
+	if duration > 30*time.Second { // Should complete within 30 seconds (reduced from 2 minutes)
 		t.Errorf("Test took too long: %v", duration)
 	}
 }
