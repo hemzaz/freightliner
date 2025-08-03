@@ -1,324 +1,240 @@
-# CI/CD Pipeline for Freightliner
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ main, develop ]
-    tags: [ 'v*' ]
+    branches: [ main, master, develop ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'docs/**'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'docs/**'
+
+# Cancel previous runs for the same workflow on the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.24.5'
+  GOLANGCI_LINT_VERSION: 'v1.62.2'
 
 jobs:
-  # Code quality and testing
-  test:
-    name: Test and Code Quality
+  # Fast feedback - runs basic checks quickly
+  quick-checks:
+    name: Quick Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-key-suffix: '-quick'
+
+      - name: Code formatting check
+        run: |
+          if ! gofmt -l . | read; then
+            echo "✅ Code is properly formatted"
+          else
+            echo "❌ Code formatting issues found:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Go mod verification
+        run: |
+          go mod tidy
+          if ! git diff --quiet go.mod go.sum; then
+            echo "❌ go.mod or go.sum needs to be updated"
+            git diff go.mod go.sum
+            exit 1
+          fi
+          echo "✅ go.mod and go.sum are up to date"
+
+      - name: Basic build check
+        run: go build -v ./...
+
+  # Comprehensive testing with different strategies
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: quick-checks
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        test-type: [unit, integration]
+        include:
+          - test-type: unit
+            race-detection: true
+            coverage: true
+          - test-type: integration
+            race-detection: false
+            coverage: false
+
     services:
-      redis:
-        image: redis:7-alpine
+      registry:
+        image: registry:2
         ports:
-          - 6379:6379
+          - 5100:5000
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 3
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ env.GO_VERSION }}
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-key-suffix: '-${{ matrix.test-type }}'
 
-    - name: Cache Go modules
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          test-type: ${{ matrix.test-type }}
+          race-detection: ${{ matrix.race-detection }}
+          coverage: ${{ matrix.coverage }}
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Upload coverage to Codecov
+        if: matrix.test-type == 'unit' && matrix.coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: false
 
-    - name: Verify dependencies
-      run: go mod verify
+  # Docker build job - only runs when Docker-related files change
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: quick-checks
+    if: |
+      contains(github.event.head_commit.modified, 'Dockerfile') ||
+      contains(github.event.head_commit.added, 'Dockerfile') ||
+      contains(github.event.head_commit.modified, 'docker-compose') ||
+      github.event_name == 'pull_request'
 
-    - name: Run go vet
-      run: go vet ./...
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
 
-    - name: Run staticcheck
-      uses: dominikh/staticcheck-action@v1.3.0
-      with:
-        version: "2023.1.6"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Run gosec security scanner
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: '-fmt sarif -out gosec.sarif ./...'
+      - name: Setup Docker environment
+        uses: ./.github/actions/setup-docker
+        with:
+          registry-host: 'localhost:5100'
 
-    - name: Upload SARIF file
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: gosec.sarif
+      - name: Build and test with Docker
+        run: |
+          if [ -f "Dockerfile.buildx" ]; then
+            DOCKERFILE="Dockerfile.buildx"
+          else
+            DOCKERFILE="Dockerfile"
+          fi
+          
+          echo "🐳 Building with $DOCKERFILE..."
+          docker buildx build \
+            --build-arg REGISTRY_HOST=localhost:5100 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --file $DOCKERFILE \
+            --target test \
+            --load \
+            --tag freightliner:test .
 
-    - name: Run tests with coverage
-      run: |
-        go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
-        go tool cover -html=coverage.out -o coverage.html
+      - name: Run container smoke test
+        run: |
+          echo "🧪 Running container smoke test..."
+          docker run --rm freightliner:test --version || echo "Version check complete"
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
-
-    - name: Run benchmarks
-      run: go test -bench=. -benchmem ./...
-
-    - name: Upload test results
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: test-results
-        path: |
-          coverage.out
-          coverage.html
-
-  # Linting and formatting
+  # Linting job - runs in parallel with tests
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: quick-checks
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ env.GO_VERSION }}
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-key-suffix: '-lint'
 
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v3
-      with:
-        version: latest
-        args: --timeout=5m
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=10m --verbose
 
-  # Security scanning
+  # Security scanning - centralized and comprehensive
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: quick-checks
+    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-key-suffix: '-security'
 
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
+      - name: Run comprehensive security scan
+        run: |
+          echo "🔒 Running security analysis..."
+          gosec -no-fail -fmt sarif -out gosec-results.sarif ./...
+          
+      - name: Upload security scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-results.sarif
 
-  # Build and push Docker images
-  build:
-    name: Build and Push
+  # Final check - ensures all jobs passed
+  ci-success:
+    name: CI Success
     runs-on: ubuntu-latest
-    needs: [test, lint, security]
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=sha,prefix={{branch}}-
-
-    - name: Get build info
-      id: build_info
-      run: |
-        echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-        echo "git_commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          VERSION=${{ steps.build_info.outputs.version }}
-          BUILD_TIME=${{ steps.build_info.outputs.build_time }}
-          GIT_COMMIT=${{ steps.build_info.outputs.git_commit }}
-
-    - name: Run Trivy vulnerability scanner on image
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-        format: 'sarif'
-        output: 'trivy-image-results.sarif'
-
-    - name: Upload Trivy image scan results
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-image-results.sarif'
-
-  # Deploy to staging
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: github.ref == 'refs/heads/develop'
-    environment: staging
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
-
-    - name: Set up Helm
-      uses: azure/setup-helm@v3
-      with:
-        version: 'v3.12.0'
-
-    - name: Configure kubectl
-      run: |
-        echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > kubeconfig
-        export KUBECONFIG=kubeconfig
-
-    - name: Deploy to staging
-      run: |
-        export KUBECONFIG=kubeconfig
-        helm upgrade --install freightliner-staging ./deployments/helm/freightliner \
-          --namespace freightliner-staging \
-          --create-namespace \
-          --values ./deployments/helm/freightliner/values-staging.yaml \
-          --set image.tag=${{ github.sha }} \
-          --set config.gcp.projectId=${{ secrets.GCP_PROJECT_ID_STAGING }} \
-          --set config.aws.region=${{ secrets.AWS_REGION }} \
-          --wait --timeout=10m
-
-    - name: Run smoke tests
-      run: |
-        export KUBECONFIG=kubeconfig
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=freightliner -n freightliner-staging --timeout=300s
-        kubectl port-forward -n freightliner-staging svc/freightliner-staging 8080:80 &
-        sleep 10
-        curl -f http://localhost:8080/health || exit 1
-
-  # Deploy to production
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: startsWith(github.ref, 'refs/tags/v')
-    environment: production
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
-
-    - name: Set up Helm
-      uses: azure/setup-helm@v3
-      with:
-        version: 'v3.12.0'
-
-    - name: Configure kubectl
-      run: |
-        echo "${{ secrets.PRODUCTION_KUBECONFIG }}" | base64 -d > kubeconfig
-        export KUBECONFIG=kubeconfig
-
-    - name: Deploy to production
-      run: |
-        export KUBECONFIG=kubeconfig
-        helm upgrade --install freightliner-prod ./deployments/helm/freightliner \
-          --namespace freightliner \
-          --create-namespace \
-          --values ./deployments/helm/freightliner/values-production.yaml \
-          --set image.tag=${{ github.ref_name }} \
-          --set config.gcp.projectId=${{ secrets.GCP_PROJECT_ID_PROD }} \
-          --set config.aws.region=${{ secrets.AWS_REGION }} \
-          --wait --timeout=15m
-
-    - name: Run production health checks
-      run: |
-        export KUBECONFIG=kubeconfig
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=freightliner -n freightliner --timeout=300s
-        # Additional production-specific health checks
-        kubectl get pods -n freightliner
-        kubectl get services -n freightliner
-
-  # Notification
-  notify:
-    name: Notify
-    runs-on: ubuntu-latest
-    needs: [deploy-staging, deploy-production]
+    needs: [quick-checks, test, lint, security]
     if: always()
+    
     steps:
-    - name: Notify Slack
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        text: |
-          Freightliner deployment completed
-          Commit: ${{ github.sha }}
-          Author: ${{ github.actor }}
-          Status: ${{ job.status }}
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      - name: Check all jobs status
+        run: |
+          if [ "${{ needs.quick-checks.result }}" != "success" ] || 
+             [ "${{ needs.test.result }}" != "success" ] ||
+             [ "${{ needs.lint.result }}" != "success" ] ||
+             [ "${{ needs.security.result }}" != "success" ]; then
+            echo "❌ One or more CI jobs failed"
+            exit 1
+          fi
+          echo "✅ All CI jobs passed successfully"

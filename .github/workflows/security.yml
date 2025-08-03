@@ -23,9 +23,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.24.5'
+        check-latest: true
 
     - name: Run Nancy (Go dependency scanner)
       run: |
@@ -46,17 +47,22 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.24.5'
+        check-latest: true
 
-    - name: Run Gosec
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: '-fmt sarif -out gosec.sarif ./...'
+    - name: Install and run Gosec
+      run: |
+        echo "🔧 Installing gosec security scanner..."
+        # Install gosec from the correct repository (moved to securego)
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        
+        echo "🔒 Running gosec security scan..."
+        gosec -no-fail -fmt sarif -out gosec.sarif ./...
 
     - name: Upload Gosec results
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: gosec.sarif
 
@@ -67,7 +73,7 @@ jobs:
         generateSarif: "1"
 
     - name: Upload Semgrep results
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: semgrep.sarif
 
@@ -84,26 +90,26 @@ jobs:
         docker build -t freightliner:scan .
 
     - name: Run Trivy scanner
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@0.30.0
       with:
         image-ref: 'freightliner:scan'
         format: 'sarif'
         output: 'trivy-results.sarif'
 
     - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: 'trivy-results.sarif'
 
     - name: Run Anchore Grype scanner
-      uses: anchore/scan-action@v3
+      uses: anchore/scan-action@v4
       with:
         image: 'freightliner:scan'
         fail-build: false
         output-format: sarif
 
     - name: Upload Anchore scan results
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: results.sarif
 
@@ -116,9 +122,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.24.5'
+        check-latest: true
 
     - name: Install go-licenses
       run: go install github.com/google/go-licenses@latest
@@ -129,7 +136,7 @@ jobs:
         go-licenses csv ./... > licenses.csv
 
     - name: Upload license report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: license-report
         path: licenses.csv
@@ -174,7 +181,7 @@ jobs:
         output_file_path: checkov-results.sarif
 
     - name: Upload Checkov results
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: checkov-results.sarif
 

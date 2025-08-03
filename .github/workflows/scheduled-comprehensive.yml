@@ -1,7 +1,7 @@
----
-name: Scheduled Comprehensive Testing
+# Comprehensive Testing (Scheduled)
+name: Comprehensive
 
-'on':
+on:
   schedule:
     # Run comprehensive tests daily at 2 AM UTC
     - cron: '0 2 * * *'
@@ -18,9 +18,19 @@ name: Scheduled Comprehensive Testing
         required: false
         default: 'true'
         type: boolean
+      test_iterations:
+        description: 'Number of test iterations for flaky detection'
+        required: false
+        default: '3'
+        type: string
+
+# Separate concurrency for comprehensive tests
+concurrency:
+  group: comprehensive-${{ github.run_id }}
+  cancel-in-progress: false
 
 env:
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.24.5'
 
 jobs:
   comprehensive-testing:
@@ -43,24 +53,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Setup Go environment
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-key-suffix: '-comprehensive'
 
-      - name: Setup environment
-        run: |
-          echo "GO111MODULE=on" >> $GITHUB_ENV
-          echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
-          echo "GOPATH=" >> $GITHUB_ENV
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run full integration tests
-        run: |
-          echo "=== Running Full Integration Test Suite ==="
-          make test-ci
+      - name: Run comprehensive test suite
+        uses: ./.github/actions/run-tests
+        with:
+          test-type: all
+          race-detection: true
+          coverage: true
+          timeout: 30m
         env:
           REGISTRY_HOST: localhost:5100
           TEST_ENV: integration
@@ -94,10 +99,10 @@ jobs:
         run: |
           echo "=== Running Flaky Test Detection ==="
           FAILED_RUNS=0
-          TOTAL_RUNS=3
+          TOTAL_RUNS=${{ github.event.inputs.test_iterations || '3' }}
           for i in $(seq 1 $TOTAL_RUNS); do
             echo "=== Flaky Detection Run $i/$TOTAL_RUNS ==="
-            if ./scripts/test-with-manifest.sh --env integration --categories flaky; then
+            if go test -v -timeout 10m ./...; then
               echo "✓ Run $i passed"
             else
               echo "✗ Run $i failed"

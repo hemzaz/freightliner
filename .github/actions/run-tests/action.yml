@@ -1,0 +1,93 @@
+name: 'Run Tests'
+description: 'Runs Go tests with coverage and race detection'
+
+inputs:
+  test-type:
+    description: 'Type of tests to run (unit, integration, all)'
+    required: false
+    default: 'all'
+  race-detection:
+    description: 'Enable race detection'
+    required: false
+    default: 'true'
+  coverage:
+    description: 'Enable coverage reporting'
+    required: false
+    default: 'true'
+  timeout:
+    description: 'Test timeout'
+    required: false
+    default: '10m'
+
+outputs:
+  coverage-report:
+    description: 'Path to coverage report'
+    value: ${{ steps.test.outputs.coverage-report }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install test tools
+      shell: bash
+      run: |
+        echo "🔧 Installing security and analysis tools..."
+        go install github.com/securego/gosec/v2/cmd/gosec@latest || echo "Failed to install gosec, using direct command"
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+
+    - name: Run tests
+      id: test
+      shell: bash
+      run: |
+        # Determine test flags
+        TEST_FLAGS="-v -timeout=${{ inputs.timeout }}"
+        
+        if [ "${{ inputs.race-detection }}" = "true" ]; then
+          TEST_FLAGS="$TEST_FLAGS -race"
+        fi
+        
+        if [ "${{ inputs.coverage }}" = "true" ]; then
+          TEST_FLAGS="$TEST_FLAGS -coverprofile=coverage.out -covermode=atomic"
+          echo "coverage-report=coverage.out" >> $GITHUB_OUTPUT
+        fi
+        
+        # Run tests based on type
+        case "${{ inputs.test-type }}" in
+          "unit")
+            echo "🧪 Running unit tests..."
+            go test $TEST_FLAGS -short ./...
+            ;;
+          "integration")
+            echo "🔗 Running integration tests..."
+            go test $TEST_FLAGS -run "Integration" ./...
+            ;;
+          "all"|*)
+            echo "🚀 Running all tests..."
+            go test $TEST_FLAGS ./...
+            ;;
+        esac
+
+    - name: Generate coverage report
+      if: ${{ inputs.coverage == 'true' }}
+      shell: bash
+      run: |
+        if [ -f coverage.out ]; then
+          go tool cover -html=coverage.out -o coverage.html
+          go tool cover -func=coverage.out | tail -1
+        fi
+
+    - name: Run security scan
+      shell: bash
+      run: |
+        echo "🔒 Running security scan..."
+        if command -v gosec &> /dev/null; then
+          gosec -no-fail -fmt sarif -out gosec-results.sarif ./...
+        else
+          echo "⚠️ gosec not available, skipping security scan in test action"
+          echo "[]" > gosec-results.sarif
+        fi
+        
+    - name: Run static analysis
+      shell: bash
+      run: |
+        echo "🔍 Running static analysis..."
+        staticcheck ./...

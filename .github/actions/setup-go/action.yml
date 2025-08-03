@@ -1,0 +1,55 @@
+name: 'Setup Go Environment'
+description: 'Sets up Go with caching and common environment variables'
+
+inputs:
+  go-version:
+    description: 'Go version to setup'
+    required: false
+    default: '1.24.5'
+  cache-key-suffix:
+    description: 'Additional suffix for cache key'
+    required: false
+    default: ''
+
+outputs:
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.cache.outputs.cache-hit }}
+  go-version:
+    description: 'Go version that was set up'
+    value: ${{ steps.setup-go.outputs.go-version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      id: setup-go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        check-latest: true
+
+    - name: Setup Go environment variables
+      shell: bash
+      run: |
+        echo "GO111MODULE=on" >> $GITHUB_ENV
+        echo "GOFLAGS=-mod=mod" >> $GITHUB_ENV
+        echo "GOPATH=" >> $GITHUB_ENV
+        echo "GOPROXY=https://proxy.golang.org,direct" >> $GITHUB_ENV
+        echo "CGO_ENABLED=1" >> $GITHUB_ENV
+
+    - name: Cache Go modules and build cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}${{ inputs.cache-key-suffix }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ inputs.go-version }}-
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      shell: bash
+      run: go mod download && go mod verify
