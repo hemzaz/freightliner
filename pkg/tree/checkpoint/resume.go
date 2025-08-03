@@ -75,7 +75,7 @@ func GetResumableCheckpoints(store CheckpointStore) ([]ResumableCheckpoint, erro
 
 	for _, cp := range checkpoints {
 		// Only include checkpoints that can be resumed
-		if cp.Status == StatusInterrupted || cp.Status == StatusFailed || cp.Status == StatusInProgress {
+		if cp.Status == StatusPending || cp.Status == StatusInterrupted || cp.Status == StatusFailed || cp.Status == StatusInProgress {
 			// Count completed and failed repositories
 			var completed, failed int
 
