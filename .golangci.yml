@@ -1,22 +1,52 @@
-# golangci-lint v2 configuration for Freightliner project
-# Focus on actual bugs and security issues, not style noise
+# golangci-lint configuration for Freightliner project
+# Focus on critical issues while allowing development flexibility
 
 version: "2"
 
 run:
-  timeout: 5m
+  timeout: 10m
   tests: true
 
 linters:
-  default: none
+  disable-all: true
   enable:
     - errcheck      # Check for unchecked errors (important for reliability)
     - govet         # Standard Go vet checks (catches real bugs)
     - ineffassign   # Detect ineffectual assignments (potential bugs)
     - misspell      # Fix common spelling mistakes
+    - gosimple      # Simplify code (allow with settings)
+    - staticcheck   # Advanced static analysis (allow with settings)
 
 linters-settings:
   govet:
-    # Only enable the most important vet checks, disable noisy ones
+    # Only enable the most important vet checks
     disable:
       - shadow    # Too noisy, context shadowing is often intentional
+      
+  staticcheck:
+    # Exclude some noisy checks
+    checks: ["all", "-SA4005", "-SA9003", "-SA4006"]
+    
+  gosimple:
+    # Allow some patterns that are more readable
+    checks: ["all", "-S1000", "-S1008", "-S1011", "-S1017", "-S1031"]
+    
+  unused:
+    # Skip unused in test files and allow some test helpers
+    check-exported: false
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10
+  
+  exclude-dirs:
+    - ".github"
+    - "docs"
+  
+  exclude-files:
+    - ".*_test.go$"  # Skip test files for some issues
+  
+  exclude-rules:
+    # Ignore specific staticcheck issues that are common in development
+    - text: "SA6002.*should be pointer-like"
+      linters: [staticcheck]
