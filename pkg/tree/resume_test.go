@@ -11,7 +11,7 @@ import (
 	"freightliner/pkg/tree/checkpoint"
 )
 
-func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryClient, *MockRegistryClient, string) {
+func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryClient, *MockRegistryClient) {
 	// Create a temporary directory for checkpoints
 	checkpointDir := t.TempDir()
 
@@ -58,11 +58,11 @@ func setupResumeTestEnvironment(t *testing.T) (*TreeReplicator, *MockRegistryCli
 		CheckpointDirectory: checkpointDir,
 	})
 
-	return replicator, sourceRegistry, destRegistry, checkpointDir
+	return replicator, sourceRegistry, destRegistry
 }
 
 func TestResumeTreeReplication(t *testing.T) {
-	replicator, sourceRegistry, destRegistry, _ := setupResumeTestEnvironment(t)
+	replicator, sourceRegistry, destRegistry := setupResumeTestEnvironment(t)
 
 	// First, do a replication
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -140,8 +140,7 @@ func TestResumeTreeReplication(t *testing.T) {
 }
 
 func TestListResumableReplications(t *testing.T) {
-	replicator, sourceRegistry, destRegistry, unused := setupResumeTestEnvironment(t)
-	_ = unused // Silence unused variable warning
+	replicator, sourceRegistry, destRegistry := setupResumeTestEnvironment(t)
 
 	// First, do a replication
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
