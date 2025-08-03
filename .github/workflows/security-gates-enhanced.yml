@@ -600,7 +600,7 @@ jobs:
           cat >> $GITHUB_STEP_SUMMARY << EOF
           ## 🛡️ Security Compliance Report
           
-          **Overall Status**: ${{ steps.compliance.outputs.compliance-status == 'PASSED' && '✅ COMPLIANT' || steps.compliance.outputs.compliance-status == 'CONDITIONAL_PASS' && '⚠️ CONDITIONALLY COMPLIANT' || '❌ NON-COMPLIANT' }}  
+          **Overall Status**: ${{ steps.compliance.outputs.compliance-status == 'PASSED' && '✅ ZERO TOLERANCE SECURITY: COMPLIANT' || '❌ ZERO TOLERANCE SECURITY: NON-COMPLIANT' }}  
           **Compliance Score**: ${{ steps.compliance.outputs.compliance-percentage }}%  
           **Failed Scans**: ${{ steps.compliance.outputs.failed-scans }}  
           **Security Level**: ${{ needs.security-preflight.outputs.security-level }}  
@@ -623,13 +623,21 @@ jobs:
           - 🛡️ **CIS Docker Benchmark**: Container security best practices
           - 🛡️ **NIST Cybersecurity Framework**: Comprehensive security controls
           
-          ### Security Gates Enforced
+          ### 🚨 ZERO TOLERANCE SECURITY GATES ENFORCED
           
-          - ✅ Zero tolerance for critical vulnerabilities
-          - ✅ Zero tolerance for high-severity secrets
-          - ✅ License compliance validation
-          - ✅ Container security hardening
-          - ✅ Infrastructure security validation
+          - 🛡️ **ZERO TOLERANCE**: Critical vulnerabilities → IMMEDIATE FAILURE
+          - 🛡️ **ZERO TOLERANCE**: High-severity secrets → IMMEDIATE FAILURE  
+          - 🛡️ **ZERO TOLERANCE**: License violations → IMMEDIATE FAILURE
+          - 🛡️ **ZERO TOLERANCE**: Container vulnerabilities → IMMEDIATE FAILURE
+          - 🛡️ **ZERO TOLERANCE**: Infrastructure misconfigurations → IMMEDIATE FAILURE
+          - 🛡️ **ZERO TOLERANCE**: Static code security issues → IMMEDIATE FAILURE
+          
+          ### 🔒 Security Policy Enforcement
+          
+          - **NO EXCEPTIONS**: All security gates must pass to proceed
+          - **NO CONDITIONAL PASSES**: Development environments held to same standards
+          - **IMMEDIATE BLOCKING**: Any security violation blocks deployment
+          - **COMPREHENSIVE SCANNING**: All code, dependencies, containers, and infrastructure
           
           EOF
 
