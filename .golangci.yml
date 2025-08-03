@@ -15,12 +15,14 @@ run:
   concurrency: 4
   
   # Define the Go version to target
-  go: '1.23.4'
+  go: '1.24.5'
 
 # Output configuration
 output:
-  # Colored output
-  colored-line-number: true
+  # Format configuration (replaces deprecated colored-line-number)
+  formats:
+    - format: colored-line-number
+      path: stdout
   print-issued-lines: true
   print-linter-name: true
   uniq-by-line: true

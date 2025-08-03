@@ -20,6 +20,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Add reliability monitoring
+env:
+  PIPELINE_MONITORING: true
+
 env:
   GO_VERSION: '1.24.5'
   GOLANGCI_LINT_VERSION: 'v1.62.2'
@@ -83,11 +87,26 @@ jobs:
             exit 1
           fi
 
+      - name: Validate golangci-lint config
+        run: |
+          echo "Validating golangci-lint configuration..."
+          if golangci-lint config verify; then
+            echo "✓ Configuration is valid"
+          else
+            echo "✗ Configuration validation failed"
+            echo "Attempting to fix configuration..."
+            if [[ -f ".github/scripts/pipeline-recovery.sh" ]]; then
+              ./.github/scripts/pipeline-recovery.sh fix-golangci
+            fi
+            # Retry validation
+            golangci-lint config verify
+          fi
+
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
-          args: --timeout=5m
+          args: --timeout=5m --verbose
 
   security:
     name: Security
@@ -120,6 +139,7 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [test, lint]  # Run after tests pass
     if: >
       github.event_name == 'pull_request' ||
       github.ref == 'refs/heads/master' ||
@@ -133,7 +153,34 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build
+      - name: Pre-build validation
+        run: |
+          echo "Validating Dockerfile..."
+          if [[ ! -f "Dockerfile" ]]; then
+            echo "Error: Dockerfile not found"
+            exit 1
+          fi
+          
+          echo "Checking Docker daemon..."
+          docker info
+          
+          echo "Disk space check..."
+          df -h
+
+      - name: Build multi-stage image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: build  # Build stage for CI validation
+          push: false
+          tags: freightliner:build-stage
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Build production image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -142,8 +189,68 @@ jobs:
           tags: freightliner:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
 
-      - name: Test image  
+      - name: Test image functionality
         run: |
-          docker run --rm freightliner:test --version || echo "Version check not available"
-          docker run --rm freightliner:test --help >/dev/null
+          echo "Testing image functionality..."
+          
+          # Test version command
+          if docker run --rm freightliner:test --version; then
+            echo "✓ Version command works"
+          else
+            echo "⚠ Version command not available (acceptable)"
+          fi
+          
+          # Test help command
+          if docker run --rm freightliner:test --help >/dev/null 2>&1; then
+            echo "✓ Help command works"
+          else
+            echo "✗ Help command failed"
+            exit 1
+          fi
+          
+          # Test container startup and shutdown
+          echo "Testing container lifecycle..."
+          CONTAINER_ID=$(docker run -d freightliner:test sleep 5)
+          sleep 2
+          if docker ps | grep -q "$CONTAINER_ID"; then
+            echo "✓ Container started successfully"
+            docker stop "$CONTAINER_ID" >/dev/null
+            docker rm "$CONTAINER_ID" >/dev/null
+          else
+            echo "✗ Container failed to start"
+            exit 1
+          fi
+
+      - name: Image security scan
+        run: |
+          echo "Running basic security checks..."
+          
+          # Check image size
+          IMAGE_SIZE=$(docker images freightliner:test --format "{{.Size}}")
+          echo "Image size: $IMAGE_SIZE"
+          
+          # Check for non-root user
+          USER_CHECK=$(docker run --rm freightliner:test whoami 2>/dev/null || echo "unknown")
+          if [[ "$USER_CHECK" != "root" ]]; then
+            echo "✓ Running as non-root user: $USER_CHECK"
+          else
+            echo "⚠ Running as root user (security concern)"
+          fi
+          
+          # Basic vulnerability scan (if available)
+          if command -v trivy &> /dev/null; then
+            echo "Running Trivy security scan..."
+            trivy image --exit-code 0 --severity HIGH,CRITICAL freightliner:test
+          else
+            echo "Trivy not available, skipping vulnerability scan"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Cleaning up Docker resources..."
+          docker rmi freightliner:test freightliner:build-stage || true
+          docker system prune -f || true

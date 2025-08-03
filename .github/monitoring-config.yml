@@ -1,0 +1,17 @@
+monitoring:
+  enabled: true
+  alerts:
+    enabled: true
+    channels:
+      - slack
+      - email
+  thresholds:
+    build_timeout: 600  # 10 minutes
+    test_timeout: 1800  # 30 minutes
+    lint_timeout: 480   # 8 minutes
+    security_timeout: 300  # 5 minutes
+    docker_timeout: 900    # 15 minutes
+  performance:
+    baseline_build_time: 180  # 3 minutes
+    baseline_test_time: 300   # 5 minutes
+    performance_degradation_threshold: 50  # 50% increase

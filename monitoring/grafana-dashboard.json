@@ -1,0 +1,580 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "CI/CD Pipeline Health Dashboard",
+    "tags": ["ci-cd", "pipeline", "freightliner"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Pipeline Success Rate",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(github_actions_workflow_runs_total{conclusion=\"success\"}[1h]) / rate(github_actions_workflow_runs_total[1h]) * 100",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 90},
+                {"color": "green", "value": 95}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center",
+          "orientation": "horizontal"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Average Build Duration",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "avg(github_actions_workflow_duration_seconds) / 60",
+            "legendFormat": "Avg Duration"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "minutes",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Load Test Throughput",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "avg(load_test_throughput_mbps)",
+            "legendFormat": "Throughput"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MBs",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 25},
+                {"color": "green", "value": 50}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center"
+        }
+      },
+      {
+        "id": 4,
+        "title": "Security Vulnerabilities",
+        "type": "stat", 
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(security_vulnerabilities_total{severity=\"critical\"})",
+            "legendFormat": "Critical"
+          },
+          {
+            "expr": "sum(security_vulnerabilities_total{severity=\"high\"})",
+            "legendFormat": "High"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Pipeline Build Success Rate Over Time",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(github_actions_workflow_runs_total{conclusion=\"success\"}[5m]) / rate(github_actions_workflow_runs_total[5m]) * 100",
+            "legendFormat": "Success Rate"
+          },
+          {
+            "expr": "rate(github_actions_workflow_runs_total{conclusion=\"failure\"}[5m]) / rate(github_actions_workflow_runs_total[5m]) * 100",
+            "legendFormat": "Failure Rate"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "min": 0,
+            "max": 100,
+            "unit": "percent"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        },
+        "thresholds": [
+          {
+            "value": 95,
+            "colorMode": "critical",
+            "op": "lt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Build Duration Distribution",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, github_actions_workflow_duration_seconds_bucket) / 60",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, github_actions_workflow_duration_seconds_bucket) / 60",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, github_actions_workflow_duration_seconds_bucket) / 60",
+            "legendFormat": "P99"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration",
+            "unit": "minutes"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true
+        },
+        "thresholds": [
+          {
+            "value": 10,
+            "colorMode": "critical",
+            "op": "gt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 7, 
+        "title": "Load Test Performance Metrics",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 17},
+        "targets": [
+          {
+            "expr": "load_test_throughput_mbps",
+            "legendFormat": "Throughput (MB/s) - {{scenario}}"
+          },
+          {
+            "expr": "load_test_p99_latency_ms / 1000",
+            "legendFormat": "P99 Latency (s) - {{scenario}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Throughput (MB/s) / Latency (s)",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        }
+      },
+      {
+        "id": 8,
+        "title": "Memory Usage During Load Tests",
+        "type": "graph", 
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 17},
+        "targets": [
+          {
+            "expr": "load_test_memory_usage_mb",
+            "legendFormat": "Memory Usage (MB) - {{scenario}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Memory (MB)",
+            "min": 0,
+            "max": 4096
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "max": true
+        },
+        "thresholds": [
+          {
+            "value": 2048,
+            "colorMode": "critical",
+            "op": "gt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Docker Build Performance",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 26},
+        "targets": [
+          {
+            "expr": "docker_build_duration_seconds{stage=\"builder\"} / 60",
+            "legendFormat": "Builder Stage"
+          },
+          {
+            "expr": "docker_build_duration_seconds{stage=\"test\"} / 60", 
+            "legendFormat": "Test Stage"
+          },
+          {
+            "expr": "docker_build_duration_seconds{stage=\"build\"} / 60",
+            "legendFormat": "Build Stage"
+          },
+          {
+            "expr": "docker_build_duration_seconds{stage=\"final\"} / 60",
+            "legendFormat": "Final Stage"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration (minutes)",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        }
+      },
+      {
+        "id": 10,
+        "title": "Security Scan Results",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 26},
+        "targets": [
+          {
+            "expr": "security_vulnerabilities_total{severity=\"critical\"}",
+            "legendFormat": "Critical"
+          },
+          {
+            "expr": "security_vulnerabilities_total{severity=\"high\"}",
+            "legendFormat": "High"
+          },
+          {
+            "expr": "security_vulnerabilities_total{severity=\"medium\"}",
+            "legendFormat": "Medium"
+          },
+          {
+            "expr": "security_vulnerabilities_total{severity=\"low\"}",
+            "legendFormat": "Low"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Count",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true
+        }
+      },
+      {
+        "id": 11,
+        "title": "Test Execution Metrics",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 35},
+        "targets": [
+          {
+            "expr": "test_execution_duration_seconds / 60",
+            "legendFormat": "Test Duration (min) - {{suite_name}}"
+          },
+          {
+            "expr": "test_coverage_percent",
+            "legendFormat": "Coverage % - {{package}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration (min) / Coverage (%)",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        }
+      },
+      {
+        "id": 12,
+        "title": "Resource Utilization",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 35},
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU Usage % - {{instance}}"
+          },
+          {
+            "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
+            "legendFormat": "Memory Usage % - {{instance}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "min": 0,
+            "max": 100,
+            "unit": "percent"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        },
+        "thresholds": [
+          {
+            "value": 80,
+            "colorMode": "critical",
+            "op": "gt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Pipeline SLA Compliance",
+        "type": "table",
+        "gridPos": {"h": 9, "w": 24, "x": 0, "y": 44},
+        "targets": [
+          {
+            "expr": "avg_over_time(github_actions_workflow_duration_seconds[24h]) / 60",
+            "legendFormat": "Avg Build Time (24h)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "(rate(github_actions_workflow_runs_total{conclusion=\"success\"}[24h]) / rate(github_actions_workflow_runs_total[24h])) * 100",
+            "legendFormat": "Success Rate (24h)",
+            "format": "table", 
+            "instant": true
+          },
+          {
+            "expr": "avg_over_time(load_test_throughput_mbps[24h])",
+            "legendFormat": "Avg Throughput (24h)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "sum(security_vulnerabilities_total{severity=\"critical\"})",
+            "legendFormat": "Critical Vulns",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true},
+              "renameByName": {
+                "Value #A": "Build Time (min)",
+                "Value #B": "Success Rate (%)",
+                "Value #C": "Throughput (MB/s)",
+                "Value #D": "Critical Vulns"
+              }
+            }
+          }
+        ],
+        "fieldConfig": {
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Build Time (min)"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "green", "value": 0},
+                      {"color": "yellow", "value": 5},
+                      {"color": "red", "value": 10}
+                    ]
+                  }
+                },
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Success Rate (%)"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "red", "value": 0},
+                      {"color": "yellow", "value": 90},
+                      {"color": "green", "value": 95}
+                    ]
+                  }
+                },
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Critical Vulns"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "green", "value": 0},
+                      {"color": "red", "value": 1}
+                    ]
+                  }
+                },
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "workflow",
+          "type": "query",
+          "query": "label_values(github_actions_workflow_runs_total, workflow_name)",
+          "refresh": "on_time_range_change",
+          "includeAll": true,
+          "allValue": ".*"
+        },
+        {
+          "name": "scenario",
+          "type": "query", 
+          "query": "label_values(load_test_throughput_mbps, scenario)",
+          "refresh": "on_time_range_change",
+          "includeAll": true,
+          "allValue": ".*"
+        },
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(node_cpu_seconds_total, instance)",
+          "refresh": "on_time_range_change",
+          "includeAll": true,
+          "allValue": ".*"
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "prometheus",
+          "expr": "increase(github_actions_workflow_runs_total{conclusion=\"success\", workflow_name=\"release\"}[1m])",
+          "textFormat": "Deployment completed",
+          "tags": ["deployment"],
+          "iconColor": "green"
+        },
+        {
+          "name": "Critical Alerts",
+          "datasource": "prometheus", 
+          "expr": "ALERTS{alertstate=\"firing\", severity=\"critical\"}",
+          "textFormat": "{{alertname}}: {{summary}}",
+          "tags": ["alert", "critical"],
+          "iconColor": "red"
+        }
+      ]
+    }
+  }
+}

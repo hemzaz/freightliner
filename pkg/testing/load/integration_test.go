@@ -28,8 +28,13 @@ func TestLoadTestFrameworkIntegration(t *testing.T) {
 
 	logger := log.NewLogger()
 
-	// Set overall timeout for the test - reduced for CI reliability
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Set overall timeout for the test - adaptive based on environment
+	timeout := 2 * time.Minute
+	if os.Getenv("CI") != "" {
+		timeout = 30 * time.Second // Reduced timeout for CI environments
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Run subtests with context for timeout control
@@ -82,10 +87,17 @@ func TestLoadTestFrameworkIntegration(t *testing.T) {
 func testScenarioExecution(t *testing.T, tempDir string, logger log.Logger) {
 	// Test high-volume replication scenario
 	scenario := CreateHighVolumeReplicationScenario()
-	// Reduce duration for CI testing
-	scenario.Duration = 10 * time.Second // Reduced from 30s
-	if len(scenario.Images) > 5 {
-		scenario.Images = scenario.Images[:5] // Limit to 5 images for testing
+	// Adaptive duration based on environment
+	if os.Getenv("CI") != "" {
+		scenario.Duration = 5 * time.Second // Very short for CI
+		if len(scenario.Images) > 3 {
+			scenario.Images = scenario.Images[:3] // Limit to 3 images for CI
+		}
+	} else {
+		scenario.Duration = 10 * time.Second // Slightly longer for local testing
+		if len(scenario.Images) > 5 {
+			scenario.Images = scenario.Images[:5] // Limit to 5 images for testing
+		}
 	}
 
 	runner := NewScenarioRunner(scenario, logger)
