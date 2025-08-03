@@ -652,21 +652,23 @@ jobs:
             const compliance_percentage = "${{ steps.compliance.outputs.compliance-percentage }}";
             const failed_scans = "${{ steps.compliance.outputs.failed-scans }}";
             
-            const status_emoji = compliance_status === 'PASSED' ? '✅' : 
-                                compliance_status === 'CONDITIONAL_PASS' ? '⚠️' : '❌';
+            const status_emoji = compliance_status === 'PASSED' ? '✅' : '❌';
             
-            const comment = `## ${status_emoji} Security Compliance Report
+            const comment = `## ${status_emoji} ZERO TOLERANCE SECURITY Report
             
             **Status**: ${compliance_status}  
             **Score**: ${compliance_percentage}%  
             **Failed Scans**: ${failed_scans}
             
             ${compliance_status === 'FAILED' ? 
-              '⚠️ **Security gates failed** - Please review and fix security issues before merging.' :
-              compliance_status === 'CONDITIONAL_PASS' ?
-              '⚠️ **Conditional pass** - Some security issues detected but within development thresholds.' :
-              '✅ **All security gates passed** - Ready for merge from security perspective.'
+              '🚨 **ZERO TOLERANCE SECURITY FAILURE** - All security issues must be resolved before merging. No exceptions.' :
+              '✅ **ZERO TOLERANCE SECURITY PASSED** - All security gates passed. Ready for merge.'
             }
+            
+            ### 🛡️ Security Policy
+            - **ZERO TOLERANCE** for security vulnerabilities
+            - **NO CONDITIONAL PASSES** - All environments held to highest standards
+            - **IMMEDIATE BLOCKING** of deployment on any security violation
             
             View detailed results in the [Security Gates workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).`;
             
@@ -687,23 +689,20 @@ jobs:
           
           case "$compliance_status" in
             "PASSED")
-              echo "✅ SECURITY GATES PASSED"
+              echo "✅ ZERO TOLERANCE SECURITY GATES PASSED"
               echo "🎉 All security requirements met - deployment authorized"
-              ;;
-            "CONDITIONAL_PASS")
-              if [[ "$security_level" == "production" ]]; then
-                echo "❌ SECURITY GATES FAILED"
-                echo "🚨 Conditional pass not allowed for production - fix all security issues"
-                exit 1
-              else
-                echo "⚠️ SECURITY GATES CONDITIONALLY PASSED"
-                echo "🔍 Development environment - monitoring required"
-              fi
+              echo "🛡️ Zero tolerance policy enforced successfully"
               ;;
             "FAILED")
-              echo "❌ SECURITY GATES FAILED"
-              echo "🚨 Critical security issues detected - deployment blocked"
-              echo "🔧 Fix all security vulnerabilities before proceeding"
+              echo "❌ ZERO TOLERANCE SECURITY GATES FAILED"
+              echo "🚨 Critical security issues detected - deployment BLOCKED"
+              echo "🔧 ZERO TOLERANCE POLICY: Fix ALL security vulnerabilities before proceeding"
+              echo "🚫 NO EXCEPTIONS: No conditional passes or workarounds allowed"
+              exit 1
+              ;;
+            *)
+              echo "❌ UNKNOWN SECURITY STATE - FAILING SAFE"
+              echo "🚨 Zero tolerance policy requires explicit security validation"
               exit 1
               ;;
           esac

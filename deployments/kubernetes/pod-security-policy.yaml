@@ -1,0 +1,113 @@
+# PodSecurityPolicy for Kubernetes clusters that still support it (deprecated in v1.25+)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: freightliner-psp
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: security
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: 'runtime/default'
+spec:
+  # Security Context
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  # User and Group IDs
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+    - min: 10001
+      max: 65535
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+    - min: 10001
+      max: 65535
+  
+  # Supplemental Groups
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+    - min: 10001
+      max: 65535
+  
+  # Capabilities
+  requiredDropCapabilities:
+  - ALL
+  allowedCapabilities: []
+  defaultAddCapabilities: []
+  
+  # Volumes
+  volumes:
+  - 'configMap'
+  - 'secret'
+  - 'emptyDir'
+  - 'persistentVolumeClaim'
+  - 'projected'
+  - 'downwardAPI'
+  
+  # Network
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  hostPorts: []
+  
+  # SELinux
+  seLinux:
+    rule: 'RunAsAny'
+  
+  # Read-only root filesystem
+  readOnlyRootFilesystem: true
+  
+  # Forbidden sysctls
+  forbiddenSysctls:
+  - '*'
+  
+  # Allow specific sysctls if needed
+  allowedUnsafeSysctls: []
+  
+  # Proc mount type
+  allowedProcMountTypes:
+  - 'Default'
+  
+  # Allowed host paths (none for security)
+  allowedHostPaths: []
+
+---
+# ClusterRole for PodSecurityPolicy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: freightliner-psp-use
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: security-rbac
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - freightliner-psp
+
+---
+# ClusterRoleBinding for PodSecurityPolicy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: freightliner-psp-use
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: security-rbac
+roleRef:
+  kind: ClusterRole
+  name: freightliner-psp-use
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: freightliner
+  namespace: freightliner

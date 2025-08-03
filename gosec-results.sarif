@@ -1,0 +1,2926 @@
+{
+	"runs": [
+		{
+			"results": [
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 58,
+									"endLine": 458,
+									"snippet": {
+										"text": "tpm.currentSession.SystemMetrics.AverageMemoryMB = int64(m.Alloc / 1024 / 1024)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 58,
+									"startLine": 458
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 39,
+									"endLine": 427,
+									"snippet": {
+										"text": "snapshot.GCPauseTime = time.Duration(m.PauseNs[(m.NumGC+255)%256])"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 39,
+									"startLine": 427
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 31,
+									"endLine": 420,
+									"snippet": {
+										"text": "snapshot.PeakMemoryMB = int64(m.Sys / 1024 / 1024)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 31,
+									"startLine": 420
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 32,
+									"endLine": 419,
+									"snippet": {
+										"text": "snapshot.MemoryUsageMB = int64(m.Alloc / 1024 / 1024)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 32,
+									"startLine": 419
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/scenario_runners.go"
+								},
+								"region": {
+									"endColumn": 14,
+									"endLine": 856,
+									"snippet": {
+										"text": "return int64(m.Alloc / 1024 / 1024)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 14,
+									"startLine": 856
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 25,
+									"endLine": 614,
+									"snippet": {
+										"text": "MemoryFreed:     int64(memBefore.HeapInuse - memAfter.HeapInuse),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 25,
+									"startLine": 614
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 25,
+									"endLine": 613,
+									"snippet": {
+										"text": "MemoryAllocated: int64(memAfter.TotalAlloc - memBefore.TotalAlloc),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 25,
+									"startLine": 613
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 37,
+									"endLine": 208,
+									"snippet": {
+										"text": "pm.metrics.GCPauseLast.Store(int64(m.PauseNs[(m.NumGC+255)%256]))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 37,
+									"startLine": 208
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 37,
+									"endLine": 206,
+									"snippet": {
+										"text": "pm.metrics.GCPauseTotal.Store(int64(m.PauseTotalNs))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 37,
+									"startLine": 206
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 35,
+									"endLine": 202,
+									"snippet": {
+										"text": "pm.metrics.StackInUse.Store(int64(m.StackInuse))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 35,
+									"startLine": 202
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 36,
+									"endLine": 201,
+									"snippet": {
+										"text": "pm.metrics.HeapObjects.Store(int64(m.HeapObjects))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 36,
+									"startLine": 201
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 34,
+									"endLine": 200,
+									"snippet": {
+										"text": "pm.metrics.HeapInUse.Store(int64(m.HeapInuse))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 34,
+									"startLine": 200
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 38,
+									"endLine": 199,
+									"snippet": {
+										"text": "pm.metrics.HeapAllocated.Store(int64(m.Alloc))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 38,
+									"startLine": 199
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 16,
+									"endLine": 334,
+									"snippet": {
+										"text": "freed := int64(beforeStats.HeapInuse - afterStats.HeapInuse)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 16,
+									"startLine": 334
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 34,
+									"endLine": 291,
+									"snippet": {
+										"text": "lastPauseTotal = time.Duration(m.PauseTotalNs)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 34,
+									"startLine": 291
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 33,
+									"endLine": 280,
+									"snippet": {
+										"text": "newPauseTime := time.Duration(m.PauseTotalNs) - lastPauseTotal"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 33,
+									"startLine": 280
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 37,
+									"endLine": 274,
+									"snippet": {
+										"text": "gco.gcStats.LastPause.Store(int64(m.PauseNs[(m.NumGC+255)%256]))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 37,
+									"startLine": 274
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 37,
+									"endLine": 271,
+									"snippet": {
+										"text": "gco.gcStats.PauseTotal.Store(int64(m.PauseTotalNs))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 37,
+									"startLine": 271
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 32,
+									"endLine": 217,
+									"snippet": {
+										"text": "gco.gcStats.NextGC.Store(int64(m.NextGC))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 32,
+									"startLine": 217
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 36,
+									"endLine": 216,
+									"snippet": {
+										"text": "gco.gcStats.StackInUse.Store(int64(m.StackInuse))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 36,
+									"startLine": 216
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 34,
+									"endLine": 214,
+									"snippet": {
+										"text": "gco.gcStats.HeapSize.Store(int64(m.HeapSys))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 34,
+									"startLine": 214
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/gc_optimizer.go"
+								},
+								"region": {
+									"endColumn": 20,
+									"endLine": 210,
+									"snippet": {
+										"text": "heapInUse := int64(m.HeapInuse)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 20,
+									"startLine": 210
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion uint64 -\u003e int64"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/security/encryption/manager.go"
+								},
+								"region": {
+									"endColumn": 22,
+									"endLine": 285,
+									"snippet": {
+										"text": "chunkLen := uint32(len(encryptedChunk))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 22,
+									"startLine": 285
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/security/encryption/manager.go"
+								},
+								"region": {
+									"endColumn": 21,
+									"endLine": 234,
+									"snippet": {
+										"text": "headerLen := uint32(len(headerBytes))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 21,
+									"startLine": 234
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 37,
+									"endLine": 1057,
+									"snippet": {
+										"text": "if header.TargetSize \u003e 0 \u0026\u0026 uint32(len(result)) != header.TargetSize {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 37,
+									"startLine": 1057
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 1030,
+									"snippet": {
+										"text": "if uint32(len(resultBytes)) != header.TargetSize {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 1030
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 980,
+									"snippet": {
+										"text": "if uint32(len(deltaData)) \u003c chunkMapSize {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 980
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 933,
+									"snippet": {
+										"text": "if uint32(len(middleData)) \u003c middleLen {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 933
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 37,
+									"endLine": 893,
+									"snippet": {
+										"text": "if header.TargetSize \u003e 0 \u0026\u0026 uint32(len(result)) != header.TargetSize {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 37,
+									"startLine": 893
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 870,
+									"snippet": {
+										"text": "if uint32(len(middleData)) \u003c middleLen {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 870
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 22,
+									"endLine": 788,
+									"snippet": {
+										"text": "headerSize := uint32(len(headerBytes))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 22,
+									"startLine": 788
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 23,
+									"endLine": 778,
+									"snippet": {
+										"text": "TargetSize:   uint32(len(source)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 23,
+									"startLine": 778
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 23,
+									"endLine": 777,
+									"snippet": {
+										"text": "SourceSize:   uint32(len(source)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 23,
+									"startLine": 777
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 737,
+									"snippet": {
+										"text": "DeltaSize:    uint32(len(target)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 737
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 736,
+									"snippet": {
+										"text": "TargetSize:   uint32(len(target)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 736
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 735,
+									"snippet": {
+										"text": "SourceSize:   uint32(len(source)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 735
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 28,
+									"endLine": 724,
+									"snippet": {
+										"text": "header.DeltaSize = uint32(delta.Len() - int(headerSize) - 4)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 28,
+									"startLine": 724
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 686,
+									"snippet": {
+										"text": "ChunkCount:   uint32(len(targetChunks)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 686
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 684,
+									"snippet": {
+										"text": "TargetSize:   uint32(len(target)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 684
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 683,
+									"snippet": {
+										"text": "SourceSize:   uint32(len(source)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 683
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 28,
+									"endLine": 634,
+									"snippet": {
+										"text": "header.DeltaSize = uint32(delta.Len() - int(headerSize) - 4)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 28,
+									"startLine": 634
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 58,
+									"endLine": 621,
+									"snippet": {
+										"text": "if err := binary.Write(\u0026delta, binary.BigEndian, uint32(suffixLen)); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 58,
+									"startLine": 621
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 58,
+									"endLine": 616,
+									"snippet": {
+										"text": "if err := binary.Write(\u0026delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil { // #nosec G115 - safe conversion, commonPrefixLen is bounded"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 58,
+									"startLine": 616
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 570,
+									"snippet": {
+										"text": "TargetSize:   uint32(len(target)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 570
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 569,
+									"snippet": {
+										"text": "SourceSize:   uint32(len(source)),"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 569
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 28,
+									"endLine": 558,
+									"snippet": {
+										"text": "header.DeltaSize = uint32(8 + len(diffData)) // 8 bytes for the prefix/suffix lengths + diff data"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 28,
+									"startLine": 558
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 58,
+									"endLine": 544,
+									"snippet": {
+										"text": "if err := binary.Write(\u0026delta, binary.BigEndian, uint32(commonSuffixLen)); err != nil { // #nosec G115 - safe conversion, commonSuffixLen is bounded"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 58,
+									"startLine": 544
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 58,
+									"endLine": 541,
+									"snippet": {
+										"text": "if err := binary.Write(\u0026delta, binary.BigEndian, uint32(commonPrefixLen)); err != nil { // #nosec G115 - safe conversion, commonPrefixLen is bounded"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 58,
+									"startLine": 541
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 29,
+									"endLine": 227,
+									"snippet": {
+										"text": "if offset+4 \u003c= uint32(len(deltaData)) { // nolint:gosec // safe conversion, len() returns non-negative int"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 29,
+									"startLine": 227
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e uint32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/replication/high_performance_worker_pool.go"
+								},
+								"region": {
+									"endColumn": 33,
+									"endLine": 150,
+									"snippet": {
+										"text": "pool.currentWorkers.Store(int32(minWorkers))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 33,
+									"startLine": 150
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e int32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/network/delta.go"
+								},
+								"region": {
+									"endColumn": 58,
+									"endLine": 710,
+									"snippet": {
+										"text": "if err := binary.Write(\u0026delta, binary.BigEndian, int32(matchIdx)); err != nil { // #nosec G115 - safe conversion, matchIdx within bounds"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 58,
+									"startLine": 710
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e int32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 24,
+									"endLine": 212,
+									"snippet": {
+										"text": "numGoroutines := int32(runtime.NumGoroutine())"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 24,
+									"startLine": 212
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "integer overflow conversion int -\u003e int32"
+					},
+					"ruleId": "G115"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/scenario_runners.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 841,
+									"snippet": {
+										"text": "return rand.Float64() \u003c sr.config.MaxFailureRate"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 841
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)"
+					},
+					"ruleId": "G404"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/scenario_runners.go"
+								},
+								"region": {
+									"endColumn": 5,
+									"endLine": 830,
+									"snippet": {
+										"text": "if rand.Float64() \u003c 0.80 { // 80% reuse rate target"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 5,
+									"startLine": 830
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)"
+					},
+					"ruleId": "G404"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/security_test_suite.go"
+								},
+								"region": {
+									"endColumn": 27,
+									"endLine": 197,
+									"snippet": {
+										"text": "InsecureSkipVerify: true, // For testing only"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 27,
+									"startLine": 197
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "TLS InsecureSkipVerify set true."
+					},
+					"ruleId": "G402"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/mocks/aws_mocks.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 94,
+									"snippet": {
+										"text": "token := \"dGVzdC11c2VyOnRlc3QtcGFzc3dvcmQ=\" // base64 encoded \"test-user:test-password\""
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 94
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential hardcoded credentials"
+					},
+					"ruleId": "G101"
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/optimized_test_runner.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 219,
+									"snippet": {
+										"text": "cmd := exec.CommandContext(testCtx, \"go\", args...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 219
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/benchmarks.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 447,
+									"snippet": {
+										"text": "cmd := exec.Command(\"go\", args...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 447
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/benchmarks.go"
+								},
+								"region": {
+									"endColumn": 14,
+									"endLine": 405,
+									"snippet": {
+										"text": "checkCmd := exec.Command(\"go\", checkArgs...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 14,
+									"startLine": 405
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/benchmarks.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 368,
+									"snippet": {
+										"text": "cmd := exec.Command(\"ab\", args...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 368
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/benchmarks.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 318,
+									"snippet": {
+										"text": "cmd := exec.Command(\"k6\", args...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 318
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with variable"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/optimized_test_runner.go"
+								},
+								"region": {
+									"endColumn": 9,
+									"endLine": 319,
+									"snippet": {
+										"text": "cmd := exec.CommandContext(ctx, \"curl\", \"-f\", \"-s\", rhc.registryURL+\"/v2/\")"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 9,
+									"startLine": 319
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with a potential tainted input or cmd arguments"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "cmd/test-manifest/main.go"
+								},
+								"region": {
+									"endColumn": 13,
+									"endLine": 143,
+									"snippet": {
+										"text": "execCmd := exec.Command(cmd[0], cmd[1:]...)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 13,
+									"startLine": 143
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Subprocess launched with a potential tainted input or cmd arguments"
+					},
+					"ruleId": "G204",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/test_cache_system.go"
+								},
+								"region": {
+									"endColumn": 17,
+									"endLine": 429,
+									"snippet": {
+										"text": "file, err := os.Open(path)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 17,
+									"startLine": 429
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/test_cache_system.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 376,
+									"snippet": {
+										"text": "data, err := os.ReadFile(cacheFile)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 376
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/security_test_suite.go"
+								},
+								"region": {
+									"endColumn": 19,
+									"endLine": 531,
+									"snippet": {
+										"text": "content, err := os.ReadFile(path)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 19,
+									"startLine": 531
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/security_test_suite.go"
+								},
+								"region": {
+									"endColumn": 18,
+									"endLine": 401,
+									"snippet": {
+										"text": "content, err := os.ReadFile(filePath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 18,
+									"startLine": 401
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/manifest.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 90,
+									"snippet": {
+										"text": "data, err := os.ReadFile(manifestPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 90
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/regression_testing.go"
+								},
+								"region": {
+									"endColumn": 16,
+									"endLine": 525,
+									"snippet": {
+										"text": "data, err := os.ReadFile(file)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 16,
+									"startLine": 525
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/k6_generator.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 514,
+									"snippet": {
+										"text": "file, err := os.Create(outputPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 514
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/k6_generator.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 473,
+									"snippet": {
+										"text": "file, err := os.Create(scriptFile)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 473
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/k6_generator.go"
+								},
+								"region": {
+									"endColumn": 16,
+									"endLine": 335,
+									"snippet": {
+										"text": "file, err := os.Create(scriptFile)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 16,
+									"startLine": 335
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/service/checkpoint.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 260,
+									"snippet": {
+										"text": "file, err := os.Open(filePath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 260
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/service/checkpoint.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 222,
+									"snippet": {
+										"text": "file, err := os.Create(filePath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 222
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/config/loading.go"
+								},
+								"region": {
+									"endColumn": 15,
+									"endLine": 255,
+									"snippet": {
+										"text": "file, err := os.Create(expandedPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 15,
+									"startLine": 255
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/config/loading.go"
+								},
+								"region": {
+									"endColumn": 16,
+									"endLine": 30,
+									"snippet": {
+										"text": "data, err := os.ReadFile(expandedPath)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 16,
+									"startLine": 30
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential file inclusion via variable"
+					},
+					"ruleId": "G304",
+					"ruleIndex": 2
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/prometheus_integration.go"
+								},
+								"region": {
+									"endColumn": 22,
+									"endLine": 166,
+									"snippet": {
+										"text": "pc.metricsServer = \u0026http.Server{\nAddr:    pc.metricsAddr,\nHandler: mux,\n}\n"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 22,
+									"startLine": 163
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server"
+					},
+					"ruleId": "G112",
+					"ruleIndex": 1
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/service/checkpoint.go"
+								},
+								"region": {
+									"endColumn": 18,
+									"endLine": 91,
+									"snippet": {
+										"text": "if chmodErr := os.Chmod(dir, 0700); chmodErr != nil { // #nosec G302 - directory needs executable bit for access"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 18,
+									"startLine": 91
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect file permissions to be 0600 or less"
+					},
+					"ruleId": "G302",
+					"ruleIndex": 3
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/test_cache_system.go"
+								},
+								"region": {
+									"endColumn": 6,
+									"endLine": 87,
+									"snippet": {
+										"text": "_ = os.MkdirAll(cacheDir, 0755)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 6,
+									"startLine": 87
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 3
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/performance_monitor.go"
+								},
+								"region": {
+									"endColumn": 6,
+									"endLine": 145,
+									"snippet": {
+										"text": "_ = os.MkdirAll(metricsDir, 0755)"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 6,
+									"startLine": 145
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 3
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/regression_testing.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 775,
+									"snippet": {
+										"text": "if err := os.MkdirAll(resultsDir, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 775
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 3
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/regression_testing.go"
+								},
+								"region": {
+									"endColumn": 13,
+									"endLine": 512,
+									"snippet": {
+										"text": "if err := os.MkdirAll(bm.baselineDir, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 13,
+									"startLine": 512
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 3
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/k6_generator.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 289,
+									"snippet": {
+										"text": "if err := os.MkdirAll(bs.k6Config.ScriptPath, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 289
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 3
+				},
+				{
+					"level": "error",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/load/benchmarks.go"
+								},
+								"region": {
+									"endColumn": 12,
+									"endLine": 91,
+									"snippet": {
+										"text": "if err := os.MkdirAll(resultsDir, 0755); err != nil {"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 12,
+									"startLine": 91
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Expect directory permissions to be 0750 or less"
+					},
+					"ruleId": "G301",
+					"ruleIndex": 3
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/security_test_suite.go"
+								},
+								"region": {
+									"endColumn": 4,
+									"endLine": 748,
+									"snippet": {
+										"text": "conn.Close()"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 4,
+									"startLine": 748
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/testing/security_test_suite.go"
+								},
+								"region": {
+									"endColumn": 2,
+									"endLine": 544,
+									"snippet": {
+										"text": "filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {\nif err != nil || !strings.HasSuffix(path, \".go\") {\nreturn nil\n}\n\ncontent, err := os.ReadFile(path)\nif err != nil {\nreturn nil\n}\n\ncontentStr := string(content)\nfor _, weakAlgo := range s.cryptoValidator.weakAlgorithms {\nif strings.Contains(contentStr, weakAlgo) {\nfound = append(found, weakAlgo)\n}\n}\n\nreturn nil\n})\n"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 2,
+									"startLine": 526
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/cpu_algorithms.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 447,
+									"snippet": {
+										"text": "h.Write([]byte{byte(any(key).(int) % 256)})"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 447
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/cpu_algorithms.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 443,
+									"snippet": {
+										"text": "h.Write(bytes[:])"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 443
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/cpu_algorithms.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 437,
+									"snippet": {
+										"text": "h.Write(bytes[:])"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 437
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/cpu_algorithms.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 431,
+									"snippet": {
+										"text": "h.Write(bytes[:])"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 431
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				},
+				{
+					"level": "warning",
+					"locations": [
+						{
+							"physicalLocation": {
+								"artifactLocation": {
+									"uri": "pkg/helper/util/cpu_algorithms.go"
+								},
+								"region": {
+									"endColumn": 3,
+									"endLine": 425,
+									"snippet": {
+										"text": "h.Write([]byte(k))"
+									},
+									"sourceLanguage": "go",
+									"startColumn": 3,
+									"startLine": 425
+								}
+							}
+						}
+					],
+					"message": {
+						"text": "Errors unhandled"
+					},
+					"ruleId": "G104",
+					"ruleIndex": 1
+				}
+			],
+			"taxonomies": [
+				{
+					"downloadUri": "https://cwe.mitre.org/data/xml/cwec_v4.4.xml.zip",
+					"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+					"informationUri": "https://cwe.mitre.org/data/published/cwe_v4.4.pdf/",
+					"isComprehensive": true,
+					"language": "en",
+					"minimumRequiredLocalizedDataSemanticVersion": "4.4",
+					"name": "CWE",
+					"organization": "MITRE",
+					"releaseDateUtc": "2021-03-15",
+					"shortDescription": {
+						"text": "The MITRE Common Weakness Enumeration"
+					},
+					"taxa": [
+						{
+							"fullDescription": {
+								"text": "The software performs a calculation that can produce an integer overflow or wraparound, when the logic assumes that the resulting value will always be larger than the original value. This can introduce other weaknesses when the calculation is used for resource management or execution control."
+							},
+							"guid": "c71e4fa0-720e-3e82-8b67-b2d44d0c604b",
+							"helpUri": "https://cwe.mitre.org/data/definitions/190.html",
+							"id": "190",
+							"shortDescription": {
+								"text": "Integer Overflow or Wraparound"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software uses external input to construct a pathname that is intended to identify a file or directory that is located underneath a restricted parent directory, but the software does not properly neutralize special elements within the pathname that can cause the pathname to resolve to a location that is outside of the restricted directory."
+							},
+							"guid": "3e718404-88bc-3f17-883e-e85e74078a76",
+							"helpUri": "https://cwe.mitre.org/data/definitions/22.html",
+							"id": "22",
+							"shortDescription": {
+								"text": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "During installation, installed file permissions are set to allow anyone to modify those files."
+							},
+							"guid": "fca8970d-b44c-3162-a385-cc09266d12a4",
+							"helpUri": "https://cwe.mitre.org/data/definitions/276.html",
+							"id": "276",
+							"shortDescription": {
+								"text": "Incorrect Default Permissions"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software does not validate, or incorrectly validates, a certificate."
+							},
+							"guid": "09e885ea-951b-3143-801a-241b3aa9e6c9",
+							"helpUri": "https://cwe.mitre.org/data/definitions/295.html",
+							"id": "295",
+							"shortDescription": {
+								"text": "Improper Certificate Validation"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The product uses a Pseudo-Random Number Generator (PRNG) in a security context, but the PRNG's algorithm is not cryptographically strong."
+							},
+							"guid": "0512047f-75a2-3ac3-bb28-97df3a80efbe",
+							"helpUri": "https://cwe.mitre.org/data/definitions/338.html",
+							"id": "338",
+							"shortDescription": {
+								"text": "Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software does not properly control the allocation and maintenance of a limited resource, thereby enabling an actor to influence the amount of resources consumed, eventually leading to the exhaustion of available resources."
+							},
+							"guid": "5d980950-93cd-3caf-9057-858ec3c28877",
+							"helpUri": "https://cwe.mitre.org/data/definitions/400.html",
+							"id": "400",
+							"shortDescription": {
+								"text": "Uncontrolled Resource Consumption"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software does not properly anticipate or handle exceptional conditions that rarely occur during normal operation of the software."
+							},
+							"guid": "7df38d1d-038e-3ced-8601-8d9265b90a25",
+							"helpUri": "https://cwe.mitre.org/data/definitions/703.html",
+							"id": "703",
+							"shortDescription": {
+								"text": "Improper Check or Handling of Exceptional Conditions"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software constructs all or part of an OS command using externally-influenced input from an upstream component, but it does not neutralize or incorrectly neutralizes special elements that could modify the intended OS command when it is sent to a downstream component."
+							},
+							"guid": "1a37bf66-7c5a-3aa0-94bb-ffae58a9e01c",
+							"helpUri": "https://cwe.mitre.org/data/definitions/78.html",
+							"id": "78",
+							"shortDescription": {
+								"text": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+							}
+						},
+						{
+							"fullDescription": {
+								"text": "The software contains hard-coded credentials, such as a password or cryptographic key, which it uses for its own inbound authentication, outbound communication to external components, or encryption of internal data."
+							},
+							"guid": "93d834a1-2cc5-38db-837f-66dfc7d711cc",
+							"helpUri": "https://cwe.mitre.org/data/definitions/798.html",
+							"id": "798",
+							"shortDescription": {
+								"text": "Use of Hard-coded Credentials"
+							}
+						}
+					],
+					"version": "4.4"
+				}
+			],
+			"tool": {
+				"driver": {
+					"guid": "8b518d5f-906d-39f9-894b-d327b1a421c5",
+					"informationUri": "https://github.com/securego/gosec/",
+					"name": "gosec",
+					"rules": [
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Potential hardcoded credentials"
+							},
+							"help": {
+								"text": "Potential hardcoded credentials\nSeverity: HIGH\nConfidence: LOW\n"
+							},
+							"id": "G101",
+							"name": "Use of Hard-coded Credentials",
+							"properties": {
+								"precision": "low",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "93d834a1-2cc5-38db-837f-66dfc7d711cc",
+										"id": "798",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Potential hardcoded credentials"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "warning"
+							},
+							"fullDescription": {
+								"text": "Errors unhandled"
+							},
+							"help": {
+								"text": "Errors unhandled\nSeverity: LOW\nConfidence: HIGH\n"
+							},
+							"id": "G104",
+							"name": "Improper Check or Handling of Exceptional Conditions",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"LOW"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "7df38d1d-038e-3ced-8601-8d9265b90a25",
+										"id": "703",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Errors unhandled"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server"
+							},
+							"help": {
+								"text": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server\nSeverity: MEDIUM\nConfidence: LOW\n"
+							},
+							"id": "G112",
+							"name": "Uncontrolled Resource Consumption",
+							"properties": {
+								"precision": "low",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "5d980950-93cd-3caf-9057-858ec3c28877",
+										"id": "400",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Subprocess launched with variable"
+							},
+							"help": {
+								"text": "Subprocess launched with variable\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G204",
+							"name": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "1a37bf66-7c5a-3aa0-94bb-ffae58a9e01c",
+										"id": "78",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Subprocess launched with variable"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Expect directory permissions to be 0750 or less"
+							},
+							"help": {
+								"text": "Expect directory permissions to be 0750 or less\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G301",
+							"name": "Incorrect Default Permissions",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "fca8970d-b44c-3162-a385-cc09266d12a4",
+										"id": "276",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Expect directory permissions to be 0750 or less"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Expect file permissions to be 0600 or less"
+							},
+							"help": {
+								"text": "Expect file permissions to be 0600 or less\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G302",
+							"name": "Incorrect Default Permissions",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "fca8970d-b44c-3162-a385-cc09266d12a4",
+										"id": "276",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Expect file permissions to be 0600 or less"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Potential file inclusion via variable"
+							},
+							"help": {
+								"text": "Potential file inclusion via variable\nSeverity: MEDIUM\nConfidence: HIGH\n"
+							},
+							"id": "G304",
+							"name": "Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"MEDIUM"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "3e718404-88bc-3f17-883e-e85e74078a76",
+										"id": "22",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Potential file inclusion via variable"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "TLS InsecureSkipVerify set true."
+							},
+							"help": {
+								"text": "TLS InsecureSkipVerify set true.\nSeverity: HIGH\nConfidence: HIGH\n"
+							},
+							"id": "G402",
+							"name": "Improper Certificate Validation",
+							"properties": {
+								"precision": "high",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "09e885ea-951b-3143-801a-241b3aa9e6c9",
+										"id": "295",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "TLS InsecureSkipVerify set true."
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)"
+							},
+							"help": {
+								"text": "Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)\nSeverity: HIGH\nConfidence: MEDIUM\n"
+							},
+							"id": "G404",
+							"name": "Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)",
+							"properties": {
+								"precision": "medium",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "0512047f-75a2-3ac3-bb28-97df3a80efbe",
+										"id": "338",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "Use of weak random number generator (math/rand or math/rand/v2 instead of crypto/rand)"
+							}
+						},
+						{
+							"defaultConfiguration": {
+								"level": "error"
+							},
+							"fullDescription": {
+								"text": "integer overflow conversion uint64 -\u003e int64"
+							},
+							"help": {
+								"text": "integer overflow conversion uint64 -\u003e int64\nSeverity: HIGH\nConfidence: MEDIUM\n"
+							},
+							"id": "G115",
+							"name": "Integer Overflow or Wraparound",
+							"properties": {
+								"precision": "medium",
+								"tags": [
+									"security",
+									"HIGH"
+								]
+							},
+							"relationships": [
+								{
+									"kinds": [
+										"superset"
+									],
+									"target": {
+										"guid": "c71e4fa0-720e-3e82-8b67-b2d44d0c604b",
+										"id": "190",
+										"toolComponent": {
+											"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+											"name": "CWE"
+										}
+									}
+								}
+							],
+							"shortDescription": {
+								"text": "integer overflow conversion uint64 -\u003e int64"
+							}
+						}
+					],
+					"semanticVersion": "dev",
+					"supportedTaxonomies": [
+						{
+							"guid": "f2856fc0-85b7-373f-83e7-6f8582243547",
+							"name": "CWE"
+						}
+					],
+					"version": "dev"
+				}
+			}
+		}
+	],
+	"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+	"version": "2.1.0"
+}

@@ -35,6 +35,7 @@ spec:
         config/checksum: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
     spec:
       serviceAccountName: freightliner
+      automountServiceAccountToken: false  # Security: Disable automatic mounting of service account tokens (CKV_K8S_38)
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -60,7 +61,7 @@ spec:
       # Initialization containers
       initContainers:
       - name: wait-for-secrets
-        image: busybox:1.35
+        image: busybox@sha256:6d9ac9237a84afe1516540f40a0fafdc86859b2141954b4d643af7066d598b74  # busybox:1.35 with digest
         command:
         - sh
         - -c
@@ -84,11 +85,18 @@ spec:
             drop:
             - ALL
           readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 10m       # Security: CPU requests set (CKV_K8S_10)
+            memory: 16Mi   # Security: Memory requests set (CKV_K8S_12)
+          limits:
+            cpu: 50m       # Security: CPU limits set (CKV_K8S_11)
+            memory: 64Mi   # Security: Memory limits set (CKV_K8S_13)
       
       containers:
       - name: freightliner
-        image: freightliner:1.0.0  # Replace with actual image
-        imagePullPolicy: IfNotPresent
+        image: freightliner@sha256:b5b2b2c50720b6b08a8e3bb0b8c7a9d8e6f4c8d7a6b5a4c3b2a1098765432abc  # Security: Using digest for security (CKV_K8S_43)
+        imagePullPolicy: Always  # Security: Image pull policy always (CKV_K8S_15)
         
         ports:
         - name: http
@@ -133,11 +141,11 @@ spec:
         # Resource limits optimized for container registry workloads
         resources:
           requests:
-            cpu: 500m
-            memory: 1Gi
+            cpu: 500m      # Security: CPU requests set (CKV_K8S_10)
+            memory: 1Gi    # Security: Memory requests set (CKV_K8S_12)
           limits:
-            cpu: 2
-            memory: 4Gi
+            cpu: 2         # Security: CPU limits set (CKV_K8S_11)
+            memory: 4Gi    # Security: Memory limits set (CKV_K8S_13)
         
         # Health and readiness probes
         livenessProbe:

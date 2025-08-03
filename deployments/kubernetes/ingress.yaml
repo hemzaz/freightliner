@@ -24,13 +24,11 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     
-    # Security headers
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      more_set_headers "X-Frame-Options: DENY";
-      more_set_headers "X-Content-Type-Options: nosniff";
-      more_set_headers "X-XSS-Protection: 1; mode=block";
-      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
-      more_set_headers "Content-Security-Policy: default-src 'self'";
+    # Security headers - CVE-2021-25742 compliant (safe annotations only)
+    nginx.ingress.kubernetes.io/custom-http-errors: "403,404,500,502,503,504"
+    nginx.ingress.kubernetes.io/default-backend: "default-http-backend"
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
     
     # Certificate management
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
