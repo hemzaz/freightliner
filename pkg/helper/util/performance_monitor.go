@@ -185,10 +185,8 @@ func (pm *PerformanceMonitor) collectMetrics() {
 	defer ticker.Stop()
 
 	for pm.enabled.Load() {
-		select {
-		case <-ticker.C:
-			pm.updateSystemMetrics()
-		}
+		<-ticker.C
+		pm.updateSystemMetrics()
 	}
 }
 

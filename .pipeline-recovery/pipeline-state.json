@@ -1,0 +1,9 @@
+{
+  "pipeline_id": "unknown",
+  "workflow": "unknown",
+  "repository": "unknown",
+  "ref": "unknown",
+  "started_at": "2025-08-03T18:17:06Z",
+  "recovery_enabled": true,
+  "recovery_attempts": 0
+}

@@ -5,10 +5,85 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 )
+
+// rateLimiter implements a simple in-memory rate limiter
+type rateLimiter struct {
+	mu       sync.RWMutex
+	clients  map[string]*clientLimiter
+	requests int           // requests per window
+	window   time.Duration // time window
+}
+
+// clientLimiter tracks rate limiting for a single client
+type clientLimiter struct {
+	tokens   int       // remaining tokens
+	lastSeen time.Time // last request time
+}
+
+// newRateLimiter creates a new rate limiter
+func newRateLimiter(requests int, window time.Duration) *rateLimiter {
+	return &rateLimiter{
+		clients:  make(map[string]*clientLimiter),
+		requests: requests,
+		window:   window,
+	}
+}
+
+// allow checks if a client is allowed to make a request
+func (rl *rateLimiter) allow(clientIP string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+
+	client, exists := rl.clients[clientIP]
+	if !exists {
+		client = &clientLimiter{
+			tokens:   rl.requests - 1, // consume one token
+			lastSeen: now,
+		}
+		rl.clients[clientIP] = client
+		return true
+	}
+
+	// Calculate tokens to add based on time elapsed
+	elapsed := now.Sub(client.lastSeen)
+	tokensToAdd := int(elapsed.Nanoseconds() * int64(rl.requests) / int64(rl.window.Nanoseconds()))
+
+	client.tokens += tokensToAdd
+	if client.tokens > rl.requests {
+		client.tokens = rl.requests
+	}
+
+	client.lastSeen = now
+
+	if client.tokens > 0 {
+		client.tokens--
+		return true
+	}
+
+	return false
+}
+
+// cleanup removes old client entries
+func (rl *rateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rl.window * 2) // Keep clients for 2x window duration
+
+	for ip, client := range rl.clients {
+		if client.lastSeen.Before(cutoff) {
+			delete(rl.clients, ip)
+		}
+	}
+}
 
 // loggingMiddleware logs HTTP requests
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
@@ -132,9 +207,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		apiKey := r.Header.Get("X-API-Key")
 		if apiKey == "" {
 			apiKey = r.Header.Get("Authorization")
-			if strings.HasPrefix(apiKey, "Bearer ") {
-				apiKey = strings.TrimPrefix(apiKey, "Bearer ")
-			}
+			apiKey = strings.TrimPrefix(apiKey, "Bearer ")
 		}
 
 		// Validate API key
@@ -163,13 +236,46 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 // rateLimitMiddleware implements basic rate limiting
 func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
+	// Create rate limiter: 100 requests per minute by default
+	limiter := newRateLimiter(100, time.Minute)
+
+	// Start cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				limiter.cleanup()
+			}
+		}
+	}()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simple rate limiting based on IP
+		// Skip rate limiting for health checks
+		if strings.HasPrefix(r.URL.Path, "/health") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		clientIP := s.getRealIP(r)
 
-		// TODO: Implement proper rate limiting with Redis or in-memory store
-		// For now, just pass through
-		_ = clientIP
+		if !limiter.allow(clientIP) {
+			s.logger.WithFields(map[string]interface{}{
+				"method":    r.Method,
+				"path":      r.URL.Path,
+				"remote_ip": clientIP,
+			}).Warn("Rate limit exceeded")
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-RateLimit-Limit", "100")
+			w.Header().Set("X-RateLimit-Window", "60s")
+			w.WriteHeader(http.StatusTooManyRequests)
+			if _, err := w.Write([]byte(`{"error":"Rate limit exceeded","message":"Too many requests. Please try again later."}`)); err != nil {
+				s.logger.Error("Failed to write rate limit response", err)
+			}
+			return
+		}
 
 		next.ServeHTTP(w, r)
 	})

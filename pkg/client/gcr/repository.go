@@ -71,9 +71,7 @@ func (repo *Repository) ListTags(ctx context.Context) ([]string, error) {
 
 	// Extract tag names
 	for _, info := range gTags.Manifests {
-		for _, tag := range info.Tags {
-			tags = append(tags, tag)
-		}
+		tags = append(tags, info.Tags...)
 	}
 
 	return tags, nil

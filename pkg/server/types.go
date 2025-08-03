@@ -1,5 +1,11 @@
 package server
 
+import (
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
 // ReplicateRequest represents a request to replicate a repository
 type ReplicateRequest struct {
 	SourceRegistry string   `json:"source_registry"`
@@ -40,28 +46,93 @@ type ErrorResponse struct {
 
 // MetricsRegistry handles HTTP metrics recording
 type MetricsRegistry struct {
-	// Currently a stub implementation
+	mu sync.RWMutex
+
+	// HTTP request metrics
+	httpRequests  map[string]*uint64  // key: method:route:status
+	httpDurations map[string]*float64 // key: method:route
+	totalRequests uint64
+
+	// Error metrics
+	panicCount   uint64
+	authFailures map[string]*uint64 // key: auth_type
+
+	// Timestamps for rate calculations
+	startTime time.Time
 }
 
 // NewMetricsRegistry creates a new metrics registry
 func NewMetricsRegistry() *MetricsRegistry {
-	return &MetricsRegistry{}
+	return &MetricsRegistry{
+		httpRequests:  make(map[string]*uint64),
+		httpDurations: make(map[string]*float64),
+		authFailures:  make(map[string]*uint64),
+		startTime:     time.Now(),
+	}
 }
 
 // RecordHTTPRequest records HTTP request metrics
 func (m *MetricsRegistry) RecordHTTPRequest(method, route, status string, duration float64) {
-	// TODO: Implement actual metrics recording
-	// For now, this is a no-op to prevent compilation errors
+	atomic.AddUint64(&m.totalRequests, 1)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Record request count by method:route:status
+	requestKey := method + ":" + route + ":" + status
+	if counter, exists := m.httpRequests[requestKey]; exists {
+		atomic.AddUint64(counter, 1)
+	} else {
+		var counter uint64 = 1
+		m.httpRequests[requestKey] = &counter
+	}
+
+	// Record average duration by method:route
+	durationKey := method + ":" + route
+	if avgDuration, exists := m.httpDurations[durationKey]; exists {
+		// Simple moving average (this is a simplified implementation)
+		*avgDuration = (*avgDuration + duration) / 2
+	} else {
+		m.httpDurations[durationKey] = &duration
+	}
 }
 
 // RecordPanic records panic metrics
 func (m *MetricsRegistry) RecordPanic(component string) {
-	// TODO: Implement actual panic metrics recording
-	// For now, this is a no-op to prevent compilation errors
+	atomic.AddUint64(&m.panicCount, 1)
 }
 
 // RecordAuthFailure records authentication failure metrics
 func (m *MetricsRegistry) RecordAuthFailure(authType string) {
-	// TODO: Implement actual auth failure metrics recording
-	// For now, this is a no-op to prevent compilation errors
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if counter, exists := m.authFailures[authType]; exists {
+		atomic.AddUint64(counter, 1)
+	} else {
+		var counter uint64 = 1
+		m.authFailures[authType] = &counter
+	}
+}
+
+// GetTotalRequests returns the total number of HTTP requests processed
+func (m *MetricsRegistry) GetTotalRequests() uint64 {
+	return atomic.LoadUint64(&m.totalRequests)
+}
+
+// GetPanicCount returns the total number of panics recorded
+func (m *MetricsRegistry) GetPanicCount() uint64 {
+	return atomic.LoadUint64(&m.panicCount)
+}
+
+// GetAuthFailures returns authentication failure counts by type
+func (m *MetricsRegistry) GetAuthFailures() map[string]uint64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string]uint64)
+	for authType, counter := range m.authFailures {
+		result[authType] = atomic.LoadUint64(counter)
+	}
+	return result
 }

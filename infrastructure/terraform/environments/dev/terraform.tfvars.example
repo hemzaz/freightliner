@@ -1,0 +1,120 @@
+# Terraform Variables for Freightliner CI/CD Monitoring - Development Environment
+# Copy this file to terraform.tfvars and update with your actual values
+
+# AWS Configuration
+aws_region = "us-west-2"
+
+# GitHub Configuration
+github_token = "ghp_your_github_personal_access_token_here"
+github_owner = "hemzaz"
+github_repo  = "freightliner"
+
+# Alert Configuration
+alert_email_recipients = [
+  "devops-team@company.com",
+  "backend-team@company.com"
+]
+
+# Slack Integration (optional)
+slack_webhook_url = "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Grafana Configuration (optional)
+grafana_admin_password = "your-secure-grafana-password"
+
+# Development Environment Settings
+enable_debug_logging = true
+dev_cost_limit_usd   = 75
+
+# Team Notification Channels
+team_notification_channels = {
+  devops = {
+    email           = ["devops@company.com"]
+    slack_webhook   = "https://hooks.slack.com/services/YOUR/DEVOPS/WEBHOOK"
+    severity_filter = ["critical", "warning", "info"]
+  }
+  backend = {
+    email           = ["backend@company.com"]
+    severity_filter = ["critical", "warning"]
+  }
+  frontend = {
+    email           = ["frontend@company.com"]
+    severity_filter = ["critical"]
+  }
+}
+
+# Feature Toggles
+enable_experimental_features      = true
+enable_detailed_metrics          = true
+enable_load_testing_monitoring   = true
+enable_integration_test_monitoring = true
+
+# Load Testing Thresholds
+load_test_thresholds = {
+  max_response_time_ms = 3000  # 3 seconds for dev
+  max_error_rate       = 0.1   # 10% error rate acceptable in dev
+  max_cpu_utilization  = 0.85  # 85% CPU utilization
+}
+
+# Development Workflow Settings
+dev_workflow_settings = {
+  enable_pr_monitoring     = true
+  enable_branch_monitoring = true
+  monitored_branches       = ["main", "develop", "feature/*"]
+  enable_commit_metrics    = true
+  enable_developer_metrics = false  # Privacy consideration
+}
+
+# Security Settings for Development
+dev_security_settings = {
+  enable_public_dashboards  = false
+  enable_api_authentication = true
+  allowed_ip_ranges        = [
+    "10.0.0.0/8",     # Internal network
+    "192.168.0.0/16"  # Local development
+  ]
+  enable_audit_logging = true
+}
+
+# Resource Sizing for Development
+dev_resource_sizing = {
+  lambda_memory_mb        = 256  # Smaller memory allocation for dev
+  lambda_timeout_sec      = 300  # 5 minutes
+  dynamodb_read_capacity  = 5    # Lower capacity for dev
+  dynamodb_write_capacity = 5    # Lower capacity for dev
+  s3_lifecycle_days       = 30   # Faster cleanup
+}
+
+# Backup Settings (minimal for dev)
+dev_backup_settings = {
+  enable_automated_backups   = false
+  backup_retention_days      = 3
+  enable_cross_region_backup = false
+  backup_schedule           = "cron(0 3 * * 0 *)"  # Weekly on Sunday at 3 AM
+}
+
+# Compliance Settings
+dev_compliance_settings = {
+  enable_compliance_monitoring = false
+  required_tags               = ["Environment", "Project", "Owner", "Team"]
+  enable_resource_inventory   = true
+  enable_cost_allocation_tags = true
+}
+
+# Local Development Support
+local_development_support = {
+  enable_local_endpoints = true
+  local_test_data_size   = "small"
+  enable_mock_services   = true
+  debug_port_range = {
+    start = 9000
+    end   = 9099
+  }
+}
+
+# Integration Test Environments
+integration_test_environments = [
+  "dev",
+  "staging",
+  "e2e",
+  "performance"
+]

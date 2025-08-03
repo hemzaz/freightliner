@@ -728,11 +728,7 @@ func (bes *BaselineEstablishmentSuite) checkStatisticalValidity(baseline Establi
 
 	// Check confidence interval width
 	ciWidth := baseline.ThroughputStats.ConfidenceInterval.UpperBound - baseline.ThroughputStats.ConfidenceInterval.LowerBound
-	if ciWidth/baseline.ThroughputStats.Mean > 0.2 { // 20% of mean
-		return false
-	}
-
-	return true
+	return ciWidth/baseline.ThroughputStats.Mean <= 0.2 // 20% of mean
 }
 
 func (bes *BaselineEstablishmentSuite) validateBaseline(ctx context.Context, scenario ScenarioConfig, baseline *EstablishedBaseline) error {
@@ -834,7 +830,7 @@ func (bes *BaselineEstablishmentSuite) saveBaseline(baseline EstablishedBaseline
 		return err
 	}
 
-	return os.WriteFile(filename, data, 0644)
+	return os.WriteFile(filename, data, 0600)
 }
 
 func (bes *BaselineEstablishmentSuite) saveScalabilityLimits(limits ScalabilityLimits) error {
@@ -845,7 +841,7 @@ func (bes *BaselineEstablishmentSuite) saveScalabilityLimits(limits ScalabilityL
 		return err
 	}
 
-	return os.WriteFile(filename, data, 0644)
+	return os.WriteFile(filename, data, 0600)
 }
 
 func (bes *BaselineEstablishmentSuite) generateBaselineReport(report *BaselineEstablishmentReport) error {
@@ -856,7 +852,7 @@ func (bes *BaselineEstablishmentSuite) generateBaselineReport(report *BaselineEs
 		return err
 	}
 
-	return os.WriteFile(filename, data, 0644)
+	return os.WriteFile(filename, data, 0600)
 }
 
 // BaselineEstablishmentReport contains the complete baseline establishment results

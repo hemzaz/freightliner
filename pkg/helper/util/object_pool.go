@@ -22,16 +22,19 @@ func NewBufferPool() *BufferPool {
 	}
 
 	// Pre-create pools for common buffer sizes (powers of 2 for optimal memory alignment)
+	// Optimized for container registry operations targeting 100-150 MB/s throughput
 	standardSizes := []int{
-		1024,     // 1KB - small operations
-		4096,     // 4KB - page size
-		16384,    // 16KB - medium operations
-		65536,    // 64KB - network buffers (optimal for TCP)
-		262144,   // 256KB - large operations
-		1048576,  // 1MB - very large operations
-		4194304,  // 4MB - chunk processing
-		16777216, // 16MB - large layer processing
-		52428800, // 50MB - coordinated with transfer.go buffer size
+		1024,      // 1KB - small operations
+		4096,      // 4KB - page size
+		16384,     // 16KB - medium operations
+		65536,     // 64KB - network buffers (optimal for TCP)
+		262144,    // 256KB - large operations
+		1048576,   // 1MB - very large operations
+		4194304,   // 4MB - chunk processing
+		16777216,  // 16MB - large layer processing
+		52428800,  // 50MB - coordinated with transfer.go buffer size
+		104857600, // 100MB - high-throughput operations
+		209715200, // 200MB - very large layer processing
 	}
 
 	for _, size := range standardSizes {
@@ -99,18 +102,19 @@ func (bp *BufferPool) Put(buffer []byte, originalSize int) {
 
 // findOptimalSize finds the smallest standard size that fits the request
 func (bp *BufferPool) findOptimalSize(requestedSize int) int {
-	// Find the next power-of-2-based size that fits
-	for size := 1024; size <= 52428800; size *= 2 {
+	// Check against our standard sizes first for optimal performance
+	standardSizes := []int{
+		1024, 4096, 16384, 65536, 262144, 1048576,
+		4194304, 16777216, 52428800, 104857600, 209715200,
+	}
+
+	for _, size := range standardSizes {
 		if size >= requestedSize {
 			return size
 		}
-		// Also check intermediate sizes for better memory efficiency
-		if size*3/2 >= requestedSize && size*3/2 <= 52428800 {
-			return size * 3 / 2
-		}
 	}
 
-	// For very large requests, use the exact size
+	// For very large requests beyond our standard sizes, use the exact size
 	return requestedSize
 }
 

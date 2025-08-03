@@ -1,316 +1,257 @@
-# Makefile for Freightliner Container Registry Replication
+# Freightliner Build System
+# Optimized for CI/CD and local development
 
-# Build variables
-VERSION ?= $(shell git describe --tags --always --dirty)
-BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-GIT_COMMIT ?= $(shell git rev-parse --short HEAD)
-LDFLAGS = -w -s -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)
+# Build configuration
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GO_VERSION ?= 1.23.4
 
-# Docker variables
-DOCKER_REGISTRY ?= ghcr.io
-DOCKER_REPOSITORY ?= company/freightliner
+# Build flags
+LDFLAGS := -w -s -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)
+BUILD_FLAGS := -a -installsuffix cgo -ldflags "$(LDFLAGS)"
+
+# Test configuration  
+TEST_TIMEOUT ?= 8m
+PARALLEL_JOBS ?= 4
+TEST_FLAGS := -v -timeout=$(TEST_TIMEOUT) -parallel=$(PARALLEL_JOBS)
+COVERAGE_FILE := coverage.out
+
+# Performance optimization
+GOMAXPROCS ?= $(PARALLEL_JOBS)
+BUILD_CACHE ?= true
+
+# Docker configuration
+DOCKER_IMAGE := freightliner
 DOCKER_TAG ?= $(VERSION)
-DOCKER_IMAGE = $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):$(DOCKER_TAG)
+DOCKERFILE ?= Dockerfile.optimized
 
-# Go variables
-GOOS ?= $(shell go env GOOS)
-GOARCH ?= $(shell go env GOARCH)
-CGO_ENABLED ?= 0
-
-# Directories
-BIN_DIR = bin
-BUILD_DIR = build
-COVERAGE_DIR = coverage
+# Tools
+GOLANGCI_LINT_VERSION := v1.62.2
+GOSEC_VERSION := latest
 
 .PHONY: help
-help: ## Display this help message
-	@echo "Freightliner Container Registry Replication"
+help: ## Show this help message
+	@echo "Freightliner Build System"
 	@echo ""
-	@echo "Available targets:"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# Development targets
+.PHONY: dev
+dev: clean deps build test ## Full development cycle
 
 .PHONY: clean
 clean: ## Clean build artifacts
-	@echo "Cleaning build artifacts..."
-	rm -rf $(BIN_DIR) $(BUILD_DIR) $(COVERAGE_DIR)
-	docker system prune -f
+	@echo "🧹 Cleaning build artifacts..."
+	@rm -rf bin/ dist/ coverage.out coverage.html
+	@go clean -cache -testcache -modcache
 
 .PHONY: deps
 deps: ## Download and verify dependencies
-	@echo "Downloading dependencies..."
-	go mod download
-	go mod verify
-	go mod tidy
+	@echo "📦 Downloading dependencies..."
+	@go mod download
+	@go mod verify
+	@go mod tidy
 
-.PHONY: generate
-generate: ## Generate code
-	@echo "Generating code..."
-	go generate ./...
+# Build targets
+.PHONY: build
+build: ## Build the application
+	@echo "🔨 Building freightliner..."
+	@mkdir -p bin
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o bin/freightliner .
 
-.PHONY: fmt
-fmt: ## Format code
-	@echo "Formatting code..."
-	go fmt ./...
-	goimports -w .
+.PHONY: build-race
+build-race: ## Build with race detection
+	@echo "🔨 Building freightliner with race detection..."
+	@mkdir -p bin
+	@CGO_ENABLED=1 go build -race $(BUILD_FLAGS) -o bin/freightliner-race .
 
+.PHONY: build-static
+build-static: ## Build static binary
+	@echo "🔨 Building static freightliner binary..."
+	@mkdir -p bin
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+		$(BUILD_FLAGS) \
+		-ldflags "$(LDFLAGS) -extldflags '-static'" \
+		-tags 'netgo osusergo static_build' \
+		-o bin/freightliner-static .
+
+# Test targets
+.PHONY: test
+test: ## Run all tests
+	@echo "🧪 Running tests..."
+	@go test $(TEST_FLAGS) ./...
+
+.PHONY: test-unit
+test-unit: ## Run unit tests only
+	@echo "🧪 Running unit tests..."
+	@go test $(TEST_FLAGS) -short ./...
+
+.PHONY: test-integration
+test-integration: ## Run integration tests only
+	@echo "🧪 Running integration tests..."
+	@go test $(TEST_FLAGS) -run Integration ./...
+
+.PHONY: test-race
+test-race: ## Run tests with race detection
+	@echo "🧪 Running tests with race detection..."
+	@CGO_ENABLED=1 go test $(TEST_FLAGS) -race ./...
+
+.PHONY: test-coverage
+test-coverage: ## Run tests with coverage
+	@echo "📊 Running tests with coverage..."
+	@go test $(TEST_FLAGS) -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
+	@go tool cover -html=$(COVERAGE_FILE) -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+.PHONY: test-ci
+test-ci: ## Run CI-optimized tests
+	@echo "🚀 Running CI tests..."
+	@go test $(TEST_FLAGS) -race -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
+
+# Quality assurance targets
 .PHONY: lint
-lint: ## Run linters
-	@echo "Running linters..."
-	golangci-lint run ./...
+lint: ## Run linter
+	@echo "🔍 Running linter..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run --timeout=8m; \
+	else \
+		echo "Installing golangci-lint..."; \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin $(GOLANGCI_LINT_VERSION); \
+		golangci-lint run --timeout=8m; \
+	fi
 
 .PHONY: vet
 vet: ## Run go vet
-	@echo "Running go vet..."
-	go vet ./...
+	@echo "🔍 Running go vet..."
+	@go vet ./...
 
-.PHONY: test
-test: ## Run tests
-	@echo "Running tests..."
-	mkdir -p $(COVERAGE_DIR)
-	go test -v -race -covermode=atomic -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
-	go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
+.PHONY: fmt
+fmt: ## Format code
+	@echo "✨ Formatting code..."
+	@gofmt -w .
 
-.PHONY: test-short
-test-short: ## Run short tests
-	@echo "Running short tests..."
-	go test -short ./...
-
-.PHONY: test-ci
-test-ci: ## Run tests optimized for CI environment
-	@echo "Running CI tests..."
-	mkdir -p $(COVERAGE_DIR)
-	go test -v -race -short -timeout=10m -covermode=atomic -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
-
-.PHONY: test-docker
-test-docker: ## Run tests optimized for Docker environment (no race detection)
-	@echo "Running Docker tests..."
-	mkdir -p $(COVERAGE_DIR)
-	go test -v -short -timeout=10m -covermode=atomic -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
-
-.PHONY: bench
-bench: ## Run benchmarks
-	@echo "Running benchmarks..."
-	go test -bench=. -benchmem ./...
+.PHONY: fmt-check
+fmt-check: ## Check code formatting
+	@echo "🔍 Checking code format..."
+	@if [ -n "$$(gofmt -l .)" ]; then \
+		echo "❌ Code is not formatted. Run 'make fmt' to fix."; \
+		gofmt -l .; \
+		exit 1; \
+	else \
+		echo "✅ Code is properly formatted"; \
+	fi
 
 .PHONY: security
-security: ## Run security scanners
-	@echo "Running security scanners..."
-	gosec ./...
-	govulncheck ./...
+security: ## Run security scan
+	@echo "🔒 Running security scan..."
+	@if command -v gosec >/dev/null 2>&1; then \
+		gosec ./...; \
+	else \
+		echo "Installing gosec..."; \
+		go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION); \
+		gosec ./...; \
+	fi
 
-.PHONY: build
-build: ## Build the application
-	@echo "Building freightliner $(VERSION)..."
-	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
-		-ldflags="$(LDFLAGS)" \
-		-o $(BIN_DIR)/freightliner \
-		.
+.PHONY: quality
+quality: fmt-check vet lint security ## Run all quality checks
 
-.PHONY: build-all
-build-all: ## Build for all platforms
-	@echo "Building for all platforms..."
-	mkdir -p $(BIN_DIR)
-	
-	# Linux AMD64
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-		-ldflags="$(LDFLAGS)" \
-		-o $(BIN_DIR)/freightliner-linux-amd64 \
-		.
-	
-	# Linux ARM64
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-		-ldflags="$(LDFLAGS)" \
-		-o $(BIN_DIR)/freightliner-linux-arm64 \
-		.
-	
-	# macOS AMD64
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
-		-ldflags="$(LDFLAGS)" \
-		-o $(BIN_DIR)/freightliner-darwin-amd64 \
-		.
-	
-	# macOS ARM64
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build \
-		-ldflags="$(LDFLAGS)" \
-		-o $(BIN_DIR)/freightliner-darwin-arm64 \
-		.
-	
-	# Windows AMD64
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
-		-ldflags="$(LDFLAGS)" \
-		-o $(BIN_DIR)/freightliner-windows-amd64.exe \
-		.
-
-.PHONY: install
-install: build ## Install the application
-	@echo "Installing freightliner..."
-	go install -ldflags="$(LDFLAGS)" .
-
+# Docker targets
 .PHONY: docker-build
 docker-build: ## Build Docker image
-	@echo "Building Docker image $(DOCKER_IMAGE)..."
-	docker build \
+	@echo "🐳 Building Docker image..."
+	@docker build \
+		-f $(DOCKERFILE) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		-t $(DOCKER_IMAGE) \
-		-t $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):latest \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
+		-t $(DOCKER_IMAGE):latest \
 		.
 
-.PHONY: docker-build-dev
-docker-build-dev: ## Build development Docker image
-	@echo "Building development Docker image..."
-	docker build -f Dockerfile.dev -t freightliner:dev .
-
-.PHONY: docker-push
-docker-push: docker-build ## Push Docker image
-	@echo "Pushing Docker image $(DOCKER_IMAGE)..."
-	docker push $(DOCKER_IMAGE)
-	docker push $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):latest
-
-.PHONY: docker-scan
-docker-scan: docker-build ## Scan Docker image for vulnerabilities
-	@echo "Scanning Docker image for vulnerabilities..."
-	trivy image $(DOCKER_IMAGE)
+.PHONY: docker-test
+docker-test: ## Test Docker image
+	@echo "🧪 Testing Docker image..."
+	@docker build \
+		-f $(DOCKERFILE) \
+		--target test \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		-t $(DOCKER_IMAGE):test \
+		.
 
 .PHONY: docker-run
 docker-run: ## Run Docker container
-	@echo "Running Docker container..."
-	docker run --rm -p 8080:8080 $(DOCKER_IMAGE)
+	@echo "🚀 Running Docker container..."
+	@docker run --rm -p 8080:8080 $(DOCKER_IMAGE):$(DOCKER_TAG)
 
-.PHONY: compose-up
-compose-up: ## Start development environment with Docker Compose
-	@echo "Starting development environment..."
-	docker-compose up -d
+.PHONY: docker-shell
+docker-shell: ## Open shell in Docker container
+	@echo "🐚 Opening shell in Docker container..."
+	@docker run --rm -it --entrypoint /bin/sh $(DOCKER_IMAGE):$(DOCKER_TAG)
 
-.PHONY: compose-down
-compose-down: ## Stop development environment
-	@echo "Stopping development environment..."
-	docker-compose down
+# Performance targets
+.PHONY: bench
+bench: ## Run benchmarks
+	@echo "⚡ Running benchmarks..."
+	@go test -bench=. -benchmem ./...
 
-.PHONY: compose-logs
-compose-logs: ## View Docker Compose logs
-	@echo "Viewing logs..."
-	docker-compose logs -f
+.PHONY: profile
+profile: ## Generate CPU profile
+	@echo "📈 Generating CPU profile..."
+	@go test -cpuprofile=cpu.prof -memprofile=mem.prof -bench=. ./...
+	@echo "Profiles generated: cpu.prof, mem.prof"
 
-.PHONY: compose-prod-up
-compose-prod-up: ## Start production-like environment
-	@echo "Starting production-like environment..."
-	docker-compose -f docker-compose.prod.yml up -d
+# Release targets
+.PHONY: release-build
+release-build: clean ## Build release binaries for multiple platforms
+	@echo "🚀 Building release binaries..."
+	@mkdir -p dist
+	@for os in linux darwin windows; do \
+		for arch in amd64 arm64; do \
+			if [ "$$os" = "windows" ]; then ext=".exe"; else ext=""; fi; \
+			echo "Building $$os/$$arch..."; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build \
+				$(BUILD_FLAGS) \
+				-ldflags "$(LDFLAGS) -extldflags '-static'" \
+				-tags 'netgo osusergo static_build' \
+				-o dist/freightliner-$$os-$$arch$$ext .; \
+		done; \
+	done
 
-.PHONY: compose-prod-down
-compose-prod-down: ## Stop production-like environment
-	@echo "Stopping production-like environment..."
-	docker-compose -f docker-compose.prod.yml down
+.PHONY: install
+install: build ## Install binary to GOPATH/bin
+	@echo "📦 Installing freightliner..."
+	@go install $(BUILD_FLAGS) .
 
-.PHONY: k8s-deploy-dev
-k8s-deploy-dev: ## Deploy to development Kubernetes cluster
-	@echo "Deploying to development cluster..."
-	helm upgrade --install freightliner-dev ./deployments/helm/freightliner \
-		--namespace freightliner-dev \
-		--create-namespace \
-		--set image.tag=$(VERSION) \
-		--set replicaCount=1 \
-		--set resources.requests.cpu=100m \
-		--set resources.requests.memory=256Mi \
-		--set config.logLevel=debug
+# Utility targets
+.PHONY: version
+version: ## Show version information
+	@echo "Version: $(VERSION)"
+	@echo "Build Time: $(BUILD_TIME)"
+	@echo "Git Commit: $(GIT_COMMIT)"
+	@echo "Go Version: $(GO_VERSION)"
 
-.PHONY: k8s-deploy-staging
-k8s-deploy-staging: ## Deploy to staging Kubernetes cluster
-	@echo "Deploying to staging cluster..."
-	helm upgrade --install freightliner-staging ./deployments/helm/freightliner \
-		--namespace freightliner-staging \
-		--create-namespace \
-		--values ./deployments/helm/freightliner/values-staging.yaml \
-		--set image.tag=$(VERSION)
-
-.PHONY: k8s-deploy-prod
-k8s-deploy-prod: ## Deploy to production Kubernetes cluster
-	@echo "Deploying to production cluster..."
-	helm upgrade --install freightliner-prod ./deployments/helm/freightliner \
-		--namespace freightliner \
-		--create-namespace \
-		--values ./deployments/helm/freightliner/values-production.yaml \
-		--set image.tag=$(VERSION)
-
-.PHONY: terraform-init-aws
-terraform-init-aws: ## Initialize Terraform for AWS
-	@echo "Initializing Terraform for AWS..."
-	cd deployments/terraform/aws && terraform init
-
-.PHONY: terraform-plan-aws
-terraform-plan-aws: ## Plan Terraform changes for AWS
-	@echo "Planning Terraform changes for AWS..."
-	cd deployments/terraform/aws && terraform plan
-
-.PHONY: terraform-apply-aws
-terraform-apply-aws: ## Apply Terraform changes for AWS
-	@echo "Applying Terraform changes for AWS..."
-	cd deployments/terraform/aws && terraform apply
-
-.PHONY: terraform-init-gcp
-terraform-init-gcp: ## Initialize Terraform for GCP
-	@echo "Initializing Terraform for GCP..."
-	cd deployments/terraform/gcp && terraform init
-
-.PHONY: terraform-plan-gcp
-terraform-plan-gcp: ## Plan Terraform changes for GCP
-	@echo "Planning Terraform changes for GCP..."
-	cd deployments/terraform/gcp && terraform plan
-
-.PHONY: terraform-apply-gcp
-terraform-apply-gcp: ## Apply Terraform changes for GCP
-	@echo "Applying Terraform changes for GCP..."
-	cd deployments/terraform/gcp && terraform apply
+.PHONY: env
+env: ## Show build environment
+	@echo "Build Environment:"
+	@echo "  GO_VERSION: $(GO_VERSION)"
+	@echo "  GOOS: $$(go env GOOS)"
+	@echo "  GOARCH: $$(go env GOARCH)"
+	@echo "  GOROOT: $$(go env GOROOT)"
+	@echo "  GOPATH: $$(go env GOPATH)"
+	@echo "  CGO_ENABLED: $$(go env CGO_ENABLED)"
 
 .PHONY: tools
 tools: ## Install development tools
-	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
-	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/cosmtrek/air@latest
-	go install github.com/go-delve/delve/cmd/dlv@latest
+	@echo "🔧 Installing development tools..."
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+	@go install honnef.co/go/tools/cmd/staticcheck@latest
 
-.PHONY: validate
-validate: deps fmt vet lint test security ## Run all validation checks
-
-.PHONY: release
-release: validate build-all docker-build docker-push ## Create a release
-
-.PHONY: dev
-dev: ## Run development server with hot reload
-	@echo "Starting development server with hot reload..."
-	air
-
-.PHONY: debug
-debug: ## Run with debugger
-	@echo "Starting with debugger..."
-	dlv debug --headless --listen=:2345 --api-version=2 --accept-multiclient
-
-.PHONY: check-env
-check-env: ## Check environment variables
-	@echo "Checking environment variables..."
-	@echo "GO version: $(shell go version)"
-	@echo "Docker version: $(shell docker --version)"
-	@echo "Kubectl version: $(shell kubectl version --client --short 2>/dev/null || echo 'kubectl not found')"
-	@echo "Helm version: $(shell helm version --short 2>/dev/null || echo 'helm not found')"
-	@echo "Terraform version: $(shell terraform version 2>/dev/null || echo 'terraform not found')"
-
-.PHONY: docs
-docs: ## Generate documentation
-	@echo "Generating documentation..."
-	go doc -all . > docs/api.md
-
-.PHONY: benchmark-report
-benchmark-report: ## Generate benchmark report
-	@echo "Generating benchmark report..."
-	mkdir -p $(COVERAGE_DIR)
-	go test -bench=. -benchmem -cpuprofile $(COVERAGE_DIR)/cpu.prof -memprofile $(COVERAGE_DIR)/mem.prof ./...
-	go tool pprof -http=:8081 $(COVERAGE_DIR)/cpu.prof &
-	@echo "CPU profile server started at http://localhost:8081"
-
-.PHONY: all
-all: validate build docker-build ## Run all checks and build everything
+# Default target
+.DEFAULT_GOAL := help

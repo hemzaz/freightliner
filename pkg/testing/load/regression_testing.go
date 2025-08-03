@@ -178,8 +178,13 @@ func NewRegressionTestSuite(baselineDir string, logger log.Logger) *RegressionTe
 		NotificationChannels:           []string{"slack"},
 	}
 
-	// TODO: Fix BaselineManager logger field type mismatch
-	var baselineManager *BaselineManager
+	// Initialize BaselineManager with proper logger
+	baselineManager := &BaselineManager{
+		baselineDir:      baselineDir,
+		retentionPeriod:  time.Duration(config.BaselineRetentionDays) * 24 * time.Hour,
+		currentBaselines: make(map[string]BenchmarkResult),
+		logger:           logger,
+	}
 
 	suite := &RegressionTestSuite{
 		logger:          logger,
@@ -560,7 +565,7 @@ func (bm *BaselineManager) UpdateBaseline(scenario string, result BenchmarkResul
 		return err
 	}
 
-	return os.WriteFile(filename, data, 0644)
+	return os.WriteFile(filename, data, 0600)
 }
 
 func (bm *BaselineManager) StartCleanupRoutine(ctx context.Context) {
@@ -777,7 +782,7 @@ func (rts *RegressionTestSuite) saveRegressionResults(result *RegressionTestResu
 		return err
 	}
 
-	return os.WriteFile(filename, data, 0644)
+	return os.WriteFile(filename, data, 0600)
 }
 
 func (rts *RegressionTestSuite) updateBaselinesIfImproved(result *RegressionTestResult) {

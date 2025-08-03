@@ -1,0 +1,385 @@
+# Performance-optimized values for freightliner container registry
+# Targeting 100-150 MB/s throughput with <50ms latency
+# Optimized for production workloads with high concurrency
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: "fast-ssd"  # Use high-performance storage
+
+# Application configuration
+image:
+  registry: docker.io
+  repository: freightliner/app
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+# Deployment configuration - Higher baseline for performance
+replicaCount: 5
+
+# Service configuration
+service:
+  type: LoadBalancer
+  port: 443
+  targetPort: 8080
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+  labels: {}
+
+# Ingress configuration - Optimized for high throughput
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "1000"  # Increased for high throughput
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"  # Faster connection
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"    # Longer for large transfers
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"    # Longer for large transfers
+    nginx.ingress.kubernetes.io/proxy-body-size: "5g"        # Support very large images
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"     # Larger buffers
+    nginx.ingress.kubernetes.io/proxy-buffers: "8 16k"       # More buffers
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+    nginx.ingress.kubernetes.io/client-max-body-size: "5g"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: freightliner.company.com
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: api.freightliner.company.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: freightliner-tls-cert
+      hosts:
+        - freightliner.company.com
+        - api.freightliner.company.com
+
+# Resource configuration - Optimized for high-throughput container registry operations
+resources:
+  limits:
+    cpu: 8000m      # 8 CPU cores for high concurrent operations
+    memory: 16Gi    # 16GB for large buffer pools and caching
+  requests:
+    cpu: 2000m      # 2 CPU cores baseline for consistent performance
+    memory: 4Gi     # 4GB baseline for buffer pools and object caching
+
+# Auto-scaling configuration - Optimized for throughput scaling
+autoscaling:
+  enabled: true
+  minReplicas: 5          # Higher baseline for throughput requirements
+  maxReplicas: 25         # Scale up to handle 100-150 MB/s target
+  targetCPUUtilizationPercentage: 60    # Lower threshold for I/O bound operations
+  targetMemoryUtilizationPercentage: 70 # Conservative memory scaling
+  # Custom metrics for registry operations
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60    # Fast scale up for traffic spikes
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # Slower scale down for stable operations
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
+# Security context - Maintained for security
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 3000
+  fsGroup: 2000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Pod security context
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+# Liveness and readiness probes - Optimized for fast startup
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15   # Faster startup
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2       # Faster failure detection
+
+# Configuration - Performance-optimized settings
+config:
+  # Application configuration
+  logLevel: info
+  port: 8080
+  
+  # Registry configuration
+  aws:
+    region: us-west-2
+    ecrEndpoint: ""
+  
+  gcp:
+    projectId: ""
+    region: us-central1
+  
+  # Performance tuning - Optimized for high throughput
+  workerPoolSize: 50              # Increased for higher concurrency
+  maxConcurrentReplications: 100  # Support 50+ concurrent operations
+  maxConcurrentTags: 25           # Parallel tag processing
+  httpTimeout: 120s               # Optimized for large transfers
+  retryAttempts: 3
+  retryInitialDelay: 1s
+  retryMaxDelay: 30s
+  
+  # Buffer and memory optimization
+  bufferPoolEnabled: true
+  maxBufferSize: 100MB            # Large buffers for throughput
+  cacheEnabled: true
+  cacheSizeMB: 1024              # 1GB cache for manifests/blobs
+  manifestCacheTTL: 1h
+  blobCacheTTL: 6h
+  tagCacheTTL: 15m
+  
+  # Network optimization
+  maxIdleConnsPerHost: 100       # HTTP connection pooling
+  maxIdleConns: 500
+  idleConnTimeout: 90s
+  responseHeaderTimeout: 30s
+  expectContinueTimeout: 1s
+  
+  # GC optimization
+  gcOptimizationEnabled: true
+  gcTarget: 200                  # Adaptive GC tuning
+  maxHeapSize: 12GB             # Leave headroom for system
+  
+  # Monitoring
+  metricsEnabled: true
+  metricsPort: 2112
+  performanceMonitoringEnabled: true
+  metricsReportInterval: 30s
+
+# Environment variables - Performance tuning
+env:
+  # Go runtime optimization
+  - name: GOGC
+    value: "200"                 # Adaptive GC tuning
+  - name: GOMEMLIMIT
+    value: "14GB"               # Memory limit for Go runtime
+  - name: GOMAXPROCS
+    value: "8"                  # Match CPU limits
+  
+  # Application performance
+  - name: FREIGHTLINER_HIGH_PERFORMANCE_MODE
+    value: "true"
+  - name: FREIGHTLINER_BUFFER_POOL_SIZE
+    value: "100MB"
+  - name: FREIGHTLINER_MAX_CONCURRENT_OPERATIONS
+    value: "100"
+  
+  # JVM-style settings for memory efficiency
+  - name: CGO_ENABLED
+    value: "0"                  # Disable CGO for better performance
+
+# Secrets configuration (to be created externally)
+secrets:
+  # AWS credentials
+  awsAccessKeyId: ""
+  awsSecretAccessKey: ""
+  
+  # GCP service account key
+  gcpServiceAccountKey: ""
+  
+  # Registry authentication
+  registryAuth: {}
+
+# Environment-specific overrides
+environment: production
+
+# Node selection - Prefer high-performance nodes
+nodeSelector:
+  node-type: "compute-optimized"  # Use compute-optimized instances
+  kubernetes.io/arch: "amd64"
+
+# Tolerations for dedicated nodes
+tolerations:
+- key: "workload"
+  operator: "Equal"
+  value: "compute-optimized"
+  effect: "NoSchedule"
+
+# Affinity rules - Optimized for performance and availability
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      preference:
+        matchExpressions:
+        - key: instance-type
+          operator: In
+          values:
+          - "c5.2xlarge"
+          - "c5.4xlarge"
+          - "c5.9xlarge"
+          - "c6i.2xlarge"
+          - "c6i.4xlarge"
+          - "c6i.8xlarge"
+    - weight: 80
+      preference:
+        matchExpressions:
+        - key: kubernetes.io/arch
+          operator: In
+          values:
+          - "amd64"
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - freightliner
+        topologyKey: kubernetes.io/hostname
+    - weight: 50
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - freightliner
+        topologyKey: topology.kubernetes.io/zone
+
+# Network policies - Allow high throughput
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 2112
+  egress:
+    - {}  # Allow all egress (for registry communication)
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: ""  # For IRSA if using AWS
+  name: ""
+
+# RBAC
+rbac:
+  create: true
+
+# Persistent storage - High-performance storage for caching
+persistence:
+  enabled: true
+  storageClass: "fast-ssd"        # Use high-performance storage class
+  accessMode: ReadWriteOnce
+  size: 100Gi                     # Larger cache storage
+  annotations:
+    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com
+
+# Monitoring configuration - Enhanced for performance metrics
+monitoring:
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    interval: 15s                 # More frequent metrics collection
+    path: /metrics
+    port: metrics
+    labels:
+      app: freightliner
+      tier: performance
+    annotations: {}
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'freightliner_.*'
+      action: keep
+
+# Pod disruption budget - Conservative for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 3                 # Ensure 3 pods always available
+  
+# Performance monitoring and alerting
+performanceMonitoring:
+  enabled: true
+  thresholds:
+    throughputMBps: 100           # Alert if below 100 MB/s
+    latencyMs: 50                 # Alert if above 50ms
+    errorRate: 0.01               # Alert if above 1% error rate
+    memoryUsagePercent: 90        # Alert if above 90% memory usage
+    cpuUsagePercent: 80           # Alert if above 80% CPU usage
+  
+# Additional volumes for cache and temporary storage
+additionalVolumes:
+- name: cache-volume
+  emptyDir:
+    sizeLimit: 10Gi
+- name: tmp-volume
+  emptyDir:
+    sizeLimit: 5Gi
+
+additionalVolumeMounts:
+- name: cache-volume
+  mountPath: /var/cache/freightliner
+- name: tmp-volume
+  mountPath: /tmp
+
+# Pod priority for performance workloads
+priorityClassName: "high-priority"
+
+# Topology spread constraints for better distribution
+topologySpreadConstraints:
+- maxSkew: 1
+  topologyKey: topology.kubernetes.io/zone
+  whenUnsatisfiable: DoNotSchedule
+  labelSelector:
+    matchLabels:
+      app.kubernetes.io/name: freightliner
+- maxSkew: 2
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway
+  labelSelector:
+    matchLabels:
+      app.kubernetes.io/name: freightliner

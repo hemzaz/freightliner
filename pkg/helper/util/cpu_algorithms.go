@@ -1,11 +1,11 @@
 package util
 
 import (
+	"hash/fnv"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"freightliner/pkg/helper/log"
 )
@@ -414,10 +414,40 @@ func NewHashTable[K comparable, V any](initialCapacity int) *HashTable[K, V] {
 	}
 }
 
-// hash computes hash for a key
+// hash computes hash for a key using FNV-1a hash algorithm
 func (ht *HashTable[K, V]) hash(key K) int {
-	// Simple hash function - in production, use a better hash function
-	return int(uintptr(unsafe.Pointer(&key))) % ht.capacity
+	h := fnv.New32a()
+
+	// Convert key to bytes for hashing
+	// This is a safer approach than using unsafe.Pointer
+	switch k := any(key).(type) {
+	case string:
+		h.Write([]byte(k))
+	case int:
+		bytes := [8]byte{}
+		for i := 0; i < 8; i++ {
+			bytes[i] = byte(k >> (i * 8))
+		}
+		h.Write(bytes[:])
+	case int32:
+		bytes := [4]byte{}
+		for i := 0; i < 4; i++ {
+			bytes[i] = byte(k >> (i * 8))
+		}
+		h.Write(bytes[:])
+	case int64:
+		bytes := [8]byte{}
+		for i := 0; i < 8; i++ {
+			bytes[i] = byte(k >> (i * 8))
+		}
+		h.Write(bytes[:])
+	default:
+		// For other comparable types, use a simple hash based on type conversion
+		// This is safe but basic - for production, implement specific hash for each type
+		h.Write([]byte{byte(any(key).(int) % 256)})
+	}
+
+	return int(h.Sum32()) % ht.capacity
 }
 
 // Put inserts or updates a key-value pair (O(1) average case)

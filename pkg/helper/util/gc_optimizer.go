@@ -195,11 +195,9 @@ func (gco *GCOptimizer) memoryPressureMonitor() {
 	defer ticker.Stop()
 
 	for gco.enabled.Load() {
-		select {
-		case <-ticker.C:
-			gco.updateMemoryPressure()
-			gco.adjustGCParameters()
-		}
+		<-ticker.C
+		gco.updateMemoryPressure()
+		gco.adjustGCParameters()
 	}
 }
 
@@ -264,35 +262,33 @@ func (gco *GCOptimizer) gcStatsCollector() {
 	var lastPauseTotal time.Duration
 
 	for gco.enabled.Load() {
-		select {
-		case <-ticker.C:
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
+		<-ticker.C
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
 
-			// Update GC statistics
-			gco.gcStats.NumGC.Store(m.NumGC)
-			gco.gcStats.PauseTotal.Store(int64(m.PauseTotalNs))
+		// Update GC statistics
+		gco.gcStats.NumGC.Store(m.NumGC)
+		gco.gcStats.PauseTotal.Store(int64(m.PauseTotalNs))
 
-			if m.NumGC > 0 {
-				gco.gcStats.LastPause.Store(int64(m.PauseNs[(m.NumGC+255)%256]))
-			}
+		if m.NumGC > 0 {
+			gco.gcStats.LastPause.Store(int64(m.PauseNs[(m.NumGC+255)%256]))
+		}
 
-			// Log GC activity if there were new collections
-			if m.NumGC > lastNumGC {
-				newCollections := m.NumGC - lastNumGC
-				newPauseTime := time.Duration(m.PauseTotalNs) - lastPauseTotal
-				avgPause := newPauseTime / time.Duration(newCollections)
+		// Log GC activity if there were new collections
+		if m.NumGC > lastNumGC {
+			newCollections := m.NumGC - lastNumGC
+			newPauseTime := time.Duration(m.PauseTotalNs) - lastPauseTotal
+			avgPause := newPauseTime / time.Duration(newCollections)
 
-				gco.logger.WithFields(map[string]interface{}{
-					"new_collections":   newCollections,
-					"total_collections": m.NumGC,
-					"avg_pause_ms":      avgPause.Nanoseconds() / 1000000,
-					"total_pause_ms":    newPauseTime.Nanoseconds() / 1000000,
-				}).Info("GC activity")
+			gco.logger.WithFields(map[string]interface{}{
+				"new_collections":   newCollections,
+				"total_collections": m.NumGC,
+				"avg_pause_ms":      avgPause.Nanoseconds() / 1000000,
+				"total_pause_ms":    newPauseTime.Nanoseconds() / 1000000,
+			}).Info("GC activity")
 
-				lastNumGC = m.NumGC
-				lastPauseTotal = time.Duration(m.PauseTotalNs)
-			}
+			lastNumGC = m.NumGC
+			lastPauseTotal = time.Duration(m.PauseTotalNs)
 		}
 	}
 }

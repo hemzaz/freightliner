@@ -1,0 +1,122 @@
+# =============================================================================
+# Optimized .dockerignore for faster Docker builds
+# =============================================================================
+
+# Version control
+.git
+.gitignore
+.gitattributes
+.gitmodules
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+Jenkinsfile
+azure-pipelines.yml
+
+# Documentation
+*.md
+docs/
+README*
+CHANGELOG*
+LICENSE*
+CONTRIBUTING*
+CODE_OF_CONDUCT*
+
+# Build artifacts and caches
+bin/
+build/
+dist/
+target/
+out/
+coverage/
+*.out
+*.prof
+*.test
+
+# Go specific
+vendor/
+*.sum.backup
+*.mod.backup
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Test files (if not needed for build)
+*_test.go
+testdata/
+fixtures/
+
+# Development tools
+.air.toml
+docker-compose*.yml
+Makefile.local
+*.local
+
+# Container runtime
+.docker/
+.buildkit/
+
+# Deployment configurations (keep only what's needed)
+k8s/
+helm/
+terraform/
+ansible/
+
+# Package manager files
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env*
+!.env.example
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Compiled binaries
+freightliner
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Performance profiles
+*.pprof
+*.trace
+
+# Coverage reports
+coverage.html
+coverage.xml
+
+# Linting cache
+.golangci-lint-cache/
+
+# Keep essential files for build
+!go.mod
+!go.sum
+!cmd/
+!pkg/
+!internal/
+!main.go

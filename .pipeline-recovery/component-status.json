@@ -1,0 +1,7 @@
+{
+  "go": {"status": "unknown", "last_check": "", "failures": 0},
+  "docker": {"status": "unknown", "last_check": "", "failures": 0},
+  "registry": {"status": "unknown", "last_check": "", "failures": 0},
+  "network": {"status": "unknown", "last_check": "", "failures": 0},
+  "cache": {"status": "unknown", "last_check": "", "failures": 0}
+}

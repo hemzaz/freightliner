@@ -1,0 +1,455 @@
+# Container Runtime Security Policy
+# Kubernetes SecurityContext and PodSecurityPolicy for Freightliner
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: freightliner-security-policy
+  namespace: freightliner
+  labels:
+    app: freightliner
+    component: security-policy
+    version: "2.1"
+data:
+  # Pod Security Standards - Restricted Profile
+  pod-security-policy.yaml: |
+    apiVersion: policy/v1beta1
+    kind: PodSecurityPolicy
+    metadata:
+      name: freightliner-restricted
+      annotations:
+        seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+        apparmor.security.beta.kubernetes.io/allowedProfileNames: 'runtime/default'
+        seccomp.security.alpha.kubernetes.io/defaultProfileName: 'runtime/default'
+        apparmor.security.beta.kubernetes.io/defaultProfileName: 'runtime/default'
+    spec:
+      # Privilege and access controls
+      privileged: false
+      allowPrivilegeEscalation: false
+      requiredDropCapabilities:
+        - ALL
+      allowedCapabilities: []
+      
+      # Volume restrictions
+      volumes:
+        - 'configMap'
+        - 'emptyDir'
+        - 'projected'
+        - 'secret'
+        - 'downwardAPI'
+        - 'persistentVolumeClaim'
+      
+      # Host network restrictions
+      hostNetwork: false
+      hostIPC: false
+      hostPID: false
+      
+      # Port restrictions
+      hostPorts:
+        - min: 0
+          max: 0
+      
+      # User and group restrictions
+      runAsUser:
+        rule: 'MustRunAsNonRoot'
+      runAsGroup:
+        rule: 'MustRunAs'
+        ranges:
+          - min: 1001
+            max: 65535
+      fsGroup:
+        rule: 'MustRunAs'
+        ranges:
+          - min: 1001
+            max: 65535
+      
+      # Security context constraints
+      seLinux:
+        rule: 'RunAsAny'
+      readOnlyRootFilesystem: true
+      
+      # Syscall restrictions
+      forbiddenSysctls:
+        - '*'
+      allowedUnsafeSysctls: []
+
+  # Network Security Policy
+  network-policy.yaml: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: freightliner-network-policy
+      namespace: freightliner
+    spec:
+      podSelector:
+        matchLabels:
+          app: freightliner
+      policyTypes:
+        - Ingress
+        - Egress
+      
+      # Ingress rules - only allow specific sources
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  name: ingress-nginx
+          ports:
+            - protocol: TCP
+              port: 8080
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  name: monitoring
+          ports:
+            - protocol: TCP
+              port: 8080
+      
+      # Egress rules - restrict outbound traffic
+      egress:
+        # Allow DNS resolution
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  name: kube-system
+          ports:
+            - protocol: UDP
+              port: 53
+            - protocol: TCP
+              port: 53
+        
+        # Allow HTTPS to AWS/GCP APIs
+        - to: []
+          ports:
+            - protocol: TCP
+              port: 443
+        
+        # Allow container registry access
+        - to: []
+          ports:
+            - protocol: TCP
+              port: 443
+            - protocol: TCP
+              port: 5000
+
+  # Resource Quota and Limits
+  resource-quota.yaml: |
+    apiVersion: v1
+    kind: ResourceQuota
+    metadata:
+      name: freightliner-quota
+      namespace: freightliner
+    spec:
+      hard:
+        # Compute resources
+        requests.cpu: "2"
+        requests.memory: 4Gi
+        limits.cpu: "4"
+        limits.memory: 8Gi
+        
+        # Storage resources
+        requests.storage: 10Gi
+        persistentvolumeclaims: "5"
+        
+        # Object counts
+        pods: "10"
+        services: "5"
+        secrets: "10"
+        configmaps: "10"
+        
+        # Security constraints
+        count/podsecuritypolicies: "1"
+
+  # Security Context Template
+  security-context.yaml: |
+    # Security context to be applied to all Freightliner pods
+    securityContext:
+      # Pod-level security context
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile:
+        type: RuntimeDefault
+      
+    # Container-level security context
+    containerSecurityContext:
+      # Privilege restrictions
+      privileged: false
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      
+      # Capabilities
+      capabilities:
+        drop:
+          - ALL
+        add: []  # No additional capabilities
+      
+      # Security profiles
+      seccompProfile:
+        type: RuntimeDefault
+      appArmorProfile:
+        type: RuntimeDefault
+
+  # Admission Controller Configuration
+  admission-controller.yaml: |
+    # OPA Gatekeeper policies for Freightliner
+    apiVersion: templates.gatekeeper.sh/v1beta1
+    kind: ConstraintTemplate
+    metadata:
+      name: freightlinersecurity
+    spec:
+      crd:
+        spec:
+          names:
+            kind: FreightlinerSecurity
+          validation:
+            openAPIV3Schema:
+              type: object
+              properties:
+                requiredLabels:
+                  type: array
+                  items:
+                    type: string
+                allowedRegistries:
+                  type: array
+                  items:
+                    type: string
+                maxReplicas:
+                  type: integer
+      targets:
+        - target: admission.k8s.gatekeeper.sh
+          rego: |
+            package freightlinersecurity
+            
+            violation[{"msg": msg}] {
+              # Require security labels
+              required := input.parameters.requiredLabels
+              provided := input.review.object.metadata.labels
+              missing := required[_]
+              not provided[missing]
+              msg := sprintf("Missing required label: %v", [missing])
+            }
+            
+            violation[{"msg": msg}] {
+              # Restrict container registries
+              allowed := input.parameters.allowedRegistries
+              container := input.review.object.spec.containers[_]
+              image := container.image
+              not startswith(image, allowed[_])
+              msg := sprintf("Image %v not from allowed registry", [image])
+            }
+            
+            violation[{"msg": msg}] {
+              # Limit replica count
+              max_replicas := input.parameters.maxReplicas
+              replicas := input.review.object.spec.replicas
+              replicas > max_replicas
+              msg := sprintf("Replica count %v exceeds maximum %v", [replicas, max_replicas])
+            }
+
+  # Service Mesh Security Policy (Istio)
+  service-mesh-policy.yaml: |
+    # Istio AuthorizationPolicy for Freightliner
+    apiVersion: security.istio.io/v1beta1
+    kind: AuthorizationPolicy
+    metadata:
+      name: freightliner-authz
+      namespace: freightliner
+    spec:
+      selector:
+        matchLabels:
+          app: freightliner
+      rules:
+        # Allow ingress from istio-system
+        - from:
+            - source:
+                namespaces: ["istio-system"]
+          to:
+            - operation:
+                methods: ["GET", "POST"]
+                paths: ["/health", "/metrics", "/api/*"]
+        
+        # Allow monitoring access
+        - from:
+            - source:
+                namespaces: ["monitoring"]
+          to:
+            - operation:
+                methods: ["GET"]
+                paths: ["/metrics", "/health"]
+        
+        # Deny all other access
+        - action: DENY
+          from:
+            - source: {}
+    
+    ---
+    # Istio PeerAuthentication for mTLS
+    apiVersion: security.istio.io/v1beta1
+    kind: PeerAuthentication
+    metadata:
+      name: freightliner-mtls
+      namespace: freightliner
+    spec:
+      selector:
+        matchLabels:
+          app: freightliner
+      mtls:
+        mode: STRICT
+
+  # Container Image Security Policy
+  image-policy.yaml: |
+    # Admission controller policy for container images
+    apiVersion: kyverno.io/v1
+    kind: ClusterPolicy
+    metadata:
+      name: freightliner-image-security
+    spec:
+      validationFailureAction: enforce
+      background: false
+      rules:
+        # Require signed images
+        - name: verify-image-signature
+          match:
+            any:
+              - resources:
+                  kinds:
+                    - Pod
+                  namespaces:
+                    - freightliner
+          verifyImages:
+            - imageReferences:
+                - "ghcr.io/company/freightliner:*"
+              attestors:
+                - entries:
+                    - keyless:
+                        subject: "https://github.com/company/freightliner/.github/workflows/security-hardened-ci.yml@refs/heads/main"
+                        issuer: "https://token.actions.githubusercontent.com"
+        
+        # Restrict base images
+        - name: allowed-base-images
+          match:
+            any:
+              - resources:
+                  kinds:
+                    - Pod
+                  namespaces:
+                    - freightliner
+          validate:
+            message: "Only approved base images are allowed"
+            pattern:
+              spec:
+                containers:
+                  - image: "ghcr.io/company/freightliner:*"
+        
+        # Require vulnerability scan
+        - name: require-vulnerability-scan
+          match:
+            any:
+              - resources:
+                  kinds:
+                    - Pod
+                  namespaces:
+                    - freightliner
+          validate:
+            message: "Container images must be scanned for vulnerabilities"
+            pattern:
+              metadata:
+                annotations:
+                  "security.scan.trivy": "passed"
+
+  # Runtime Security Monitoring
+  runtime-monitoring.yaml: |
+    # Falco rules for runtime security monitoring
+    - rule: Detect Container Privilege Escalation
+      desc: Detect attempts to escalate privileges in containers
+      condition: >
+        spawned_process and container and
+        (proc.name in (sudo, su)) and
+        not user_known_privilege_escalation_activities
+      output: >
+        Potential privilege escalation in container (user=%user.name %user.uid 
+        command=%proc.cmdline %container.info image=%container.image.repository)
+      priority: WARNING
+      tags: [container, privilege_escalation]
+    
+    - rule: Detect Sensitive File Access
+      desc: Detect access to sensitive files in containers
+      condition: >
+        open_read and container and
+        (fd.name startswith /etc/passwd or
+         fd.name startswith /etc/shadow or
+         fd.name startswith /etc/sudoers or
+         fd.name startswith /root/.ssh)
+      output: >
+        Sensitive file access in container (user=%user.name file=%fd.name 
+        %container.info image=%container.image.repository)
+      priority: WARNING
+      tags: [container, filesystem]
+    
+    - rule: Detect Network Activity to External Registry
+      desc: Detect unexpected network connections to container registries
+      condition: >
+        outbound and container and
+        not (fd.sip.name in (docker.io, gcr.io, ghcr.io, 
+             amazonaws.com, azurecr.io)) and
+        (fd.sport in (443, 5000))
+      output: >
+        Unexpected registry access (connection=%fd.name %container.info 
+        image=%container.image.repository)
+      priority: NOTICE
+      tags: [container, network]
+
+  # Security Scanning Configuration
+  scanning-config.yaml: |
+    # Container security scanning configuration
+    securityScanning:
+      # Vulnerability scanning
+      vulnerability:
+        enabled: true
+        tools:
+          - trivy
+          - clair
+        severity_threshold: "HIGH"
+        fail_on_critical: true
+        scan_frequency: "daily"
+        
+      # Malware scanning
+      malware:
+        enabled: true
+        tools:
+          - clamav
+        quarantine_on_detection: true
+        
+      # Secret scanning
+      secrets:
+        enabled: true
+        tools:
+          - gitleaks
+          - trufflehog
+        patterns:
+          - aws_keys
+          - gcp_keys
+          - private_keys
+          - certificates
+          
+      # License compliance
+      license:
+        enabled: true
+        allowed_licenses:
+          - Apache-2.0
+          - MIT
+          - BSD-3-Clause
+        forbidden_licenses:
+          - GPL-3.0
+          - AGPL-3.0
+          
+      # SBOM generation
+      sbom:
+        enabled: true
+        format: "spdx-json"
+        include_dependencies: true
+        sign_sbom: true

@@ -170,8 +170,15 @@ func (pc *PrometheusLoadTestCollector) StartMetricsServer(ctx context.Context) e
 			"address": pc.metricsAddr,
 		}).Info("Starting Prometheus metrics server")
 
-		if err := pc.metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Metrics server error", err)
+		// Safely access the server
+		pc.serverMutex.Lock()
+		server := pc.metricsServer
+		pc.serverMutex.Unlock()
+
+		if server != nil {
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				pc.logger.WithFields(map[string]interface{}{"error": err.Error()}).Error("Metrics server error", err)
+			}
 		}
 	}()
 

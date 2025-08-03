@@ -1,0 +1,227 @@
+# Security Policy Configuration
+# This file defines security policies and configurations for the freightliner project
+
+security:
+  # Security scanning configuration
+  scanning:
+    # Enable automatic security scanning
+    enabled: true
+    
+    # Vulnerability thresholds
+    vulnerability_threshold:
+      critical: 0     # Block on any critical vulnerabilities
+      high: 2         # Allow up to 2 high severity vulnerabilities
+      medium: 10      # Allow up to 10 medium severity vulnerabilities
+      low: -1         # No limit on low severity vulnerabilities
+    
+    # Scanning tools configuration
+    tools:
+      secret_scanning:
+        enabled: true
+        tool: "gitleaks"
+        config: ".gitleaks.toml"
+        
+      dependency_scanning:
+        enabled: true
+        tool: "govulncheck"
+        auto_update: true
+        
+      sast_scanning:
+        enabled: true
+        tool: "gosec"
+        rules: "default"
+        
+      container_scanning:
+        enabled: true
+        tool: "trivy"
+        base_images: ["scratch", "alpine", "distroless"]
+        
+      license_scanning:
+        enabled: true
+        tool: "go-licenses"
+        allowed_licenses:
+          - "Apache-2.0"
+          - "MIT"
+          - "BSD-2-Clause"
+          - "BSD-3-Clause"
+          - "ISC"
+        forbidden_licenses:
+          - "GPL-3.0"
+          - "AGPL-3.0"
+          - "LGPL-3.0"
+          - "SSPL-1.0"
+
+  # Access control and permissions
+  access_control:
+    # Branch protection rules
+    branch_protection:
+      enabled: true
+      protected_branches: [ "main", "master", "develop" ]
+      require_reviews: true
+      required_reviewers: 2
+      dismiss_stale_reviews: true
+      require_code_owner_reviews: true
+      require_status_checks: true
+      required_status_checks:
+        - "Security Gates"
+        - "Secret Scanning"
+        - "Vulnerability Scanning"
+        - "Container Security"
+      restrict_pushes: true
+      allowed_push_users: []
+      
+    # OIDC configuration
+    oidc:
+      enabled: true
+      provider: "github"
+      audience: "freightliner-ci"
+      issuer: "https://token.actions.githubusercontent.com"
+      
+    # Required permissions for workflows
+    required_permissions:
+      contents: "read"
+      security-events: "write"
+      actions: "read"
+      attestations: "write"
+      id-token: "write"
+      pull-requests: "write"
+
+  # Container security configuration
+  container_security:
+    # Base image requirements
+    base_images:
+      allowed:
+        - "scratch"
+        - "alpine:*"
+        - "gcr.io/distroless/*"
+      forbidden:
+        - "ubuntu:latest"
+        - "centos:latest"
+        - "*:latest"
+    
+    # Security best practices
+    requirements:
+      non_root_user: true
+      read_only_filesystem: true
+      no_privileged_containers: true
+      drop_all_capabilities: true
+      resource_limits: true
+      health_checks: true
+      
+    # Image signing requirements
+    signing:
+      required: true
+      tool: "cosign"
+      keyless: true
+      transparency_log: true
+
+  # Supply chain security
+  supply_chain:
+    # Dependency management
+    dependencies:
+      pin_versions: true
+      auto_update: false
+      vulnerability_scanning: true
+      license_compliance: true
+      
+    # Build attestation
+    attestation:
+      enabled: true
+      format: "slsa"
+      level: 3
+      provenance: true
+      
+    # Artifact integrity
+    integrity:
+      checksums: true
+      signatures: true
+      transparency_log: true
+
+  # Incident response
+  incident_response:
+    # Security contact information
+    contact:
+      email: "security@company.com"
+      slack: "#security-alerts"
+      pager: "+1-555-SECURITY"
+      
+    # Escalation matrix
+    escalation:
+      critical:
+        notify: ["security-team", "platform-team", "management"]
+        sla: "15min"
+      high:
+        notify: ["security-team", "platform-team"]
+        sla: "1hour"
+      medium:
+        notify: ["platform-team"]
+        sla: "4hours"
+      low:
+        notify: ["platform-team"]
+        sla: "24hours"
+
+  # Compliance and auditing
+  compliance:
+    # Compliance frameworks
+    frameworks:
+      - "SOC2"
+      - "ISO27001"
+      - "PCI-DSS"
+      - "GDPR"
+      
+    # Audit requirements
+    auditing:
+      enabled: true
+      retention_period: "7years"
+      log_level: "info"
+      events:
+        - "authentication"
+        - "authorization"
+        - "data_access"
+        - "configuration_changes"
+        - "security_events"
+        
+    # Data classification
+    data_classification:
+      public: "green"
+      internal: "yellow"
+      confidential: "orange"
+      restricted: "red"
+
+  # Monitoring and alerting
+  monitoring:
+    # Security metrics
+    metrics:
+      vulnerability_count: true
+      scan_coverage: true
+      compliance_score: true
+      incident_response_time: true
+      
+    # Alerting configuration
+    alerts:
+      critical_vulnerabilities: true
+      failed_security_scans: true
+      policy_violations: true
+      suspicious_activity: true
+      
+    # Integration with security tools
+    integrations:
+      siem: "splunk"
+      soar: "phantom"
+      ticketing: "jira"
+      chat: "slack"
+
+  # Training and awareness
+  training:
+    # Security training requirements
+    required_training:
+      - "secure_coding_practices"
+      - "container_security"
+      - "ci_cd_security"
+      - "incident_response"
+      
+    # Training schedule
+    schedule:
+      initial: "onboarding"
+      recurring: "quarterly"
+      targeted: "as_needed"

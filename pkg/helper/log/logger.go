@@ -229,10 +229,8 @@ func (l *BasicLogger) logWithFields(level Level, message string, err error, fiel
 	}
 
 	// Add fields if present
-	if fields != nil {
-		for k, v := range fields {
-			logLine += fmt.Sprintf(" %s=%v", k, v)
-		}
+	for k, v := range fields {
+		logLine += fmt.Sprintf(" %s=%v", k, v)
 	}
 
 	// Add logger's own fields

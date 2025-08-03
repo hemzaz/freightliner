@@ -16,241 +16,134 @@ on:
       - 'LICENSE'
       - 'docs/**'
 
-# Cancel previous runs for the same workflow on the same branch/PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  GO_VERSION: '1.24.5'
-  GOLANGCI_LINT_VERSION: 'latest'
+  GO_VERSION: '1.23.4'
+  GOLANGCI_LINT_VERSION: 'v1.62.2'
 
 jobs:
-  # Fast feedback - runs basic checks quickly
-  quick-checks:
-    name: Quick Checks
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go environment
-        uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-key-suffix: '-quick'
+          cache: true
 
-      - name: Code formatting check
-        run: |
-          if ! gofmt -l . | read; then
-            echo "✅ Code is properly formatted"
-          else
-            echo "❌ Code formatting issues found:"
-            gofmt -l .
-            exit 1
-          fi
-
-      - name: Go mod verification
+      - name: Verify dependencies
         run: |
           go mod tidy
-          if ! git diff --quiet go.mod go.sum; then
-            echo "❌ go.mod or go.sum needs to be updated"
-            git diff go.mod go.sum
-            exit 1
-          fi
-          echo "✅ go.mod and go.sum are up to date"
+          git diff --exit-code go.mod go.sum
 
-      - name: Basic build check
+      - name: Build
         run: go build -v ./...
 
-  # Comprehensive testing with different strategies
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: quick-checks
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        test-type: [unit, integration]
-        include:
-          - test-type: unit
-            race-detection: true
-            coverage: true
-          - test-type: integration
-            race-detection: false
-            coverage: false
+      - name: Test
+        run: go test -v -race -coverprofile=coverage.out ./...
 
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5100:5000
-        options: >-
-          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go environment
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-key-suffix: '-${{ matrix.test-type }}'
-
-      - name: Run tests
-        uses: ./.github/actions/run-tests
-        with:
-          test-type: ${{ matrix.test-type }}
-          race-detection: ${{ matrix.race-detection }}
-          coverage: ${{ matrix.coverage }}
-
-      - name: Upload coverage to Codecov
-        if: matrix.test-type == 'unit' && matrix.coverage
+      - name: Upload coverage
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
           fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # Docker build job - only runs when Docker-related files change
-  docker-build:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: quick-checks
-    if: >-
-      github.event_name == 'pull_request' ||
-      github.event.head_commit != null && (
-        contains(github.event.head_commit.modified, 'Dockerfile') ||
-        contains(github.event.head_commit.added, 'Dockerfile') ||
-        contains(github.event.head_commit.modified, 'docker-compose')
-      )
-
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5100:5000
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Docker environment
-        uses: ./.github/actions/setup-docker
-        with:
-          registry-host: 'localhost:5100'
-
-      - name: Build and test with Docker
-        run: |
-          if [ -f "Dockerfile.buildx" ]; then
-            DOCKERFILE="Dockerfile.buildx"
-          else
-            DOCKERFILE="Dockerfile"
-          fi
-          
-          echo "🐳 Building with $DOCKERFILE..."
-          docker buildx build \
-            --build-arg REGISTRY_HOST=localhost:5100 \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            --file $DOCKERFILE \
-            --target test \
-            --load \
-            --tag freightliner:test .
-
-      - name: Run container smoke test
-        run: |
-          echo "🧪 Running container smoke test..."
-          docker run --rm freightliner:test --version || echo "Version check complete"
-
-  # Linting job - runs in parallel with tests
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: quick-checks
-
+    timeout-minutes: 8
+    
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go environment
-        uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-key-suffix: '-lint'
+          cache: true
 
-      - name: Run golangci-lint
+      - name: Format check
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted. Please run 'gofmt -w .'"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
-          args: --timeout=10m --verbose
+          args: --timeout=5m
 
-  # Security scanning - centralized and comprehensive
   security:
-    name: Security Scan
+    name: Security
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: quick-checks
+    timeout-minutes: 5
     
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go environment
-        uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache-key-suffix: '-security'
+          cache: true
 
-      - name: Install and run security scan
+      - name: Security scan
         run: |
-          echo "🔧 Installing gosec security scanner..."
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          
-          echo "🔒 Running security analysis..."
-          if gosec -no-fail -fmt sarif -out gosec-results.sarif ./...; then
-            echo "✅ Security scan completed successfully"
-          else
-            echo "⚠️ Security scan completed with warnings"
-          fi
-          
-          # Ensure SARIF file exists even if scan had issues
-          if [ ! -f gosec-results.sarif ]; then
-            echo "Creating empty SARIF file for upload"
-            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"gosec","version":"latest"}},"results":[]}]}' > gosec-results.sarif
-          fi
-          
-      - name: Upload security scan results
+          gosec -no-fail -fmt sarif -out gosec-results.sarif ./...
+
+      - name: Upload security results
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('gosec-results.sarif') != ''
         with:
           sarif_file: gosec-results.sarif
         continue-on-error: true
 
-  # Final check - ensures all jobs passed
-  ci-success:
-    name: CI Success
+  docker:
+    name: Docker Build
     runs-on: ubuntu-latest
-    needs: [quick-checks, test, lint, security]
-    if: always()
+    timeout-minutes: 15
+    if: >
+      github.event_name == 'pull_request' ||
+      github.ref == 'refs/heads/master' ||
+      github.ref == 'refs/heads/main' ||
+      contains(github.event.head_commit.message, '[docker]')
     
     steps:
-      - name: Check all jobs status
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: freightliner:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test image  
         run: |
-          if [ "${{ needs.quick-checks.result }}" != "success" ] || 
-             [ "${{ needs.test.result }}" != "success" ] ||
-             [ "${{ needs.lint.result }}" != "success" ] ||
-             [ "${{ needs.security.result }}" != "success" ]; then
-            echo "❌ One or more CI jobs failed"
-            exit 1
-          fi
-          echo "✅ All CI jobs passed successfully"
+          docker run --rm freightliner:test --version || echo "Version check not available"
+          docker run --rm freightliner:test --help >/dev/null

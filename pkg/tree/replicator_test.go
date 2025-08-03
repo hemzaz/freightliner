@@ -31,7 +31,7 @@ func (m *MockRegistryClient) GetRegistryName() string {
 }
 
 // ListRepositories returns all repositories in the registry with the given prefix
-func (m *MockRegistryClient) ListRepositories(ctx context.Context, prefix string) ([]string, error) {
+func (m *MockRegistryClient) ListRepositories(_ context.Context, prefix string) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -45,7 +45,7 @@ func (m *MockRegistryClient) ListRepositories(ctx context.Context, prefix string
 }
 
 // GetRepository returns a repository interface for the given repository name
-func (m *MockRegistryClient) GetRepository(ctx context.Context, name string) (interfaces.Repository, error) {
+func (m *MockRegistryClient) GetRepository(_ context.Context, name string) (interfaces.Repository, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -70,7 +70,7 @@ type MockRepository struct {
 }
 
 // GetImage returns an image for testing
-func (m *MockRepository) GetImage(ctx context.Context, tag string) (v1.Image, error) {
+func (m *MockRepository) GetImage(_ context.Context, tag string) (v1.Image, error) {
 	return &MockImage{}, nil
 }
 

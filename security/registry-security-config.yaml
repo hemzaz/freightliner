@@ -1,0 +1,415 @@
+# Container Registry Security Configuration
+# Security policies and configurations for AWS ECR and GCP Artifact Registry
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: registry-security-config
+  namespace: freightliner
+  labels:
+    app: freightliner
+    component: registry-security
+    version: "2.1"
+data:
+  # AWS ECR Security Configuration
+  aws-ecr-policy.json: |
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "RestrictRegistryAccess",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": [
+              "arn:aws:iam::ACCOUNT-ID:role/FreightlinerServiceRole",
+              "arn:aws:iam::ACCOUNT-ID:role/FreightlinerCIRole"
+            ]
+          },
+          "Action": [
+            "ecr:GetDownloadUrlForLayer",
+            "ecr:BatchGetImage",
+            "ecr:BatchCheckLayerAvailability",
+            "ecr:PutImage",
+            "ecr:InitiateLayerUpload",
+            "ecr:UploadLayerPart",
+            "ecr:CompleteLayerUpload",
+            "ecr:DescribeRepositories",
+            "ecr:GetRepositoryPolicy",
+            "ecr:ListImages",
+            "ecr:DescribeImages",
+            "ecr:BatchDeleteImage"
+          ],
+          "Condition": {
+            "StringEquals": {
+              "aws:RequestedRegion": ["us-west-2", "us-east-1"],
+              "aws:userid": "AIDA*:freightliner-*"
+            },
+            "IpAddress": {
+              "aws:SourceIp": [
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "140.82.112.0/20",
+                "185.199.108.0/22",
+                "192.30.252.0/22"
+              ]
+            },
+            "Bool": {
+              "aws:SecureTransport": "true"
+            },
+            "DateGreaterThan": {
+              "aws:CurrentTime": "2025-01-01T00:00:00Z"
+            }
+          }
+        },
+        {
+          "Sid": "DenyUnencryptedTransport",
+          "Effect": "Deny",
+          "Principal": "*",
+          "Action": "*",
+          "Resource": "*",
+          "Condition": {
+            "Bool": {
+              "aws:SecureTransport": "false"
+            }
+          }
+        },
+        {
+          "Sid": "DenyPublicAccess",
+          "Effect": "Deny",
+          "Principal": "*",
+          "Action": [
+            "ecr:GetDownloadUrlForLayer",
+            "ecr:BatchGetImage",
+            "ecr:BatchCheckLayerAvailability"
+          ],
+          "Resource": "*",
+          "Condition": {
+            "StringNotEquals": {
+              "aws:userid": [
+                "AIDA*:freightliner-*",
+                "AIDA*:admin-*"
+              ]
+            }
+          }
+        }
+      ]
+    }
+
+  # GCP Artifact Registry IAM Policy
+  gcp-gar-policy.yaml: |
+    # IAM policy for GCP Artifact Registry
+    bindings:
+      - role: roles/artifactregistry.reader
+        members:
+          - serviceAccount:freightliner-reader@project-id.iam.gserviceaccount.com
+        condition:
+          title: "Time-based access"
+          description: "Restrict access to business hours"
+          expression: >
+            request.time.getHours() >= 6 && request.time.getHours() <= 22
+      
+      - role: roles/artifactregistry.writer
+        members:
+          - serviceAccount:freightliner-ci@project-id.iam.gserviceaccount.com
+        condition:
+          title: "CI/CD access only"
+          description: "Restrict to CI/CD systems"
+          expression: >
+            request.auth.claims.iss == "https://token.actions.githubusercontent.com" &&
+            "github.com/company/freightliner" in request.auth.claims.repository
+      
+      - role: roles/artifactregistry.admin
+        members:
+          - serviceAccount:freightliner-admin@project-id.iam.gserviceaccount.com
+        condition:
+          title: "Admin access with MFA"
+          description: "Require multi-factor authentication"
+          expression: >
+            request.auth.access_levels.satisfies_pzs[0] == "accessPolicies/POLICY_ID/accessLevels/high_trust"
+
+  # Registry Security Policies
+  registry-policies.yaml: |
+    # Registry security policies configuration
+    registryPolicies:
+      # Image scanning policies
+      scanning:
+        vulnerability:
+          enabled: true
+          severity_threshold: "HIGH"
+          block_deployment: true
+          scan_on_push: true
+          continuous_monitoring: true
+          retention_days: 90
+        
+        malware:
+          enabled: true
+          quarantine_infected: true
+          notify_security_team: true
+        
+        secrets:
+          enabled: true
+          block_on_detection: true
+          patterns:
+            - private_keys
+            - api_keys
+            - passwords
+            - certificates
+      
+      # Image signing policies
+      signing:
+        required: true
+        verification:
+          - cosign_keyless: true
+          - transparency_log: true
+          - attestation_required: true
+        
+        trust_policy:
+          - issuer: "https://token.actions.githubusercontent.com"
+            subject_pattern: "https://github.com/company/freightliner/.github/workflows/*.yml@refs/heads/main"
+          - issuer: "https://accounts.google.com"
+            subject_pattern: "freightliner-ci@*.iam.gserviceaccount.com"
+      
+      # Access control policies
+      access:
+        authentication:
+          - method: "oidc"
+            required: true
+          - method: "service_account"
+            required: true
+          - method: "basic_auth"
+            required: false
+        
+        authorization:
+          rbac_enabled: true
+          default_permissions: "read"
+          admin_users:
+            - "admin@company.com"
+            - "security@company.com"
+          
+        network_restrictions:
+          allowed_cidrs:
+            - "10.0.0.0/8"
+            - "172.16.0.0/12"
+            - "192.168.0.0/16"
+            - "140.82.112.0/20"  # GitHub Actions
+          geo_restrictions:
+            - "US"
+            - "EU"
+      
+      # Retention and lifecycle policies
+      lifecycle:
+        untagged_images:
+          retention_days: 7
+          delete_automatically: true
+        
+        vulnerability_scanned:
+          keep_scan_results: 365
+          auto_remediation: true
+        
+        signed_images:
+          retention_days: 1095  # 3 years
+          verify_signature_validity: true
+
+  # Registry Monitoring Configuration
+  monitoring.yaml: |
+    # Registry security monitoring configuration
+    monitoring:
+      # Access logging
+      access_logs:
+        enabled: true
+        log_level: "INFO"
+        include_headers: true
+        retention_days: 365
+        
+        events:
+          - image_pull
+          - image_push
+          - image_delete
+          - repository_create
+          - repository_delete
+          - policy_change
+          - authentication_failure
+          - authorization_failure
+      
+      # Security metrics
+      metrics:
+        vulnerability_count:
+          enabled: true
+          dimensions: ["severity", "repository", "image"]
+        
+        access_patterns:
+          enabled: true
+          anomaly_detection: true
+          baseline_period_days: 30
+        
+        image_signing:
+          enabled: true
+          verification_success_rate: true
+          signature_failures: true
+      
+      # Alerting configuration
+      alerts:
+        critical_vulnerabilities:
+          threshold: 1
+          notification_channels:
+            - "security-team-slack"
+            - "security@company.com"
+            - "pager-duty-security"
+        
+        unsigned_images:
+          threshold: 1
+          notification_channels:
+            - "security-team-slack"
+            - "security@company.com"
+        
+        unusual_access_patterns:
+          anomaly_threshold: 3
+          notification_channels:
+            - "security-team-slack"
+        
+        authentication_failures:
+          threshold: 10
+          time_window: "5m"
+          notification_channels:
+            - "security-team-slack"
+            - "security@company.com"
+
+  # Registry Backup and Disaster Recovery
+  backup-dr.yaml: |
+    # Registry backup and disaster recovery configuration
+    backup:
+      # Repository backup
+      repositories:
+        enabled: true
+        frequency: "daily"
+        retention_days: 90
+        encryption: "AES-256"
+        compression: "gzip"
+        
+        backup_targets:
+          - aws_s3: "freightliner-registry-backup"
+          - gcp_gcs: "freightliner-registry-backup"
+        
+        verification:
+          enabled: true
+          restore_test_frequency: "weekly"
+      
+      # Metadata backup
+      metadata:
+        enabled: true
+        frequency: "hourly"
+        retention_days: 30
+        
+        includes:
+          - repository_policies
+          - access_controls
+          - scanning_results
+          - signing_metadata
+      
+      # Configuration backup
+      configuration:
+        enabled: true
+        frequency: "daily"
+        retention_days: 365
+        version_control: true
+    
+    # Disaster recovery
+    disaster_recovery:
+      # Multi-region replication
+      replication:
+        enabled: true
+        regions:
+          primary: "us-west-2"
+          secondary: ["us-east-1", "eu-west-1"]
+        sync_frequency: "real-time"
+        
+        consistency_checks:
+          enabled: true
+          frequency: "hourly"
+      
+      # Failover procedures
+      failover:
+        automatic: false
+        rto_minutes: 15  # Recovery Time Objective
+        rpo_minutes: 5   # Recovery Point Objective
+        
+        validation:
+          connectivity_test: true
+          integrity_check: true
+          performance_validation: true
+      
+      # Recovery procedures
+      recovery:
+        point_in_time_recovery: true
+        granular_recovery: true
+        cross_region_recovery: true
+        
+        testing:
+          frequency: "monthly"
+          automated_tests: true
+          documentation_update: true
+
+  # Registry Compliance Configuration
+  compliance.yaml: |
+    # Registry compliance configuration
+    compliance:
+      # Regulatory requirements
+      regulations:
+        gdpr:
+          enabled: true
+          data_retention_days: 2555  # 7 years
+          data_deletion_automation: true
+          privacy_controls: true
+        
+        sox:
+          enabled: true
+          audit_trail_retention: 2555
+          segregation_of_duties: true
+          change_management: true
+        
+        pci_dss:
+          enabled: false  # Enable if handling payment data
+          security_requirements: []
+      
+      # Security standards
+      standards:
+        iso27001:
+          enabled: true
+          controls:
+            - access_control
+            - cryptography
+            - operations_security
+            - communications_security
+            - system_acquisition
+        
+        nist_csf:
+          enabled: true
+          functions:
+            - identify
+            - protect
+            - detect
+            - respond
+            - recover
+        
+        cis_controls:
+          enabled: true
+          version: "8.0"
+          implementation_groups: ["IG1", "IG2"]
+      
+      # Audit requirements
+      auditing:
+        internal_audits:
+          frequency: "quarterly"
+          scope: ["access_controls", "data_protection", "incident_response"]
+          automated_evidence: true
+        
+        external_audits:
+          frequency: "annually"
+          auditor_access: "read_only"
+          evidence_package: true
+        
+        continuous_monitoring:
+          enabled: true
+          compliance_dashboard: true
+          deviation_alerts: true
