@@ -269,9 +269,10 @@ func testLoadTestInfrastructure(t *testing.T, ctx context.Context) {
 		collector.RecordScenarioExecution("Integration Test", testResult)
 
 		// Verify metrics were recorded (basic validation)
-		collector.LoadTestMetrics.Mutex.RLock()
-		executions := collector.LoadTestMetrics.ScenarioExecutions["Integration Test"]
-		collector.LoadTestMetrics.Mutex.RUnlock()
+		metrics := collector.GetLoadTestMetrics()
+		metrics.Mutex.RLock()
+		executions := metrics.ScenarioExecutions["Integration Test"]
+		metrics.Mutex.RUnlock()
 
 		if executions != 1 {
 			t.Errorf("Expected 1 execution, got %d", executions)
@@ -454,7 +455,7 @@ func isCommandAvailable(command string) bool {
 
 // BenchmarkPipelineIntegration benchmarks the integration test performance
 func BenchmarkPipelineIntegration(b *testing.B) {
-	ctx := context.Background()
+	_ = context.Background()
 
 	b.Run("ConfigurationValidation", func(b *testing.B) {
 		b.ResetTimer()

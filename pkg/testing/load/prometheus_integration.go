@@ -59,7 +59,7 @@ type LoadTestPrometheusMetrics struct {
 	BaselineComparison map[string]RegressionMetrics // Comparison with baseline
 	PerformanceTrends  []PerformanceTrendPoint      // Historical performance data
 
-	mutex sync.RWMutex
+	Mutex sync.RWMutex // Exported for testing access
 }
 
 // LatencyMetrics contains latency percentile measurements
@@ -137,6 +137,11 @@ func NewPrometheusLoadTestCollector(metricsAddr string, logger log.Logger) *Prom
 	}
 }
 
+// GetLoadTestMetrics returns the load test metrics (exported for testing)
+func (pc *PrometheusLoadTestCollector) GetLoadTestMetrics() *LoadTestPrometheusMetrics {
+	return pc.loadTestMetrics
+}
+
 // StartMetricsServer starts the Prometheus metrics HTTP server
 func (pc *PrometheusLoadTestCollector) StartMetricsServer(ctx context.Context) error {
 	pc.serverMutex.Lock()
@@ -210,8 +215,8 @@ func (pc *PrometheusLoadTestCollector) StopMetricsServer() error {
 
 // RecordScenarioExecution records metrics for a completed scenario
 func (pc *PrometheusLoadTestCollector) RecordScenarioExecution(scenario string, result *LoadTestResults) {
-	pc.loadTestMetrics.mutex.Lock()
-	defer pc.loadTestMetrics.mutex.Unlock()
+	pc.loadTestMetrics.Mutex.Lock()
+	defer pc.loadTestMetrics.Mutex.Unlock()
 
 	// Update execution counters
 	pc.loadTestMetrics.ScenarioExecutions[scenario]++
@@ -264,8 +269,8 @@ func (pc *PrometheusLoadTestCollector) RecordScenarioExecution(scenario string, 
 
 // CompareWithBaseline compares current results with baseline and detects regressions
 func (pc *PrometheusLoadTestCollector) CompareWithBaseline(scenario string, result *LoadTestResults, baseline BenchmarkResult) {
-	pc.loadTestMetrics.mutex.Lock()
-	defer pc.loadTestMetrics.mutex.Unlock()
+	pc.loadTestMetrics.Mutex.Lock()
+	defer pc.loadTestMetrics.Mutex.Unlock()
 
 	regression := RegressionMetrics{}
 
@@ -304,8 +309,8 @@ func (pc *PrometheusLoadTestCollector) CompareWithBaseline(scenario string, resu
 // HTTP handlers for Prometheus metrics endpoints
 
 func (pc *PrometheusLoadTestCollector) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	pc.loadTestMetrics.mutex.RLock()
-	defer pc.loadTestMetrics.mutex.RUnlock()
+	pc.loadTestMetrics.Mutex.RLock()
+	defer pc.loadTestMetrics.Mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 
@@ -402,8 +407,8 @@ func (pc *PrometheusLoadTestCollector) handleMetrics(w http.ResponseWriter, r *h
 }
 
 func (pc *PrometheusLoadTestCollector) handleScenarioMetrics(w http.ResponseWriter, r *http.Request) {
-	pc.loadTestMetrics.mutex.RLock()
-	defer pc.loadTestMetrics.mutex.RUnlock()
+	pc.loadTestMetrics.Mutex.RLock()
+	defer pc.loadTestMetrics.Mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -423,8 +428,8 @@ func (pc *PrometheusLoadTestCollector) handleScenarioMetrics(w http.ResponseWrit
 }
 
 func (pc *PrometheusLoadTestCollector) handlePerformanceMetrics(w http.ResponseWriter, r *http.Request) {
-	pc.loadTestMetrics.mutex.RLock()
-	defer pc.loadTestMetrics.mutex.RUnlock()
+	pc.loadTestMetrics.Mutex.RLock()
+	defer pc.loadTestMetrics.Mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -450,8 +455,8 @@ func (pc *PrometheusLoadTestCollector) handlePerformanceMetrics(w http.ResponseW
 }
 
 func (pc *PrometheusLoadTestCollector) handleRegressionMetrics(w http.ResponseWriter, r *http.Request) {
-	pc.loadTestMetrics.mutex.RLock()
-	defer pc.loadTestMetrics.mutex.RUnlock()
+	pc.loadTestMetrics.Mutex.RLock()
+	defer pc.loadTestMetrics.Mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(pc.loadTestMetrics.BaselineComparison); err != nil {
@@ -473,8 +478,8 @@ func (pc *PrometheusLoadTestCollector) handleHealthCheck(w http.ResponseWriter, 
 }
 
 func (pc *PrometheusLoadTestCollector) handleDashboardData(w http.ResponseWriter, r *http.Request) {
-	pc.loadTestMetrics.mutex.RLock()
-	defer pc.loadTestMetrics.mutex.RUnlock()
+	pc.loadTestMetrics.Mutex.RLock()
+	defer pc.loadTestMetrics.Mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -527,16 +532,16 @@ func (pc *PrometheusLoadTestCollector) detectPerformanceAlerts(ctx context.Conte
 func (pc *PrometheusLoadTestCollector) updateSystemMetrics() {
 	// Implementation would collect actual system metrics
 	// For now, this is a placeholder
-	pc.loadTestMetrics.mutex.Lock()
-	defer pc.loadTestMetrics.mutex.Unlock()
+	pc.loadTestMetrics.Mutex.Lock()
+	defer pc.loadTestMetrics.Mutex.Unlock()
 
 	// Update CPU, memory, network, and disk metrics
 	// This would typically use system monitoring libraries
 }
 
 func (pc *PrometheusLoadTestCollector) checkPerformanceAlerts() {
-	pc.loadTestMetrics.mutex.RLock()
-	defer pc.loadTestMetrics.mutex.RUnlock()
+	pc.loadTestMetrics.Mutex.RLock()
+	defer pc.loadTestMetrics.Mutex.RUnlock()
 
 	for scenario, regression := range pc.loadTestMetrics.BaselineComparison {
 		if pc.shouldTriggerAlert(regression) {

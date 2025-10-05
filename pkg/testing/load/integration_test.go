@@ -206,10 +206,10 @@ func testPrometheusIntegration(t *testing.T, tempDir string, logger log.Logger) 
 	collector.RecordScenarioExecution("Test Scenario", testResult)
 
 	// Verify metrics were recorded
-	collector.loadTestMetrics.mutex.RLock()
+	collector.loadTestMetrics.Mutex.RLock()
 	executions := collector.loadTestMetrics.ScenarioExecutions["Test Scenario"]
 	throughput := collector.loadTestMetrics.ThroughputMBps["Test Scenario"]
-	collector.loadTestMetrics.mutex.RUnlock()
+	collector.loadTestMetrics.Mutex.RUnlock()
 
 	if executions != 1 {
 		t.Errorf("Expected 1 execution, got %d", executions)
@@ -419,12 +419,12 @@ func TestLoadTestFrameworkStress(t *testing.T) {
 	}
 
 	// Verify all metrics were recorded
-	collector.loadTestMetrics.mutex.RLock()
+	collector.loadTestMetrics.Mutex.RLock()
 	totalExecutions := int64(0)
 	for _, executions := range collector.loadTestMetrics.ScenarioExecutions {
 		totalExecutions += executions
 	}
-	collector.loadTestMetrics.mutex.RUnlock()
+	collector.loadTestMetrics.Mutex.RUnlock()
 
 	expectedExecutions := int64(numScenarios * numRecords)
 	if totalExecutions != expectedExecutions {
@@ -493,9 +493,9 @@ func TestLoadTestFrameworkConcurrency(t *testing.T) {
 	}
 
 	// Verify metrics consistency
-	collector.loadTestMetrics.mutex.RLock()
+	collector.loadTestMetrics.Mutex.RLock()
 	totalScenarios := len(collector.loadTestMetrics.ScenarioExecutions)
-	collector.loadTestMetrics.mutex.RUnlock()
+	collector.loadTestMetrics.Mutex.RUnlock()
 
 	if totalScenarios != numGoroutines {
 		t.Errorf("Expected %d scenarios, got %d", numGoroutines, totalScenarios)

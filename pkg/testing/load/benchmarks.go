@@ -182,7 +182,7 @@ func (bs *BenchmarkSuite) RunFullBenchmarkSuite(scenarios []ScenarioConfig) (*Co
 		bs.logger.Error("Failed to save benchmark results", err)
 	}
 
-	bs.logger.Info(fmt.Sprintf("Benchmark suite completed duration=%v total_results=%d", report.TotalDuration, bs.countTotalResults(report.BenchmarkResults)))
+	bs.logger.Info(fmt.Sprintf("Benchmark suite completed duration=%v total_results=%d", report.TotalDuration, bs.CountTotalResults(report.BenchmarkResults)))
 
 	return report, nil
 }
@@ -580,7 +580,8 @@ func (bs *BenchmarkSuite) saveResults(report *ComprehensiveBenchmarkReport) erro
 	return os.WriteFile(resultsFile, data, 0600)
 }
 
-func (bs *BenchmarkSuite) countTotalResults(results map[string][]BenchmarkResult) int {
+// CountTotalResults counts all results across all tools
+func (bs *BenchmarkSuite) CountTotalResults(results map[string][]BenchmarkResult) int {
 	count := 0
 	for _, toolResults := range results {
 		count += len(toolResults)
