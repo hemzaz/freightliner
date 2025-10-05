@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go:*)",
+      "Bash(make:*)",
+      "Bash(docker:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(gosec:*)",
+      "Bash(staticcheck:*)",
+      "Bash(./freightliner:*)",
+      "Bash(./bin/freightliner:*)",
+      "Bash(./scripts/*)",
+      "WebFetch(domain:golang.org)",
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.claude.com)"
+    ],
+    "deny": []
+  }
+}

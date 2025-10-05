@@ -4,7 +4,26 @@ on:
   schedule:
     # Run daily security monitoring at 02:00 UTC
     - cron: '0 2 * * *'
-  workflow_dispatch:  # Security: No inputs allowed (CKV_GHA_7)
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan to perform'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - dependencies-only
+          - containers-only
+      alert_level:
+        description: 'Minimum alert level threshold'
+        required: false
+        default: 'high'
+        type: choice
+        options:
+          - critical
+          - high
+          - medium
 
 # Security: Minimal permissions for monitoring
 permissions:
@@ -175,7 +194,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: security-posture
     timeout-minutes: 25
-    if: inputs.scan_type == 'full' || inputs.scan_type == 'dependencies-only' || github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == 'dependencies-only'
     
     steps:
       - name: Harden Runner
@@ -253,7 +272,7 @@ jobs:
           alert_threshold_critical=0
           alert_threshold_high=2
           
-          case "${{ inputs.alert_level || 'high' }}" in
+          case "${{ github.event.inputs.alert_level || 'high' }}" in
             "critical") alert_needed=$([[ $critical_vulns -gt $alert_threshold_critical ]] && echo "true" || echo "false") ;;
             "high") alert_needed=$([[ $high_vulns -gt $alert_threshold_high ]] && echo "true" || echo "false") ;;
             *) alert_needed=$([[ $total_vulns -gt 5 ]] && echo "true" || echo "false") ;;
@@ -275,7 +294,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: security-posture
     timeout-minutes: 20
-    if: inputs.scan_type == 'full' || inputs.scan_type == 'containers-only' || github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event.inputs.scan_type == 'full' || github.event.inputs.scan_type == 'containers-only'
     
     steps:
       - name: Harden Runner
