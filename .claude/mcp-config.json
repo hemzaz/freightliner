@@ -1,0 +1,88 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/user/freightliner"
+      ],
+      "description": "File system access for Freightliner project",
+      "enabled": true
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "description": "GitHub API access for issues, PRs, and repository management",
+      "enabled": true
+    },
+    "aws": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-aws"
+      ],
+      "env": {
+        "AWS_REGION": "us-east-1"
+      },
+      "description": "AWS API access for ECR and other AWS services",
+      "enabled": true
+    },
+    "google-cloud": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-google-cloud"
+      ],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_APPLICATION_CREDENTIALS}"
+      },
+      "description": "Google Cloud API access for GCR and Artifact Registry",
+      "enabled": true
+    },
+    "kubernetes": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-kubernetes"
+      ],
+      "env": {
+        "KUBECONFIG": "${KUBECONFIG:-~/.kube/config}"
+      },
+      "description": "Kubernetes cluster access for deployments and operations",
+      "enabled": true
+    },
+    "prometheus": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-prometheus"
+      ],
+      "env": {
+        "PROMETHEUS_URL": "${PROMETHEUS_URL:-http://localhost:9090}"
+      },
+      "description": "Prometheus metrics access for monitoring",
+      "enabled": false
+    },
+    "docker": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-docker"
+      ],
+      "description": "Docker daemon access for container operations",
+      "enabled": true
+    }
+  },
+  "globalSettings": {
+    "timeout": 30000,
+    "retries": 3,
+    "logLevel": "info"
+  }
+}

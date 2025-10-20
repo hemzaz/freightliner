@@ -1,0 +1,27 @@
+{
+  "format": "🚂 Freightliner | {git_branch} | {git_status} | Go {go_version} | {project_status}",
+  "components": {
+    "git_branch": {
+      "command": "git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no-git'",
+      "refresh": 5000,
+      "color": "blue"
+    },
+    "git_status": {
+      "command": "git status --porcelain 2>/dev/null | wc -l | awk '{if ($1 == 0) print \"✓\"; else print \"⚠ \" $1 \" changes\"}'",
+      "refresh": 5000,
+      "color": "auto"
+    },
+    "go_version": {
+      "command": "go version | awk '{print $3}' | sed 's/go//'",
+      "refresh": 60000,
+      "color": "cyan"
+    },
+    "project_status": {
+      "command": "if [ -f ./freightliner ]; then echo '✓ Built'; else echo '✗ Not built'; fi",
+      "refresh": 10000,
+      "color": "auto"
+    }
+  },
+  "refreshInterval": 5000,
+  "enabled": true
+}
