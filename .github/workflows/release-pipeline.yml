@@ -12,7 +12,7 @@ on:
         type: string
 
 env:
-  GO_VERSION: '1.24.5'
+  GO_VERSION: '1.24.x'  # Use latest 1.24 patch version
   REGISTRY: ghcr.io
   IMAGE_NAME: hemzaz/freightliner
 
