@@ -32,7 +32,7 @@ concurrency:
 
 env:
   GO_VERSION: '1.24.5'
-  GOLANGCI_LINT_VERSION: 'v1.62.2'
+  GOLANGCI_LINT_VERSION: 'v1.64.2'
   # Security hardening settings
   SECURITY_SCANNING_ENABLED: 'true'
   VULNERABILITY_THRESHOLD: 'high'
