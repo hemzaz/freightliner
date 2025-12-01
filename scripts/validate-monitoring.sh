@@ -145,7 +145,9 @@ test_grafana_health() {
 
 test_grafana_datasource() {
     log_test "Checking Grafana datasources"
-    local response=$(curl -sf -u admin:admin http://localhost:3000/api/datasources 2>/dev/null)
+    local grafana_user="${GRAFANA_ADMIN_USER:-admin}"
+    local grafana_pass="${GRAFANA_ADMIN_PASSWORD:-admin}"
+    local response=$(curl -sf -u "${grafana_user}:${grafana_pass}" http://localhost:3000/api/datasources 2>/dev/null)
     if [ -n "$response" ]; then
         if echo "$response" | grep -q "Prometheus"; then
             log_pass "Grafana Prometheus datasource is configured"

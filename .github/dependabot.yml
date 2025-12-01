@@ -99,7 +99,7 @@ updates:
         patterns:
           - "step-security/harden-runner"
           - "github/codeql-action"
-          - "securecodewarrior/github-action-gosec"
+          - "securego/gosec"
           - "aquasecurity/trivy-action"
           - "gitleaks/gitleaks-action"
         update-types:

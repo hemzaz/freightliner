@@ -161,10 +161,15 @@ paths = [
     ".*_test\\.go",
     ".*/testdata/.*",
     ".*/test/.*",
+    ".*/tests/.*",
     ".*/examples/.*",
+    ".*\\.example$",
+    ".*\\.example\\..*",
     ".*\\.md",
     ".*\\.txt",
     ".*/docs/.*",
+    ".*/mocks/.*",
+    ".*/monitoring/alertmanager/.*",
 ]
 
 # Regular expressions for files to ignore

@@ -41,6 +41,16 @@ config.yaml
 *.key
 *.log
 
+# Secrets and sensitive files
+.env.secrets
+.env.secrets.*
+.env.local
+.env.production
+*.backup
+*.backup.*
+service-account.json
+credentials.json
+
 test_output_full.txt
 GOTEST_OUTPUT.md
 

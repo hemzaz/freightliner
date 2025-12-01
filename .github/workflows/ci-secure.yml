@@ -34,7 +34,7 @@ permissions:
   checks: write
 
 env:
-  GO_VERSION: '1.24.5'
+  GO_VERSION: '1.25.4'
   GOLANGCI_LINT_VERSION: 'v1.62.2'
   # SECURITY: Pipeline reliability settings with input validation
   PIPELINE_RELIABILITY_ENABLED: 'true'
@@ -410,7 +410,7 @@ jobs:
           echo "🔒 Running Gosec security analysis"
           
           # SECURITY: Install and run gosec
-          go install github.com/securecodewarrior/github-action-gosec/cmd/gosec@latest
+          go install github.com/securego/gosec/cmd/gosec@latest
           
           gosec -no-fail -fmt sarif -out gosec-results.sarif ./...
           
