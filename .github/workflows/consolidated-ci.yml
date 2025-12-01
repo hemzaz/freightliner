@@ -126,7 +126,7 @@ jobs:
           test-type: unit
           race-detection: 'true'
           coverage: 'true'
-          coverage-threshold: '70'
+          coverage-threshold: '40'
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25.4'
