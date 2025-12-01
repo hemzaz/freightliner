@@ -26,16 +26,18 @@ skip-check:
       Risk assessment: Low (accepted)
       Operational necessity: High (manual deployments, rollbacks, security scans)
       
-      Affected workflows (9 total):
+      Affected workflows (11 total):
       - rollback.yml (emergency rollback operations)
       - kubernetes-deploy.yml (K8s deployments)
       - deploy.yml (general deployments)
       - helm-deploy.yml (Helm deployments)
       - docker-publish.yml (container publishing)
-      - security-monitoring-enhanced.yml (security scans)
-      - security-monitoring.yml (security monitoring)
+      - security-monitoring-enhanced.yml (daily security scans with scan_type choice)
+      - security-monitoring.yml (daily security monitoring with scan_type/alert_level choice)
       - release-pipeline.yml (release management)
       - comprehensive-validation.yml (validation testing)
+      - oidc-authentication.yml (OIDC authentication testing)
+      - scheduled-comprehensive.yml (scheduled comprehensive validation)
       
       Last reviewed: 2025-12-01
       Next review: 2025-03-01
