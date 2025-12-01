@@ -8,7 +8,10 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 GO_VERSION ?= 1.23.4
 
 # Build flags
-LDFLAGS := -w -s -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)
+LDFLAGS := -w -s \
+	-X freightliner/cmd.version=$(VERSION) \
+	-X freightliner/cmd.buildTime=$(BUILD_TIME) \
+	-X freightliner/cmd.gitCommit=$(GIT_COMMIT)
 BUILD_FLAGS := -a -installsuffix cgo -ldflags "$(LDFLAGS)"
 
 # Test configuration  
@@ -62,6 +65,10 @@ build: ## Build the application
 	@echo "🔨 Building freightliner..."
 	@mkdir -p bin
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o bin/freightliner .
+
+.PHONY: banner
+banner: ## Display ASCII banner
+	@go run -ldflags "$(LDFLAGS)" . version --banner
 
 .PHONY: build-race
 build-race: ## Build with race detection

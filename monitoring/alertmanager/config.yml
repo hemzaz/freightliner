@@ -1,0 +1,119 @@
+# AlertManager Configuration for Freightliner
+# Handles alert routing and notification delivery
+
+global:
+  resolve_timeout: 5m
+  # SMTP configuration (optional)
+  # smtp_smarthost: 'smtp.gmail.com:587'
+  # smtp_from: 'alerts@freightliner.io'
+  # smtp_auth_username: 'alerts@freightliner.io'
+  # smtp_auth_password: 'password'
+  # smtp_require_tls: true
+
+# Root route with default receiver
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical'
+      continue: true
+      group_wait: 0s
+      repeat_interval: 5m
+
+    # Warning alerts - batched notifications
+    - match:
+        severity: warning
+      receiver: 'warning'
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Info alerts - daily digest
+    - match:
+        severity: info
+      receiver: 'info'
+      group_wait: 5m
+      repeat_interval: 24h
+
+# Inhibition rules - suppress certain alerts when others fire
+inhibit_rules:
+  # Suppress warning if critical alert for same service
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service', 'instance']
+
+  # Suppress info if warning alert for same service
+  - source_match:
+      severity: 'warning'
+    target_match:
+      severity: 'info'
+    equal: ['alertname', 'service', 'instance']
+
+# Alert receivers configuration
+receivers:
+  # Default receiver - logs only
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  # Critical alerts receiver
+  - name: 'critical'
+    # Slack configuration (example)
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+    #     channel: '#critical-alerts'
+    #     title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+    # PagerDuty configuration (example)
+    # pagerduty_configs:
+    #   - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+    #     severity: 'critical'
+    #     description: '{{ .GroupLabels.alertname }}'
+    #     client: 'Freightliner/AlertManager'
+
+    # Email configuration (example)
+    # email_configs:
+    #   - to: 'oncall@freightliner.io'
+    #     from: 'alerts@freightliner.io'
+    #     headers:
+    #       Subject: 'CRITICAL ALERT: {{ .GroupLabels.alertname }}'
+    #     html: '{{ range .Alerts }}{{ .Annotations.description }}<br>{{ end }}'
+    #     send_resolved: true
+
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/critical'
+        send_resolved: true
+
+  # Warning alerts receiver
+  - name: 'warning'
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+    #     channel: '#alerts'
+    #     title: 'WARNING: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/warning'
+        send_resolved: true
+
+  # Info alerts receiver
+  - name: 'info'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/info'
+        send_resolved: true
+
+# Templates for notification formatting (optional)
+# templates:
+#   - '/etc/alertmanager/templates/*.tmpl'

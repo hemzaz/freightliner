@@ -17,7 +17,7 @@ terraform {
 
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
-  
+
   # Common tags for all resources
   common_tags = merge(var.tags, {
     Project     = var.project_name
@@ -246,14 +246,18 @@ resource "aws_lambda_function" "pipeline_metrics_collector" {
 
   environment {
     variables = {
-      GITHUB_TOKEN         = var.github_token
-      GITHUB_OWNER         = var.github_owner
-      GITHUB_REPO          = var.github_repo
-      DYNAMODB_TABLE       = aws_dynamodb_table.pipeline_metadata.name
-      S3_BUCKET           = aws_s3_bucket.monitoring_data.id
-      SNS_CRITICAL_TOPIC  = aws_sns_topic.critical_alerts.arn
-      SNS_WARNING_TOPIC   = aws_sns_topic.warning_alerts.arn
-      LOG_LEVEL           = var.log_level
+      GITHUB_TOKEN                    = var.github_token
+      GITHUB_OWNER                    = var.github_owner
+      GITHUB_REPO                     = var.github_repo
+      DYNAMODB_TABLE                  = aws_dynamodb_table.pipeline_metadata.name
+      DYNAMODB_TABLE_CIRCUIT_BREAKER  = aws_dynamodb_table.circuit_breaker_state.name
+      S3_BUCKET                       = aws_s3_bucket.monitoring_data.id
+      SNS_CRITICAL_TOPIC              = aws_sns_topic.critical_alerts.arn
+      SNS_WARNING_TOPIC               = aws_sns_topic.warning_alerts.arn
+      CIRCUIT_BREAKER_ENABLED         = var.enable_circuit_breaker
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD = var.circuit_breaker_failure_threshold
+      CIRCUIT_BREAKER_TIMEOUT         = var.circuit_breaker_timeout_seconds
+      LOG_LEVEL                       = var.log_level
     }
   }
 
@@ -267,6 +271,7 @@ resource "aws_lambda_function" "pipeline_metrics_collector" {
   depends_on = [
     aws_iam_role_policy_attachment.lambda_vpc_execution,
     aws_cloudwatch_log_group.ci_pipeline_metrics,
+    aws_dynamodb_table.circuit_breaker_state,
   ]
 }
 

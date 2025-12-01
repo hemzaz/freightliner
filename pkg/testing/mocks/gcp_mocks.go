@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"google.golang.org/api/artifactregistry/v1"
 	"google.golang.org/api/iterator"
 )
+
+// ErrIteratorDone is returned when an iterator has no more items
+var ErrIteratorDone = errors.New("no more items in iterator")
 
 // MockGoogleAuth implements a mock HTTP transport for Google authentication
 type MockGoogleAuth struct {
@@ -75,7 +79,7 @@ func (m *MockRepositoryIterator) Next() (*artifactregistry.Repository, error) {
 	}
 
 	if m.index >= len(m.repos) {
-		return nil, iterator.Done
+		return nil, ErrIteratorDone
 	}
 
 	repo := m.repos[m.index]

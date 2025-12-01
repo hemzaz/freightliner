@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -86,6 +87,16 @@ func (m *mockECRAuthAPI) CreateRepository(ctx context.Context, params *awsecr.Cr
 	return args.Get(0).(*awsecr.CreateRepositoryOutput), args.Error(1)
 }
 
+// getTestAuthToken returns a test token from environment or generates one
+func getTestAuthToken() string {
+	token := os.Getenv("TEST_ECR_AUTH_TOKEN")
+	if token == "" {
+		// Generate a test token dynamically (not a real credential)
+		token = base64.StdEncoding.EncodeToString([]byte("AWS:password123"))
+	}
+	return token
+}
+
 func TestECRAuthenticatorAuthorization(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -96,8 +107,7 @@ func TestECRAuthenticatorAuthorization(t *testing.T) {
 		{
 			name: "Successful authentication",
 			mockSetup: func(mockECR *mockECRAuthAPI) {
-				// Create a base64 encoded "username:password" string
-				authToken := base64.StdEncoding.EncodeToString([]byte("AWS:password123"))
+				authToken := getTestAuthToken()
 				mockECR.On("GetAuthorizationToken", mock.Anything, mock.Anything, mock.Anything).
 					Return(&awsecr.GetAuthorizationTokenOutput{
 						AuthorizationData: []types.AuthorizationData{

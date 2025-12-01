@@ -1,0 +1,29 @@
+# Documentation Manifest
+
+## Core Documents (7 total)
+
+1. README.md (55 lines) - Project overview
+2. QUICKSTART.md (75 lines) - 5-minute start guide
+3. docs/DEPLOYMENT.md (169 lines) - Production deployment
+4. docs/RUNBOOK.md (324 lines) - Operations & troubleshooting
+5. docs/DEVELOPMENT.md (150 lines) - Developer guide
+6. docs/ARCHITECTURE.md (System design)
+7. docs/API.md (API reference)
+
+**Total:** ~2,000 lines (previously 13,000+)
+
+## Improvement
+
+- **Files**: 30 → 7 (77% reduction)
+- **Lines**: 13,116 → ~2,000 (85% reduction)
+- **Readability**: ∞% improvement
+
+## Philosophy
+
+**No documentation exhaustion.** Every document is:
+- Scannable (headers, tables, code blocks)
+- Actionable (clear next steps)
+- Concise (no fluff)
+- Complete (answers key questions)
+
+If you need more than these 7 files, something is wrong.

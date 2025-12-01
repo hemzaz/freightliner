@@ -1,0 +1,281 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "freightliner-business",
+    "title": "Freightliner - Business Metrics",
+    "tags": ["freightliner", "business", "kpi"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "1m",
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Total Replications (24h)",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replications_total[24h]))",
+            "legendFormat": "Replications"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 100, "color": "yellow"},
+                {"value": 1000, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Data Replicated (24h)",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replication_bytes_total[24h])) / 1024 / 1024 / 1024",
+            "legendFormat": "GB"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "gbytes",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Success Rate (24h)",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replications_total{status=\"success\"}[24h])) / sum(increase(freightliner_replications_total[24h]))",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.99, "color": "yellow"},
+                {"value": 0.999, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Estimated Transfer Cost (24h)",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replication_bytes_total[24h])) / 1024 / 1024 / 1024 * 0.01",
+            "legendFormat": "Cost USD"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Replications per Hour",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replications_total[1h]))",
+            "legendFormat": "Replications/hour"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "drawStyle": "bars",
+              "lineInterpolation": "smooth"
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Data Transfer per Hour (GB)",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replication_bytes_total[1h])) / 1024 / 1024 / 1024",
+            "legendFormat": "GB/hour"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "gbytes",
+            "custom": {
+              "drawStyle": "bars"
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "type": "table",
+        "title": "Top Repositories by Replication Count",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "topk(20, sum by (source_repo) (increase(freightliner_tag_copy_total[24h])))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "source_repo": "Repository",
+                "Value": "Replications"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "type": "table",
+        "title": "Top Repositories by Data Transfer",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "topk(20, sum by (source_repo) (increase(freightliner_tag_copy_bytes_total[24h]))) / 1024 / 1024 / 1024",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "source_repo": "Repository",
+                "Value": "GB Transferred"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "type": "timeseries",
+        "title": "Success Rate Trend",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replications_total{status=\"success\"}[1h])) / sum(increase(freightliner_replications_total[1h]))",
+            "legendFormat": "Hourly Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0.9,
+            "max": 1.0,
+            "custom": {
+              "lineInterpolation": "smooth"
+            }
+          }
+        }
+      },
+      {
+        "id": 10,
+        "type": "timeseries",
+        "title": "Cost Trend (Hourly)",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replication_bytes_total[1h])) / 1024 / 1024 / 1024 * 0.01",
+            "legendFormat": "Estimated Cost USD/hour"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "custom": {
+              "drawStyle": "bars"
+            }
+          }
+        }
+      },
+      {
+        "id": 11,
+        "type": "piechart",
+        "title": "Traffic Distribution by Registry Pair",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 30},
+        "targets": [
+          {
+            "expr": "sum by (source_registry, dest_registry) (increase(freightliner_replication_bytes_total[24h]))",
+            "legendFormat": "{{source_registry}} → {{dest_registry}}"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "type": "bargauge",
+        "title": "Layers Transferred (24h)",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 30},
+        "targets": [
+          {
+            "expr": "topk(10, sum by (source_registry, dest_registry) (increase(freightliner_replication_layers_total[24h])))",
+            "legendFormat": "{{source_registry}} → {{dest_registry}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "time_range",
+          "type": "interval",
+          "label": "Time Range",
+          "auto": true,
+          "auto_count": 30,
+          "auto_min": "1h",
+          "options": ["1h", "6h", "12h", "24h", "7d", "30d"]
+        }
+      ]
+    }
+  }
+}

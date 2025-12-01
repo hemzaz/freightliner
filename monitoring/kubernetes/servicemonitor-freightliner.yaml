@@ -1,0 +1,74 @@
+---
+# ServiceMonitor for Freightliner application
+# Requires Prometheus Operator to be installed
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: freightliner
+  namespace: freightliner
+  labels:
+    app: freightliner
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: freightliner
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: http
+      honorLabels: true
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+
+---
+# PodMonitor for additional pod-level monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: freightliner-pods
+  namespace: freightliner
+  labels:
+    app: freightliner
+spec:
+  selector:
+    matchLabels:
+      app: freightliner
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      honorLabels: true
+
+---
+# Example Freightliner service with metrics endpoint
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner
+  namespace: freightliner
+  labels:
+    app: freightliner
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "2112"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: metrics
+      port: 2112
+      targetPort: 2112
+      protocol: TCP
+  selector:
+    app: freightliner

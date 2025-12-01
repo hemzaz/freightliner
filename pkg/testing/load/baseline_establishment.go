@@ -15,6 +15,22 @@ import (
 )
 
 // BaselineEstablishmentSuite handles establishing performance baselines and scalability limits
+//
+// IMPORTANT: Baseline establishment should NOT be performed during automated test runs.
+// Baselines must be established manually in production or staging environments with:
+//   - Stable, representative hardware matching production
+//   - No other load or background processes
+//   - Multiple runs to ensure statistical validity
+//   - Proper warmup and cooldown periods
+//
+// To establish baselines:
+//   1. Deploy application to production/staging environment
+//   2. Run: go run cmd/establish-baselines/main.go (or equivalent tool)
+//   3. Review baseline results in the output directory
+//   4. Commit baseline JSON files to the repository
+//   5. Use committed baselines for regression testing
+//
+// Regression tests will skip gracefully if baseline data is not available.
 type BaselineEstablishmentSuite struct {
 	logger          log.Logger
 	resultsDir      string

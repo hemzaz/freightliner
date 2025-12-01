@@ -1,0 +1,67 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+bases:
+  - ../../base
+
+# Production ingress with TLS
+patchesStrategicMerge:
+  - ingress.yaml
+
+# Production configuration
+# Update domain and API endpoint for your production environment
+configMapGenerator:
+  - name: grafana-config
+    behavior: merge
+    literals:
+      - DEPLOYMENT_MODE=production
+      - GRAFANA_ROOT_URL=https://grafana.your-domain.com
+      - EXTERNAL_IP=
+      - API_BASE_URL=https://api.your-domain.com
+      - GF_SERVER_DOMAIN=grafana.your-domain.com
+      - GF_SERVER_PROTOCOL=https
+
+# Production resource allocation
+patchesJson6902:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: grafana
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: app
+                        operator: In
+                        values:
+                          - grafana
+                  topologyKey: kubernetes.io/hostname
+
+  - target:
+      version: v1
+      kind: PersistentVolumeClaim
+      name: grafana-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 20Gi
+
+# Remove default secret (must be created manually in production)
+patchesStrategicMerge:
+  - remove-default-secret.yaml
+
+commonLabels:
+  environment: production
+  deployment-mode: production

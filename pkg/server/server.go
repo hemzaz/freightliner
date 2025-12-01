@@ -76,9 +76,12 @@ func NewServer(ctx context.Context, cfg *config.Config,
 		metricsRegistry:    NewMetricsRegistry(),
 	}
 
+	// Build server address from host and port
+	addr := server.getServerAddr()
+
 	// Create HTTP server
 	server.httpServer = &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Addr:         addr,
 		Handler:      router,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
@@ -99,11 +102,16 @@ func (s *Server) Start() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// Get external URL for logging
+	externalURL := s.GetBaseURL()
+
 	// Start HTTP server in a goroutine
 	go func() {
 		s.logger.WithFields(map[string]interface{}{
-			"address": s.httpServer.Addr,
-			"tls":     s.cfg.Server.TLSEnabled,
+			"address":      s.httpServer.Addr,
+			"external_url": externalURL,
+			"tls":          s.cfg.Server.TLSEnabled,
+			"cors":         s.cfg.Server.EnableCORS,
 		}).Info("Starting HTTP server")
 
 		var err error
@@ -166,13 +174,15 @@ func (s *Server) registerEndpoints() {
 	// API endpoints
 	apiRouter := s.router.PathPrefix("/api/v1").Subrouter()
 
+	// Add CORS middleware if enabled
+	if s.cfg.Server.EnableCORS {
+		apiRouter.Use(s.corsMiddleware)
+	}
+
 	// Add API key authentication middleware if enabled
 	if s.cfg.Server.APIKeyAuth {
 		apiRouter.Use(s.apiKeyMiddleware)
 	}
-
-	// CORS middleware for all API endpoints
-	apiRouter.Use(s.corsMiddleware)
 
 	// Register specific API endpoints
 	apiRouter.HandleFunc("/replicate", s.replicateHandler).Methods("POST")
@@ -234,4 +244,59 @@ func (s *Server) writeErrorResponse(w http.ResponseWriter, statusCode int, messa
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		s.logger.Error("Failed to encode error response", err)
 	}
+}
+
+// getServerAddr constructs the server address from host and port
+func (s *Server) getServerAddr() string {
+	host := s.cfg.Server.Host
+	port := s.cfg.Server.Port
+
+	// Handle empty host (bind to all interfaces)
+	if host == "" {
+		host = "0.0.0.0"
+	}
+
+	// Format address
+	if host == "0.0.0.0" || host == "::" {
+		// Bind to all interfaces - just use port
+		return fmt.Sprintf(":%d", port)
+	}
+
+	// Specific host binding
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
+// GetBaseURL returns the base URL for external access
+func (s *Server) GetBaseURL() string {
+	// Use external URL if configured
+	if s.cfg.Server.ExternalURL != "" {
+		return s.cfg.Server.ExternalURL
+	}
+
+	// Construct from host and port
+	protocol := "http"
+	if s.cfg.Server.TLSEnabled {
+		protocol = "https"
+	}
+
+	host := s.cfg.Server.Host
+	port := s.cfg.Server.Port
+
+	// Handle special cases
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		// Binding to all interfaces - use localhost for URL
+		host = "localhost"
+	}
+
+	// Standard ports don't need to be in URL
+	if (protocol == "http" && port == 80) || (protocol == "https" && port == 443) {
+		return fmt.Sprintf("%s://%s", protocol, host)
+	}
+
+	return fmt.Sprintf("%s://%s:%d", protocol, host, port)
+}
+
+// GetAPIBaseURL returns the full API base URL
+func (s *Server) GetAPIBaseURL() string {
+	return s.GetBaseURL() + "/api/v1"
 }

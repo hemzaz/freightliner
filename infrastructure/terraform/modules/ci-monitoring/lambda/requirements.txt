@@ -1,0 +1,25 @@
+# Python dependencies for CI/CD monitoring Lambda functions
+# Version pinned for reproducibility and security
+
+# AWS SDK
+boto3==1.34.10
+botocore==1.34.10
+
+# HTTP and API requests
+requests==2.31.0
+urllib3==2.1.0
+certifi==2023.11.17
+charset-normalizer==3.3.2
+idna==3.6
+
+# Data processing and statistics
+numpy==1.26.3
+
+# Datetime utilities
+python-dateutil==2.8.2
+
+# JSON handling (included in Python stdlib, but listing for documentation)
+# json - built-in
+
+# Additional production dependencies
+typing-extensions==4.9.0

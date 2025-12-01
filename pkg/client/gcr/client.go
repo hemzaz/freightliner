@@ -21,6 +21,15 @@ import (
 	"google.golang.org/api/option"
 )
 
+const (
+	// LocationAsia represents the Asia GCR location
+	LocationAsia = "asia"
+	// LocationEU represents the European GCR location
+	LocationEU = "eu"
+	// LocationUS represents the US GCR location
+	LocationUS = "us"
+)
+
 // Client implements the registry client interface for Google Container Registry
 type Client struct {
 	logger         log.Logger
@@ -48,15 +57,16 @@ type ClientOptions struct {
 
 // GetRegistryName returns the registry hostname for this client
 func (c *Client) GetRegistryName() string {
-	if c.location == "us" {
+	if c.location == LocationUS {
 		return "gcr.io"
-	} else if c.location == "eu" {
-		return "eu.gcr.io"
-	} else if c.location == "asia" {
-		return "asia.gcr.io"
-	} else {
-		return fmt.Sprintf("%s-docker.pkg.dev", c.location)
 	}
+	if c.location == LocationEU {
+		return "eu.gcr.io"
+	}
+	if c.location == LocationAsia {
+		return "asia.gcr.io"
+	}
+	return fmt.Sprintf("%s-docker.pkg.dev", c.location)
 }
 
 // NewClient creates a new GCR client
@@ -138,7 +148,8 @@ func (c *Client) GetRepository(ctx context.Context, repoName string) (interfaces
 // CreateRepository creates a new repository in GCR - implements interfaces.RepositoryCreator
 // Note: In GCR/Artifact Registry, repositories are created automatically when the first image is pushed
 // This method essentially validates the repository name and returns a repository reference
-func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map[string]string) (interfaces.Repository, error) {
+// The tags parameter is accepted for interface compatibility but not used in GCR
+func (c *Client) CreateRepository(ctx context.Context, repoName string, _ map[string]string) (interfaces.Repository, error) {
 	// Input validation
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -197,10 +208,10 @@ func (c *Client) ListRepositories(ctx context.Context, prefix string) ([]string,
 }
 
 // listRepositoriesViaAR uses the Artifact Registry API to list repositories
-func (c *Client) listRepositoriesViaAR(ctx context.Context, prefix string) ([]string, error) {
+func (c *Client) listRepositoriesViaAR(_ context.Context, prefix string) ([]string, error) {
 	// Determine the location parameter
 	location := c.location
-	if location == "us" || location == "eu" || location == "asia" {
+	if location == LocationUS || location == LocationEU || location == LocationAsia {
 		location = "us-central1" // Map legacy locations to GCP regions
 	}
 
@@ -224,11 +235,11 @@ func (c *Client) listRepositoriesViaAR(ctx context.Context, prefix string) ([]st
 
 	// Use iterator pattern to list all repositories
 	it := makeRepositoryIterator(req)
-	var repositories []string
+	repositories := make([]string, 0, 10) // Pre-allocate for common case
 
 	for {
 		repo, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -255,11 +266,11 @@ func (c *Client) listRepositoriesViaAR(ctx context.Context, prefix string) ([]st
 func (c *Client) listRepositoriesViaGCR(ctx context.Context, prefix string) ([]string, error) {
 	// Determine registry path based on location
 	var registryPath string
-	if c.location == "us" {
+	if c.location == LocationUS {
 		registryPath = fmt.Sprintf("gcr.io/%s", c.project)
-	} else if c.location == "eu" {
+	} else if c.location == LocationEU {
 		registryPath = fmt.Sprintf("eu.gcr.io/%s", c.project)
-	} else if c.location == "asia" {
+	} else if c.location == LocationAsia {
 		registryPath = fmt.Sprintf("asia.gcr.io/%s", c.project)
 	} else {
 		registryPath = fmt.Sprintf("%s-docker.pkg.dev/%s", c.location, c.project)
@@ -303,7 +314,7 @@ func (c *Client) listRepositoriesViaGCR(ctx context.Context, prefix string) ([]s
 	}
 
 	// Convert map to slice
-	var repositories []string
+	repositories := make([]string, 0, len(repoMap))
 	for repo := range repoMap {
 		repositories = append(repositories, repo)
 	}

@@ -262,7 +262,7 @@ func (c *Client) CreateRepository(ctx context.Context, repoName string, tags map
 	}
 
 	// Convert tags to ECR tag format
-	var ecrTags []ecrtypes.Tag
+	ecrTags := make([]ecrtypes.Tag, 0, len(tags))
 	for k, v := range tags {
 		key, value := k, v
 		ecrTags = append(ecrTags, ecrtypes.Tag{

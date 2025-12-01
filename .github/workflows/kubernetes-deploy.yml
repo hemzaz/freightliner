@@ -1,0 +1,417 @@
+name: Kubernetes Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      image-tag:
+        description: 'Image tag to deploy (default: latest from main)'
+        required: false
+        type: string
+      dry-run:
+        description: 'Perform dry-run deployment'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC authentication
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  KUBECTL_VERSION: 'v1.28.0'
+
+jobs:
+  # =============================================================================
+  # VALIDATE - Pre-deployment validation
+  # =============================================================================
+  validate:
+    name: Validate Deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      image-tag: ${{ steps.resolve.outputs.image-tag }}
+      deployment-ready: ${{ steps.checks.outputs.ready }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.image-tag }}" ]; then
+            IMAGE_TAG="${{ inputs.image-tag }}"
+          else
+            # Get latest tag from main branch
+            IMAGE_TAG="main-$(git rev-parse --short HEAD)"
+          fi
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Using image tag: ${IMAGE_TAG}"
+
+      - name: Validate manifests
+        run: |
+          echo "🔍 Validating Kubernetes manifests..."
+
+          # Create temporary manifest directory
+          mkdir -p manifests
+
+          # Check if k8s directory exists
+          if [ -d "k8s" ] || [ -d "kubernetes" ] || [ -d "deploy" ]; then
+            echo "✅ Kubernetes manifests found"
+          else
+            echo "⚠️ No Kubernetes manifests found - will generate from template"
+          fi
+
+      - name: Pre-deployment checks
+        id: checks
+        run: |
+          echo "✅ Environment: ${{ inputs.environment }}"
+          echo "✅ Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.image-tag }}"
+          echo "✅ Dry-run: ${{ inputs.dry-run }}"
+          echo "ready=true" >> $GITHUB_OUTPUT
+
+  # =============================================================================
+  # DEPLOY - Deploy to Kubernetes
+  # =============================================================================
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://freightliner-${{ inputs.environment }}.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      # NOTE: Configure cloud provider authentication here
+      # For AWS EKS:
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      #     aws-region: ${{ secrets.AWS_REGION }}
+      #
+      # For GCP GKE:
+      # - name: Authenticate to Google Cloud
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      #     service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      #
+      # For Azure AKS:
+      # - name: Azure Login
+      #   uses: azure/login@v1
+      #   with:
+      #     creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Generate Kubernetes manifests
+        run: |
+          echo "📝 Generating Kubernetes manifests for ${{ inputs.environment }}..."
+
+          mkdir -p k8s/generated
+
+          # Generate namespace
+          cat > k8s/generated/namespace.yaml << EOF
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: freightliner-${{ inputs.environment }}
+            labels:
+              app: freightliner
+              environment: ${{ inputs.environment }}
+          EOF
+
+          # Generate deployment
+          cat > k8s/generated/deployment.yaml << EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: freightliner
+            namespace: freightliner-${{ inputs.environment }}
+            labels:
+              app: freightliner
+              environment: ${{ inputs.environment }}
+              version: ${{ needs.validate.outputs.image-tag }}
+          spec:
+            replicas: ${{ inputs.environment == 'production' && 3 || 2 }}
+            selector:
+              matchLabels:
+                app: freightliner
+                environment: ${{ inputs.environment }}
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxSurge: 1
+                maxUnavailable: 0
+            template:
+              metadata:
+                labels:
+                  app: freightliner
+                  environment: ${{ inputs.environment }}
+                  version: ${{ needs.validate.outputs.image-tag }}
+                annotations:
+                  prometheus.io/scrape: "true"
+                  prometheus.io/port: "8080"
+                  prometheus.io/path: "/metrics"
+              spec:
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  fsGroup: 1001
+                containers:
+                - name: freightliner
+                  image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.image-tag }}
+                  imagePullPolicy: Always
+                  ports:
+                  - name: http
+                    containerPort: 8080
+                    protocol: TCP
+                  - name: metrics
+                    containerPort: 9090
+                    protocol: TCP
+                  env:
+                  - name: ENVIRONMENT
+                    value: "${{ inputs.environment }}"
+                  - name: LOG_LEVEL
+                    value: ${{ inputs.environment == 'production' && 'info' || 'debug' }}
+                  resources:
+                    requests:
+                      memory: "128Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  livenessProbe:
+                    httpGet:
+                      path: /healthz
+                      port: http
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                    failureThreshold: 3
+                  readinessProbe:
+                    httpGet:
+                      path: /ready
+                      port: http
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 3
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    readOnlyRootFilesystem: true
+                    capabilities:
+                      drop:
+                      - ALL
+          EOF
+
+          # Generate service
+          cat > k8s/generated/service.yaml << EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: freightliner
+            namespace: freightliner-${{ inputs.environment }}
+            labels:
+              app: freightliner
+              environment: ${{ inputs.environment }}
+          spec:
+            type: ClusterIP
+            ports:
+            - name: http
+              port: 80
+              targetPort: http
+              protocol: TCP
+            - name: metrics
+              port: 9090
+              targetPort: metrics
+              protocol: TCP
+            selector:
+              app: freightliner
+              environment: ${{ inputs.environment }}
+          EOF
+
+          # Generate HPA
+          cat > k8s/generated/hpa.yaml << EOF
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          metadata:
+            name: freightliner
+            namespace: freightliner-${{ inputs.environment }}
+          spec:
+            scaleTargetRef:
+              apiVersion: apps/v1
+              kind: Deployment
+              name: freightliner
+            minReplicas: ${{ inputs.environment == 'production' && 3 || 2 }}
+            maxReplicas: ${{ inputs.environment == 'production' && 10 || 5 }}
+            metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 70
+            - type: Resource
+              resource:
+                name: memory
+                target:
+                  type: Utilization
+                  averageUtilization: 80
+          EOF
+
+          echo "✅ Manifests generated"
+
+      - name: Validate manifests
+        run: |
+          echo "🔍 Validating generated manifests..."
+          kubectl apply --dry-run=client -f k8s/generated/
+
+      # NOTE: Replace with actual kubectl context configuration
+      # - name: Set kubectl context
+      #   run: |
+      #     # For AWS EKS
+      #     aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+      #
+      #     # For GCP GKE
+      #     gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} --region ${{ secrets.GCP_REGION }}
+      #
+      #     # For Azure AKS
+      #     az aks get-credentials --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          echo "🚀 Deploying to ${{ inputs.environment }}..."
+
+          DRY_RUN_FLAG=""
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run=server"
+            echo "⚠️ Running in DRY-RUN mode"
+          fi
+
+          # Apply manifests
+          kubectl apply $DRY_RUN_FLAG -f k8s/generated/namespace.yaml
+          kubectl apply $DRY_RUN_FLAG -f k8s/generated/deployment.yaml
+          kubectl apply $DRY_RUN_FLAG -f k8s/generated/service.yaml
+          kubectl apply $DRY_RUN_FLAG -f k8s/generated/hpa.yaml
+
+          echo "✅ Deployment completed"
+
+      - name: Wait for rollout
+        if: inputs.dry-run != true
+        run: |
+          echo "⏳ Waiting for rollout to complete..."
+          kubectl rollout status deployment/freightliner \
+            -n freightliner-${{ inputs.environment }} \
+            --timeout=5m
+
+      - name: Verify deployment
+        if: inputs.dry-run != true
+        run: |
+          echo "🔍 Verifying deployment..."
+
+          # Get deployment status
+          kubectl get deployment freightliner -n freightliner-${{ inputs.environment }}
+
+          # Get pods
+          kubectl get pods -n freightliner-${{ inputs.environment }} -l app=freightliner
+
+          # Get service
+          kubectl get service freightliner -n freightliner-${{ inputs.environment }}
+
+      - name: Run smoke tests
+        if: inputs.dry-run != true
+        run: |
+          echo "🧪 Running smoke tests..."
+
+          # Port forward to test service
+          kubectl port-forward -n freightliner-${{ inputs.environment }} \
+            svc/freightliner 8080:80 &
+          PF_PID=$!
+
+          sleep 5
+
+          # Test health endpoint
+          if curl -f http://localhost:8080/healthz; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            kill $PF_PID
+            exit 1
+          fi
+
+          kill $PF_PID
+
+      - name: Upload manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-manifests-${{ inputs.environment }}
+          path: k8s/generated/
+          retention-days: 90
+
+  # =============================================================================
+  # NOTIFY - Deployment notification
+  # =============================================================================
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [validate, deploy]
+    if: always()
+
+    steps:
+      - name: Generate deployment summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🚀 Kubernetes Deployment
+
+          ### Deployment Details
+          - **Environment**: ${{ inputs.environment }}
+          - **Image Tag**: ${{ needs.validate.outputs.image-tag }}
+          - **Dry Run**: ${{ inputs.dry-run }}
+          - **Status**: ${{ needs.deploy.result }}
+
+          ### Deployment Information
+          - **Namespace**: freightliner-${{ inputs.environment }}
+          - **Deployment**: freightliner
+          - **Service**: freightliner
+          - **Replicas**: ${{ inputs.environment == 'production' && '3-10 (auto-scaled)' || '2-5 (auto-scaled)' }}
+
+          ### Verification Steps
+          ```bash
+          # Check deployment status
+          kubectl get deployment freightliner -n freightliner-${{ inputs.environment }}
+
+          # Check pods
+          kubectl get pods -n freightliner-${{ inputs.environment }} -l app=freightliner
+
+          # Check logs
+          kubectl logs -n freightliner-${{ inputs.environment }} -l app=freightliner --tail=100
+
+          # Port forward for testing
+          kubectl port-forward -n freightliner-${{ inputs.environment }} svc/freightliner 8080:80
+          ```
+
+          ### Rollback Command
+          ```bash
+          # Rollback to previous version if needed
+          kubectl rollout undo deployment/freightliner -n freightliner-${{ inputs.environment }}
+          ```
+          EOF

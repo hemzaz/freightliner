@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+bases:
+  - ../../base
+
+# LoadBalancer service for remote access
+patchesStrategicMerge:
+  - service-loadbalancer.yaml
+
+# Remote deployment configuration
+# Update EXTERNAL_IP and GRAFANA_ROOT_URL based on your infrastructure
+configMapGenerator:
+  - name: grafana-config
+    behavior: merge
+    literals:
+      - DEPLOYMENT_MODE=remote
+      - GRAFANA_ROOT_URL=http://YOUR_EXTERNAL_IP:3000
+      - EXTERNAL_IP=YOUR_EXTERNAL_IP
+      - API_BASE_URL=http://YOUR_API_ENDPOINT:8080
+      - GF_SERVER_DOMAIN=YOUR_EXTERNAL_IP
+      - GF_SERVER_PROTOCOL=http
+
+# Standard resource allocation for remote deployment
+patchesJson6902:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: grafana
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+commonLabels:
+  environment: remote
+  deployment-mode: remote-access

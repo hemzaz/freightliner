@@ -259,7 +259,8 @@ func (rts *RegressionTestSuite) RunRegressionTest(ctx context.Context, triggerRe
 	// Get current baselines
 	baselines := rts.baselineManager.GetCurrentBaselines()
 	if len(baselines) == 0 {
-		return nil, fmt.Errorf("no baselines available for regression testing")
+		return nil, fmt.Errorf("no baselines available for regression testing - baselines must be established manually in production/staging environments. " +
+			"To establish baselines: 1) Deploy to production/staging, 2) Run baseline establishment tool, 3) Commit baseline files to repository")
 	}
 
 	// Create scenarios based on baselines

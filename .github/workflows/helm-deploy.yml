@@ -1,0 +1,567 @@
+name: Helm Chart Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      chart-version:
+        description: 'Helm chart version (leave empty for latest)'
+        required: false
+        type: string
+      image-tag:
+        description: 'Image tag to deploy (default: latest)'
+        required: false
+        type: string
+      dry-run:
+        description: 'Perform dry-run deployment'
+        required: false
+        type: boolean
+        default: false
+      create-namespace:
+        description: 'Create namespace if not exists'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  HELM_VERSION: 'v3.13.0'
+  CHART_NAME: freightliner
+
+jobs:
+  # =============================================================================
+  # PREPARE - Prepare Helm chart
+  # =============================================================================
+  prepare:
+    name: Prepare Helm Chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      chart-version: ${{ steps.version.outputs.chart-version }}
+      image-tag: ${{ steps.version.outputs.image-tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Resolve versions
+        id: version
+        run: |
+          # Chart version
+          if [ -n "${{ inputs.chart-version }}" ]; then
+            CHART_VERSION="${{ inputs.chart-version }}"
+          else
+            CHART_VERSION="$(yq eval '.version' charts/freightliner/Chart.yaml 2>/dev/null || echo '0.1.0')"
+          fi
+
+          # Image tag
+          if [ -n "${{ inputs.image-tag }}" ]; then
+            IMAGE_TAG="${{ inputs.image-tag }}"
+          else
+            IMAGE_TAG="latest"
+          fi
+
+          echo "chart-version=${CHART_VERSION}" >> $GITHUB_OUTPUT
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "Using chart version: ${CHART_VERSION}"
+          echo "Using image tag: ${IMAGE_TAG}"
+
+      - name: Generate Helm chart if not exists
+        run: |
+          if [ ! -d "charts/freightliner" ]; then
+            echo "📦 Generating Helm chart..."
+            mkdir -p charts/freightliner/templates
+
+            # Create Chart.yaml
+            cat > charts/freightliner/Chart.yaml << EOF
+          apiVersion: v2
+          name: ${{ env.CHART_NAME }}
+          description: Freightliner Helm Chart
+          type: application
+          version: ${{ steps.version.outputs.chart-version }}
+          appVersion: ${{ steps.version.outputs.image-tag }}
+          maintainers:
+            - name: Freightliner Team
+          EOF
+
+            # Create values.yaml
+            cat > charts/freightliner/values.yaml << EOF
+          # Default values for freightliner
+          replicaCount: 2
+
+          image:
+            repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            pullPolicy: Always
+            tag: ""
+
+          imagePullSecrets: []
+          nameOverride: ""
+          fullnameOverride: ""
+
+          serviceAccount:
+            create: true
+            annotations: {}
+            name: ""
+
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "8080"
+            prometheus.io/path: "/metrics"
+
+          podSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            fsGroup: 1001
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+
+          service:
+            type: ClusterIP
+            port: 80
+            targetPort: 8080
+            annotations: {}
+
+          ingress:
+            enabled: false
+            className: ""
+            annotations: {}
+            hosts:
+              - host: freightliner.local
+                paths:
+                  - path: /
+                    pathType: ImplementationSpecific
+            tls: []
+
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+          autoscaling:
+            enabled: true
+            minReplicas: 2
+            maxReplicas: 10
+            targetCPUUtilizationPercentage: 70
+            targetMemoryUtilizationPercentage: 80
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          nodeSelector: {}
+          tolerations: []
+          affinity: {}
+
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: LOG_LEVEL
+              value: "info"
+          EOF
+
+            # Create deployment template
+            cat > charts/freightliner/templates/deployment.yaml << 'EOF'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: {{ include "freightliner.fullname" . }}
+            labels:
+              {{- include "freightliner.labels" . | nindent 4 }}
+          spec:
+            {{- if not .Values.autoscaling.enabled }}
+            replicas: {{ .Values.replicaCount }}
+            {{- end }}
+            selector:
+              matchLabels:
+                {{- include "freightliner.selectorLabels" . | nindent 6 }}
+            template:
+              metadata:
+                annotations:
+                  {{- with .Values.podAnnotations }}
+                  {{- toYaml . | nindent 8 }}
+                  {{- end }}
+                labels:
+                  {{- include "freightliner.selectorLabels" . | nindent 8 }}
+              spec:
+                {{- with .Values.imagePullSecrets }}
+                imagePullSecrets:
+                  {{- toYaml . | nindent 8 }}
+                {{- end }}
+                serviceAccountName: {{ include "freightliner.serviceAccountName" . }}
+                securityContext:
+                  {{- toYaml .Values.podSecurityContext | nindent 8 }}
+                containers:
+                - name: {{ .Chart.Name }}
+                  securityContext:
+                    {{- toYaml .Values.securityContext | nindent 12 }}
+                  image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+                  imagePullPolicy: {{ .Values.image.pullPolicy }}
+                  ports:
+                  - name: http
+                    containerPort: {{ .Values.service.targetPort }}
+                    protocol: TCP
+                  livenessProbe:
+                    {{- toYaml .Values.livenessProbe | nindent 12 }}
+                  readinessProbe:
+                    {{- toYaml .Values.readinessProbe | nindent 12 }}
+                  resources:
+                    {{- toYaml .Values.resources | nindent 12 }}
+                  env:
+                    {{- toYaml .Values.env | nindent 12 }}
+                {{- with .Values.nodeSelector }}
+                nodeSelector:
+                  {{- toYaml . | nindent 8 }}
+                {{- end }}
+                {{- with .Values.affinity }}
+                affinity:
+                  {{- toYaml . | nindent 8 }}
+                {{- end }}
+                {{- with .Values.tolerations }}
+                tolerations:
+                  {{- toYaml . | nindent 8 }}
+                {{- end }}
+          EOF
+
+            # Create service template
+            cat > charts/freightliner/templates/service.yaml << 'EOF'
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: {{ include "freightliner.fullname" . }}
+            labels:
+              {{- include "freightliner.labels" . | nindent 4 }}
+            {{- with .Values.service.annotations }}
+            annotations:
+              {{- toYaml . | nindent 4 }}
+            {{- end }}
+          spec:
+            type: {{ .Values.service.type }}
+            ports:
+            - port: {{ .Values.service.port }}
+              targetPort: http
+              protocol: TCP
+              name: http
+            selector:
+              {{- include "freightliner.selectorLabels" . | nindent 4 }}
+          EOF
+
+            # Create helpers template
+            cat > charts/freightliner/templates/_helpers.tpl << 'EOF'
+          {{- define "freightliner.name" -}}
+          {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+          {{- end }}
+
+          {{- define "freightliner.fullname" -}}
+          {{- if .Values.fullnameOverride }}
+          {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+          {{- else }}
+          {{- $name := default .Chart.Name .Values.nameOverride }}
+          {{- if contains $name .Release.Name }}
+          {{- .Release.Name | trunc 63 | trimSuffix "-" }}
+          {{- else }}
+          {{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+
+          {{- define "freightliner.chart" -}}
+          {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+          {{- end }}
+
+          {{- define "freightliner.labels" -}}
+          helm.sh/chart: {{ include "freightliner.chart" . }}
+          {{ include "freightliner.selectorLabels" . }}
+          {{- if .Chart.AppVersion }}
+          app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+          {{- end }}
+          app.kubernetes.io/managed-by: {{ .Release.Service }}
+          {{- end }}
+
+          {{- define "freightliner.selectorLabels" -}}
+          app.kubernetes.io/name: {{ include "freightliner.name" . }}
+          app.kubernetes.io/instance: {{ .Release.Name }}
+          {{- end }}
+
+          {{- define "freightliner.serviceAccountName" -}}
+          {{- if .Values.serviceAccount.create }}
+          {{- default (include "freightliner.fullname" .) .Values.serviceAccount.name }}
+          {{- else }}
+          {{- default "default" .Values.serviceAccount.name }}
+          {{- end }}
+          {{- end }}
+          EOF
+
+            echo "✅ Helm chart generated"
+          else
+            echo "✅ Helm chart already exists"
+          fi
+
+      - name: Validate Helm chart
+        run: |
+          echo "🔍 Validating Helm chart..."
+          helm lint charts/freightliner
+
+      - name: Package Helm chart
+        run: |
+          echo "📦 Packaging Helm chart..."
+          helm package charts/freightliner -d packages/
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: packages/*.tgz
+          retention-days: 90
+
+  # =============================================================================
+  # DEPLOY - Deploy using Helm
+  # =============================================================================
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://freightliner-${{ inputs.environment }}.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Download chart artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helm-chart
+          path: packages/
+
+      # NOTE: Configure cloud provider authentication
+      # See kubernetes-deploy.yml for examples
+
+      - name: Create values override file
+        run: |
+          echo "📝 Creating environment-specific values..."
+
+          cat > values-${{ inputs.environment }}.yaml << EOF
+          image:
+            tag: ${{ needs.prepare.outputs.image-tag }}
+
+          replicaCount: ${{ inputs.environment == 'production' && 3 || 2 }}
+
+          autoscaling:
+            enabled: true
+            minReplicas: ${{ inputs.environment == 'production' && 3 || 2 }}
+            maxReplicas: ${{ inputs.environment == 'production' && 10 || 5 }}
+
+          env:
+            - name: ENVIRONMENT
+              value: "${{ inputs.environment }}"
+            - name: LOG_LEVEL
+              value: ${{ inputs.environment == 'production' && 'info' || 'debug' }}
+
+          resources:
+            limits:
+              cpu: ${{ inputs.environment == 'production' && '1000m' || '500m' }}
+              memory: ${{ inputs.environment == 'production' && '1Gi' || '512Mi' }}
+            requests:
+              cpu: ${{ inputs.environment == 'production' && '200m' || '100m' }}
+              memory: ${{ inputs.environment == 'production' && '256Mi' || '128Mi' }}
+
+          ingress:
+            enabled: ${{ inputs.environment == 'production' && 'true' || 'false' }}
+            className: nginx
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+            hosts:
+              - host: freightliner-${{ inputs.environment }}.example.com
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: freightliner-${{ inputs.environment }}-tls
+                hosts:
+                  - freightliner-${{ inputs.environment }}.example.com
+          EOF
+
+      - name: Deploy with Helm
+        run: |
+          echo "🚀 Deploying with Helm to ${{ inputs.environment }}..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+          RELEASE_NAME="freightliner-${{ inputs.environment }}"
+
+          HELM_FLAGS="--install"
+          HELM_FLAGS="$HELM_FLAGS --namespace $NAMESPACE"
+
+          if [ "${{ inputs.create-namespace }}" = "true" ]; then
+            HELM_FLAGS="$HELM_FLAGS --create-namespace"
+          fi
+
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            HELM_FLAGS="$HELM_FLAGS --dry-run"
+            echo "⚠️ Running in DRY-RUN mode"
+          fi
+
+          HELM_FLAGS="$HELM_FLAGS --values values-${{ inputs.environment }}.yaml"
+          HELM_FLAGS="$HELM_FLAGS --wait --timeout 5m"
+          HELM_FLAGS="$HELM_FLAGS --atomic"  # Rollback on failure
+
+          # Deploy
+          helm upgrade $HELM_FLAGS \
+            $RELEASE_NAME \
+            packages/${{ env.CHART_NAME }}-${{ needs.prepare.outputs.chart-version }}.tgz
+
+          echo "✅ Deployment completed"
+
+      - name: Verify deployment
+        if: inputs.dry-run != true
+        run: |
+          echo "🔍 Verifying Helm deployment..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+          RELEASE_NAME="freightliner-${{ inputs.environment }}"
+
+          # Get release status
+          helm status $RELEASE_NAME -n $NAMESPACE
+
+          # Get release values
+          helm get values $RELEASE_NAME -n $NAMESPACE
+
+          # List releases
+          helm list -n $NAMESPACE
+
+      - name: Run smoke tests
+        if: inputs.dry-run != true
+        run: |
+          echo "🧪 Running smoke tests..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+
+          # Wait for pods to be ready
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/name=freightliner \
+            -n $NAMESPACE \
+            --timeout=5m
+
+          # Test service
+          kubectl get svc -n $NAMESPACE
+
+      - name: Upload manifests
+        if: inputs.dry-run != true
+        run: |
+          echo "📄 Generating deployed manifests..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+          RELEASE_NAME="freightliner-${{ inputs.environment }}"
+
+          mkdir -p deployed-manifests
+
+          helm get manifest $RELEASE_NAME -n $NAMESPACE > deployed-manifests/manifest.yaml
+
+      - name: Upload deployment artifacts
+        if: inputs.dry-run != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-manifests-${{ inputs.environment }}
+          path: deployed-manifests/
+          retention-days: 90
+
+  # =============================================================================
+  # NOTIFY - Deployment notification
+  # =============================================================================
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy]
+    if: always()
+
+    steps:
+      - name: Generate deployment summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🚀 Helm Deployment
+
+          ### Deployment Details
+          - **Environment**: ${{ inputs.environment }}
+          - **Chart Version**: ${{ needs.prepare.outputs.chart-version }}
+          - **Image Tag**: ${{ needs.prepare.outputs.image-tag }}
+          - **Dry Run**: ${{ inputs.dry-run }}
+          - **Status**: ${{ needs.deploy.result }}
+
+          ### Helm Information
+          - **Release**: freightliner-${{ inputs.environment }}
+          - **Namespace**: freightliner-${{ inputs.environment }}
+          - **Chart**: ${{ env.CHART_NAME }}
+
+          ### Verification Commands
+          ```bash
+          # Check release status
+          helm status freightliner-${{ inputs.environment }} -n freightliner-${{ inputs.environment }}
+
+          # Get release values
+          helm get values freightliner-${{ inputs.environment }} -n freightliner-${{ inputs.environment }}
+
+          # Get deployed manifests
+          helm get manifest freightliner-${{ inputs.environment }} -n freightliner-${{ inputs.environment }}
+
+          # Check pods
+          kubectl get pods -n freightliner-${{ inputs.environment }} -l app.kubernetes.io/name=freightliner
+          ```
+
+          ### Rollback Commands
+          ```bash
+          # View release history
+          helm history freightliner-${{ inputs.environment }} -n freightliner-${{ inputs.environment }}
+
+          # Rollback to previous version
+          helm rollback freightliner-${{ inputs.environment }} -n freightliner-${{ inputs.environment }}
+
+          # Rollback to specific revision
+          helm rollback freightliner-${{ inputs.environment }} [REVISION] -n freightliner-${{ inputs.environment }}
+          ```
+          EOF

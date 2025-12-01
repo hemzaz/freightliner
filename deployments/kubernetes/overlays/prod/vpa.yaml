@@ -1,0 +1,28 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: freightliner
+  namespace: freightliner-prod
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: autoscaling
+    environment: production
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: freightliner-prod
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: freightliner
+        minAllowed:
+          cpu: 500m
+          memory: 1Gi
+        maxAllowed:
+          cpu: 8000m
+          memory: 16Gi
+        controlledResources:
+          - cpu
+          - memory

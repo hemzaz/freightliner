@@ -56,10 +56,9 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
-# Docker
-Dockerfile*
+# Docker (keep optimized Dockerfile for builds)
+Dockerfile.dev
 docker-compose*.yml
-.dockerignore
 
 # Misc
 *.bak

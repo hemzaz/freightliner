@@ -58,7 +58,9 @@ resource "aws_iam_role_policy" "lambda_monitoring_policy" {
         ]
         Resource = [
           aws_dynamodb_table.pipeline_metadata.arn,
-          "${aws_dynamodb_table.pipeline_metadata.arn}/index/*"
+          "${aws_dynamodb_table.pipeline_metadata.arn}/index/*",
+          aws_dynamodb_table.circuit_breaker_state.arn,
+          "${aws_dynamodb_table.circuit_breaker_state.arn}/index/*"
         ]
       },
       {
@@ -97,7 +99,7 @@ resource "aws_iam_role_policy" "lambda_monitoring_policy" {
           StringEquals = {
             "cloudwatch:namespace" = [
               "CI-CD/Pipeline",
-              "CI-CD/Performance", 
+              "CI-CD/Performance",
               "CI-CD/Cost",
               "CI-CD/Reliability"
             ]

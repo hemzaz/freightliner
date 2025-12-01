@@ -1,0 +1,91 @@
+# Development Docker Compose with hot reload
+version: '3.8'
+
+services:
+  freightliner-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      cache_from:
+        - freightliner:dev
+    container_name: freightliner-dev
+    ports:
+      - "8080:8080"      # Application port
+      - "2345:2345"      # Delve debugger
+      - "2112:2112"      # Prometheus metrics
+    volumes:
+      - .:/app:cached
+      - go-pkg-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      - LOG_LEVEL=debug
+      - ENVIRONMENT=development
+      - PORT=8080
+      - METRICS_PORT=2112
+      - METRICS_ENABLED=true
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - WORKER_POOL_SIZE=5
+      - MAX_CONCURRENT_REPLICATIONS=3
+    depends_on:
+      - redis
+      - prometheus
+    networks:
+      - freightliner-dev
+    restart: unless-stopped
+    command: air -c .air.toml
+
+  redis:
+    image: redis:7-alpine
+    container_name: freightliner-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - freightliner-dev
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: freightliner-prometheus-dev
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - freightliner-dev
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.1.5
+    container_name: freightliner-grafana-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - freightliner-dev
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  go-pkg-cache:
+  go-build-cache:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  freightliner-dev:
+    driver: bridge

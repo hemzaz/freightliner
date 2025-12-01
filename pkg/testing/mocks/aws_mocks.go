@@ -65,16 +65,31 @@ func (m *MockSTSClient) AssumeRole(ctx context.Context, params *sts.AssumeRoleIn
 
 // Helper functions to create mock responses
 
+const (
+	// TestAccountID is a placeholder AWS account ID for testing
+	TestAccountID = "123456789012"
+	// TestRegion is a placeholder AWS region for testing
+	TestRegion = "us-east-1"
+	// TestUserID is a placeholder AWS user ID for testing
+	TestUserID = "AIDACKCEVSQ6C2EXAMPLE"
+)
+
 // CreateMockECRRepositories creates sample ECR repositories for testing
+// accountID: AWS account ID to use (defaults to TestAccountID if empty)
 func CreateMockECRRepositories(count int) []types.Repository {
+	return CreateMockECRRepositoriesWithAccount(TestAccountID, count)
+}
+
+// CreateMockECRRepositoriesWithAccount creates sample ECR repositories with a specific account ID
+func CreateMockECRRepositoriesWithAccount(accountID string, count int) []types.Repository {
 	repos := make([]types.Repository, count)
 	now := time.Now()
 
 	for i := 0; i < count; i++ {
 		repos[i] = types.Repository{
-			RegistryId:     aws.String("123456789012"),
+			RegistryId:     aws.String(accountID),
 			RepositoryName: aws.String(fmt.Sprintf("test-repo-%d", i+1)),
-			RepositoryUri:  aws.String(fmt.Sprintf("123456789012.dkr.ecr.us-east-1.amazonaws.com/test-repo-%d", i+1)),
+			RepositoryUri:  aws.String(fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/test-repo-%d", accountID, TestRegion, i+1)),
 			CreatedAt:      &now,
 			ImageScanningConfiguration: &types.ImageScanningConfiguration{
 				ScanOnPush: false,
@@ -90,9 +105,16 @@ func CreateMockECRRepositories(count int) []types.Repository {
 }
 
 // CreateMockAuthToken creates a mock ECR authorization token
+// Note: Uses test credentials (base64 encoded "test-user:test-password")
 func CreateMockAuthToken() *ecr.GetAuthorizationTokenOutput {
-	token := "dGVzdC11c2VyOnRlc3QtcGFzc3dvcmQ=" // base64 encoded "test-user:test-password"
-	endpoint := "https://123456789012.dkr.ecr.us-east-1.amazonaws.com"
+	return CreateMockAuthTokenWithAccount(TestAccountID)
+}
+
+// CreateMockAuthTokenWithAccount creates a mock ECR authorization token with a specific account ID
+func CreateMockAuthTokenWithAccount(accountID string) *ecr.GetAuthorizationTokenOutput {
+	// base64 encoded "test-user:test-password" - safe for testing only
+	token := "dGVzdC11c2VyOnRlc3QtcGFzc3dvcmQ="
+	endpoint := fmt.Sprintf("https://%s.dkr.ecr.%s.amazonaws.com", accountID, TestRegion)
 	expiresAt := time.Now().Add(12 * time.Hour)
 
 	return &ecr.GetAuthorizationTokenOutput{
@@ -108,8 +130,11 @@ func CreateMockAuthToken() *ecr.GetAuthorizationTokenOutput {
 
 // CreateMockCallerIdentity creates a mock STS caller identity
 func CreateMockCallerIdentity(accountID string) *sts.GetCallerIdentityOutput {
+	if accountID == "" {
+		accountID = TestAccountID
+	}
 	arn := fmt.Sprintf("arn:aws:iam::%s:user/test-user", accountID)
-	userID := "AIDACKCEVSQ6C2EXAMPLE"
+	userID := TestUserID
 
 	return &sts.GetCallerIdentityOutput{
 		Account: &accountID,
@@ -127,6 +152,11 @@ func CreateMockSTSError() error {
 
 // CreateMockImages creates sample ECR images for testing
 func CreateMockImages(repoName string, count int) []types.ImageDetail {
+	return CreateMockImagesWithAccount(TestAccountID, repoName, count)
+}
+
+// CreateMockImagesWithAccount creates sample ECR images with a specific account ID
+func CreateMockImagesWithAccount(accountID, repoName string, count int) []types.ImageDetail {
 	images := make([]types.ImageDetail, count)
 	now := time.Now()
 
@@ -140,7 +170,7 @@ func CreateMockImages(repoName string, count int) []types.ImageDetail {
 			ImageTags:        []string{tag},
 			ImageSizeInBytes: &sizeBytes,
 			ImagePushedAt:    &now,
-			RegistryId:       aws.String("123456789012"),
+			RegistryId:       aws.String(accountID),
 			RepositoryName:   &repoName,
 		}
 	}

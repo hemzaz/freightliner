@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"runtime"
 
+	"freightliner/pkg/helper/banner"
+
 	"github.com/spf13/cobra"
 )
 
@@ -17,18 +19,32 @@ var (
 
 // newVersionCmd creates a new version command
 func newVersionCmd() *cobra.Command {
-	return &cobra.Command{
+	var showBanner bool
+
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Display version information",
 		Long:  `Displays the version and build information for this installation of Freightliner`,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Freightliner %s\n", version)
-			fmt.Printf("Git Commit: %s\n", gitCommit)
-			fmt.Printf("Build Time: %s\n", buildTime)
-			fmt.Printf("Go Version: %s\n", runtime.Version())
-			fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+			if showBanner {
+				// Sync banner package variables with cmd package
+				banner.Version = version
+				banner.GitCommit = gitCommit
+				banner.BuildTime = buildTime
+				banner.Print()
+			} else {
+				fmt.Printf("Freightliner %s\n", version)
+				fmt.Printf("Git Commit: %s\n", gitCommit)
+				fmt.Printf("Build Time: %s\n", buildTime)
+				fmt.Printf("Go Version: %s\n", runtime.Version())
+				fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+			}
 		},
 	}
+
+	cmd.Flags().BoolVar(&showBanner, "banner", false, "Display ASCII banner with version info")
+
+	return cmd
 }
 
 // newHealthCheckCmd creates a new health-check command for containers

@@ -1,0 +1,70 @@
+name: 'Setup Go Environment'
+description: 'Sets up Go with caching and dependency management'
+author: 'freightliner'
+
+inputs:
+  go-version:
+    description: 'Go version to use'
+    required: false
+    default: '1.25.4'
+  cache-dependency-path:
+    description: 'Path to go.sum for cache key'
+    required: false
+    default: '**/go.sum'
+  skip-cache:
+    description: 'Skip Go module caching'
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Working directory for Go commands'
+    required: false
+    default: '.'
+
+outputs:
+  go-version:
+    description: 'The installed Go version'
+    value: ${{ steps.setup.outputs.go-version }}
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Go
+      id: setup
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        check-latest: false
+        cache: false  # We handle caching ourselves for better control
+
+    - name: Cache Go modules
+      id: cache
+      if: inputs.skip-cache != 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles(inputs.cache-dependency-path) }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ inputs.go-version }}-
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "📦 Downloading Go dependencies..."
+        go mod download
+        go mod verify
+        echo "✅ Dependencies downloaded and verified"
+
+    - name: Display Go environment
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔍 Go environment:"
+        go version
+        go env

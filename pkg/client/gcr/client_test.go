@@ -3,69 +3,17 @@ package gcr
 import (
 	"context"
 	"errors"
-	"net/http"
 	"os"
 	"testing"
 
 	freightliner_log "freightliner/pkg/helper/log"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"google.golang.org/api/iterator"
 )
 
-// Mock for Google Auth
-type mockGoogleAuth struct {
-	mock.Mock
-}
-
-func (m *mockGoogleAuth) RoundTrip(req *http.Request) (*http.Response, error) {
-	args := m.Called(req)
-	return args.Get(0).(*http.Response), args.Error(1)
-}
-
-// Mock for Google Container Registry Catalog API
-type mockGoogleCatalog struct {
-	mock.Mock
-}
-
-func (m *mockGoogleCatalog) Catalog(ctx context.Context, registry name.Registry, opt ...google.Option) ([]string, error) {
-	args := m.Called(ctx, registry, opt)
-	return args.Get(0).([]string), args.Error(1)
-}
-
-// Mock for Artifact Registry Client
-type mockArtifactRegistryClient struct {
-	mock.Mock
-}
-
-func (m *mockArtifactRegistryClient) ListRepositories(ctx context.Context, req interface{}, opts ...interface{}) *mockRepositoryIterator {
-	args := m.Called(ctx, req, opts)
-	return args.Get(0).(*mockRepositoryIterator)
-}
-
-// Mock repository struct with the same fields we need from the actual one
-type mockRepository struct {
-	Name string
-}
-
-// Mock for Repository Iterator
-type mockRepositoryIterator struct {
-	mock.Mock
-	repos []*mockRepository
-	index int
-}
-
-func (m *mockRepositoryIterator) Next() (*mockRepository, error) {
-	if m.index >= len(m.repos) {
-		return nil, iterator.Done
-	}
-	repo := m.repos[m.index]
-	m.index++
-	return repo, nil
-}
+// Note: Mock types have been moved to pkg/testing/mocks for reuse
+// Use mocks.MockGoogleCatalogClient and mocks.MockArtifactRegistryClient for testing
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {

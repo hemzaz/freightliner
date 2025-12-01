@@ -1,0 +1,316 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "freightliner-errors",
+    "title": "Freightliner - Error Rate & Latency Analysis",
+    "tags": ["freightliner", "errors", "latency", "sre"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Error Budget Remaining (99.9% SLO)",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "(1 - (sum(rate(freightliner_replications_total{status=\"failed\"}[30d])) / sum(rate(freightliner_replications_total[30d])))) / 0.001 * 100",
+            "legendFormat": "Error Budget %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 25, "color": "yellow"},
+                {"value": 50, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Current Error Rate",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(freightliner_replications_total{status=\"failed\"}[5m])) / sum(rate(freightliner_replications_total[5m]))",
+            "legendFormat": "Error Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 4,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.001, "color": "yellow"},
+                {"value": 0.01, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Latency SLO Compliance (< 60s)",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(freightliner_replication_duration_seconds_bucket{le=\"60\"}[5m])) / sum(rate(freightliner_replication_duration_seconds_count[5m]))",
+            "legendFormat": "% Under 60s"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.95, "color": "yellow"},
+                {"value": 0.99, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "HTTP Error Rate",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(freightliner_http_requests_total{status=~\"[45]..\"}[5m])) / sum(rate(freightliner_http_requests_total[5m]))",
+            "legendFormat": "HTTP Error Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 4,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.01, "color": "yellow"},
+                {"value": 0.05, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Error Rate by Registry Pair",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "sum by (source_registry, dest_registry) (rate(freightliner_replications_total{status=\"failed\"}[5m])) / sum by (source_registry, dest_registry) (rate(freightliner_replications_total[5m]))",
+            "legendFormat": "{{source_registry}} → {{dest_registry}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth"
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Error Rate by Type",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "sum by (error_type) (rate(freightliner_replication_errors_total[5m]))",
+            "legendFormat": "{{error_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "bars",
+              "fillOpacity": 70
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "type": "timeseries",
+        "title": "Latency Distribution (P50, P90, P95, P99)",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, sum(rate(freightliner_replication_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "histogram_quantile(0.9, sum(rate(freightliner_replication_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P90"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(freightliner_replication_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(freightliner_replication_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "P99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineInterpolation": "smooth"
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "type": "timeseries",
+        "title": "HTTP Latency by Endpoint",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (path, le) (rate(freightliner_http_request_duration_seconds_bucket[5m])))",
+            "legendFormat": "{{path}} P95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 9,
+        "type": "heatmap",
+        "title": "Replication Duration Heatmap",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 20},
+        "targets": [
+          {
+            "expr": "sum(increase(freightliner_replication_duration_seconds_bucket[1m])) by (le)",
+            "legendFormat": "{{le}}",
+            "format": "heatmap"
+          }
+        ],
+        "options": {
+          "calculate": false,
+          "yAxis": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 10,
+        "type": "table",
+        "title": "Slowest Registry Pairs",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 20},
+        "targets": [
+          {
+            "expr": "topk(15, avg by (source_registry, dest_registry) (freightliner:replication:duration:p95:5m))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "source_registry": "Source",
+                "dest_registry": "Destination",
+                "Value": "P95 Duration (s)"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "type": "timeseries",
+        "title": "Error Budget Burn Rate",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 30},
+        "targets": [
+          {
+            "expr": "(sum(rate(freightliner_replications_total{status=\"failed\"}[1h])) / sum(rate(freightliner_replications_total[1h]))) / 0.001",
+            "legendFormat": "1h burn rate (target: 1x)"
+          },
+          {
+            "expr": "(sum(rate(freightliner_replications_total{status=\"failed\"}[5m])) / sum(rate(freightliner_replications_total[5m]))) / 0.001",
+            "legendFormat": "5m burn rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": {
+              "lineInterpolation": "smooth"
+            }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "type": "table",
+        "title": "Most Common Errors",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 30},
+        "targets": [
+          {
+            "expr": "topk(15, sum by (error_type) (increase(freightliner_replication_errors_total[1h])))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "error_type": "Error Type",
+                "Value": "Count (1h)"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "changes(process_start_time_seconds{job=\"freightliner\"}[1m]) > 0",
+          "iconColor": "blue",
+          "tagKeys": "version"
+        }
+      ]
+    }
+  }
+}

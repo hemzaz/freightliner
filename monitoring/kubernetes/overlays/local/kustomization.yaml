@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+bases:
+  - ../../base
+
+# NodePort service for local development
+patchesStrategicMerge:
+  - service-nodeport.yaml
+
+# Local development configuration
+configMapGenerator:
+  - name: grafana-config
+    behavior: merge
+    literals:
+      - DEPLOYMENT_MODE=local
+      - GRAFANA_ROOT_URL=http://localhost:30300
+      - EXTERNAL_IP=
+      - API_BASE_URL=http://localhost:8080
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_PROTOCOL=http
+
+# Use less resources for local development
+patchesJson6902:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: grafana
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 100m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 256Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 1Gi
+
+  - target:
+      version: v1
+      kind: PersistentVolumeClaim
+      name: grafana-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 5Gi
+
+commonLabels:
+  environment: local
+  deployment-mode: development

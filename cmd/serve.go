@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"freightliner/pkg/config"
+	"freightliner/pkg/helper/banner"
 	"freightliner/pkg/server"
 	"freightliner/pkg/service"
 
@@ -14,12 +15,21 @@ import (
 // newServeCmd creates a new serve command
 func newServeCmd() *cobra.Command {
 	var configFile string
+	var noBanner bool
 
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the replication server",
 		Long:  `Starts a server that listens for replication requests`,
 		Run: func(cmd *cobra.Command, args []string) {
+			// Display banner unless disabled
+			if !noBanner {
+				banner.Version = version
+				banner.GitCommit = gitCommit
+				banner.BuildTime = buildTime
+				banner.Print()
+			}
+
 			// Create logger and context
 			logger, ctx, cancel := setupCommand(cmd.Context())
 			defer cancel()
@@ -73,6 +83,9 @@ func newServeCmd() *cobra.Command {
 
 	// Add config file flag
 	cmd.Flags().StringVarP(&configFile, "config", "c", "", "Configuration file path")
+
+	// Add banner flag
+	cmd.Flags().BoolVar(&noBanner, "no-banner", false, "Disable ASCII banner on startup")
 
 	return cmd
 }

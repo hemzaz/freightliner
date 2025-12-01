@@ -1,0 +1,16 @@
+# Grafana Dashboard Provisioning Configuration
+# Auto-loads dashboards from specified directories
+
+apiVersion: 1
+
+providers:
+  - name: 'Freightliner Dashboards'
+    orgId: 1
+    folder: 'Freightliner'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

@@ -188,34 +188,40 @@ func TestArtifactRegistryClientWithMocks(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mockClient := tc.setupMocks()
-			_ = context.Background() // Context for future use
+			ctx := context.Background()
 
-			// Test the mock directly
-			// TODO: Fix artifactregistry API - ListRepositoriesRequest type not found
-			// For now, skip the actual API test
-			// req := &artifactregistry.ListRepositoriesRequest{
-			//	Parent: "projects/" + tc.project + "/locations/" + tc.location,
-			// }
+			// Test the mock directly using our custom iterator interface
+			// Note: The artifactregistry API uses a custom parent string format
+			// instead of a dedicated request type, which is why we use string directly
+			parent := "projects/" + tc.project + "/locations/" + tc.location
 
-			// Skip the ListRepositories test for now since the API type is not available
-			// iterator := mockClient.ListRepositories(ctx, req)
-			// assert.NotNil(t, iterator)
+			// Call ListRepositories which returns our MockRepositoryIterator
+			iterator := mockClient.ListRepositories(ctx, parent)
+			assert.NotNil(t, iterator, "Iterator should not be nil")
 
-			// Just verify the mock client is not nil
-			assert.NotNil(t, mockClient, "Mock client should not be nil")
-
-			// TODO: Add proper repository listing test once artifactregistry API is fixed
-
-			// For now, just verify basic functionality
-			if tc.expectErr {
-				// Test that we can handle error cases
-				assert.True(t, tc.expectErr, "Expected error case")
-			} else {
-				// Test successful case
-				assert.False(t, tc.expectErr, "Expected success case")
+			// Count repositories returned by the iterator
+			repoCount := 0
+			for {
+				repo, err := iterator.Next()
+				if err == mocks.ErrIteratorDone {
+					break
+				}
+				if tc.expectErr {
+					assert.Error(t, err, "Expected error in iteration")
+					break
+				} else {
+					assert.NoError(t, err, "Should not error during iteration")
+					assert.NotNil(t, repo, "Repository should not be nil")
+					repoCount++
+				}
 			}
 
-			// mockClient.AssertExpectations(t) // TODO: Re-enable once API is fixed
+			// Verify expected results
+			if !tc.expectErr {
+				assert.Equal(t, tc.expectedLen, repoCount, "Should return expected number of repositories")
+			}
+
+			mockClient.AssertExpectations(t)
 		})
 	}
 }

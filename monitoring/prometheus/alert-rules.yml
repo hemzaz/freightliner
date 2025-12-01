@@ -1,0 +1,245 @@
+# Alert Rules for Freightliner
+# Production-grade alerts with runbook links
+
+groups:
+  - name: replication_alerts
+    interval: 30s
+    rules:
+      # Critical: High replication failure rate
+      - alert: HighReplicationFailureRate
+        expr: |
+          (
+            sum by (source_registry, dest_registry) (
+              rate(freightliner_replications_total{status="failed"}[5m])
+            )
+            /
+            sum by (source_registry, dest_registry) (
+              rate(freightliner_replications_total[5m])
+            )
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: replication
+          runbook: https://wiki.company.com/runbooks/freightliner/high-replication-failure-rate
+        annotations:
+          summary: "High replication failure rate detected"
+          description: "Replication failure rate from {{ $labels.source_registry }} to {{ $labels.dest_registry }} is {{ $value | humanizePercentage }}. More than 10% of replications are failing."
+          impact: "Container images may not be replicated to destination registries, affecting deployment pipelines."
+          action: "1. Check registry connectivity and authentication\n2. Review error logs for specific failures\n3. Verify network connectivity between registries"
+
+      # Critical: Replication completely stopped
+      - alert: ReplicationStopped
+        expr: |
+          sum(rate(freightliner_replications_total[5m])) == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: replication
+          runbook: https://wiki.company.com/runbooks/freightliner/replication-stopped
+        annotations:
+          summary: "No replication activity detected"
+          description: "No replication operations have been recorded for 10 minutes."
+          impact: "Container image replication is completely stopped. New images will not be distributed."
+          action: "1. Check if freightliner service is running\n2. Verify job scheduler is operational\n3. Check for panics or crashes in logs"
+
+      # Warning: High replication duration
+      - alert: HighReplicationDuration
+        expr: |
+          freightliner:replication:duration:p95:5m > 300
+        for: 10m
+        labels:
+          severity: warning
+          component: replication
+          runbook: https://wiki.company.com/runbooks/freightliner/high-replication-duration
+        annotations:
+          summary: "High replication duration detected"
+          description: "P95 replication duration from {{ $labels.source_registry }} to {{ $labels.dest_registry }} is {{ $value | humanizeDuration }}. Normal duration is < 5 minutes."
+          impact: "Slow replication may delay container deployments and increase costs."
+          action: "1. Check network bandwidth and latency\n2. Review image sizes being replicated\n3. Check registry performance and load"
+
+      # Warning: High error rate
+      - alert: HighReplicationErrorRate
+        expr: |
+          sum by (source_registry, dest_registry, error_type) (
+            rate(freightliner_replication_errors_total[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: replication
+          runbook: https://wiki.company.com/runbooks/freightliner/high-error-rate
+        annotations:
+          summary: "High replication error rate"
+          description: "Error rate for {{ $labels.error_type }} from {{ $labels.source_registry }} to {{ $labels.dest_registry }} is {{ $value }} errors/sec."
+          impact: "Increased error rate may indicate degraded service."
+          action: "1. Check error type and frequency\n2. Review recent changes\n3. Verify registry health"
+
+  - name: http_alerts
+    interval: 30s
+    rules:
+      # Critical: High HTTP 5xx error rate
+      - alert: HighHTTP5xxRate
+        expr: |
+          freightliner:http:server_error_rate:5m > 1
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+          runbook: https://wiki.company.com/runbooks/freightliner/high-5xx-rate
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "HTTP 5xx error rate for {{ $labels.method }} {{ $labels.path }} is {{ $value }} errors/sec."
+          impact: "API is experiencing server errors, affecting user experience."
+          action: "1. Check application logs for errors\n2. Verify database connectivity\n3. Check for resource exhaustion"
+
+      # Warning: High HTTP latency
+      - alert: HighHTTPLatency
+        expr: |
+          freightliner:http:duration:p95:5m > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+          runbook: https://wiki.company.com/runbooks/freightliner/high-http-latency
+        annotations:
+          summary: "High HTTP request latency"
+          description: "P95 latency for {{ $labels.method }} {{ $labels.path }} is {{ $value }}s. Normal latency is < 5s."
+          impact: "Slow API responses may degrade user experience."
+          action: "1. Check for slow database queries\n2. Review application performance\n3. Check for high load or resource contention"
+
+      # Warning: High HTTP 4xx rate (potential abuse)
+      - alert: HighHTTP4xxRate
+        expr: |
+          sum by (method, path) (
+            rate(freightliner_http_requests_total{status=~"4.."}[5m])
+          ) > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+          runbook: https://wiki.company.com/runbooks/freightliner/high-4xx-rate
+        annotations:
+          summary: "High HTTP 4xx error rate"
+          description: "HTTP 4xx error rate for {{ $labels.method }} {{ $labels.path }} is {{ $value }} errors/sec."
+          impact: "High client error rate may indicate API misuse or integration issues."
+          action: "1. Review request patterns for abuse\n2. Check authentication failures\n3. Verify API documentation accuracy"
+
+  - name: worker_pool_alerts
+    interval: 30s
+    rules:
+      # Warning: Worker pool saturation
+      - alert: WorkerPoolSaturated
+        expr: |
+          freightliner:worker_pool:utilization > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: worker-pool
+          runbook: https://wiki.company.com/runbooks/freightliner/worker-pool-saturated
+        annotations:
+          summary: "Worker pool is saturated"
+          description: "Worker pool utilization is {{ $value | humanizePercentage }}. Consider scaling up."
+          impact: "High worker utilization may cause job queuing and delays."
+          action: "1. Check current job queue depth\n2. Consider increasing worker pool size\n3. Review job execution times"
+
+      # Warning: High job queue depth
+      - alert: HighJobQueueDepth
+        expr: |
+          freightliner:worker_pool:queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: worker-pool
+          runbook: https://wiki.company.com/runbooks/freightliner/high-queue-depth
+        annotations:
+          summary: "High job queue depth"
+          description: "Job queue depth is {{ $value }}. Normal queue depth is < 100."
+          impact: "Jobs are queuing up, indicating workers cannot keep up with demand."
+          action: "1. Increase worker pool size\n2. Check for slow jobs\n3. Verify worker health"
+
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # Critical: High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          freightliner:system:memory_mb > 4096
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+          runbook: https://wiki.company.com/runbooks/freightliner/high-memory-usage
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}MB. Normal usage is < 4GB."
+          impact: "High memory usage may lead to OOM kills and service disruption."
+          action: "1. Check for memory leaks\n2. Review goroutine count\n3. Consider increasing memory limits"
+
+      # Warning: High goroutine count
+      - alert: HighGoroutineCount
+        expr: |
+          freightliner:system:goroutines > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+          runbook: https://wiki.company.com/runbooks/freightliner/high-goroutine-count
+        annotations:
+          summary: "High goroutine count"
+          description: "Goroutine count is {{ $value }}. Normal count is < 10,000."
+          impact: "High goroutine count may indicate goroutine leaks or excessive concurrency."
+          action: "1. Check for goroutine leaks\n2. Review concurrent operations\n3. Analyze goroutine profiles"
+
+      # Critical: Application panics
+      - alert: ApplicationPanics
+        expr: |
+          increase(freightliner_panics_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: system
+          runbook: https://wiki.company.com/runbooks/freightliner/application-panics
+        annotations:
+          summary: "Application panics detected"
+          description: "{{ $value }} panics detected in component {{ $labels.component }}."
+          impact: "Application panics may cause service instability and data loss."
+          action: "1. Check panic stack traces in logs\n2. Review recent code changes\n3. Fix root cause immediately"
+
+  - name: authentication_alerts
+    interval: 30s
+    rules:
+      # Warning: High authentication failure rate
+      - alert: HighAuthFailureRate
+        expr: |
+          sum by (type) (
+            rate(freightliner_auth_failures_total[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: auth
+          runbook: https://wiki.company.com/runbooks/freightliner/high-auth-failure-rate
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failure rate for {{ $labels.type }} is {{ $value }} failures/sec."
+          impact: "High auth failure rate may indicate credential issues or security attacks."
+          action: "1. Check for credential expiry\n2. Review for brute force attacks\n3. Verify registry authentication configuration"
+
+  - name: availability_alerts
+    interval: 30s
+    rules:
+      # Critical: Service down
+      - alert: FreightlinerDown
+        expr: |
+          up{job="freightliner"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: system
+          runbook: https://wiki.company.com/runbooks/freightliner/service-down
+        annotations:
+          summary: "Freightliner service is down"
+          description: "Freightliner service has been down for 1 minute."
+          impact: "Service is completely unavailable. No replication operations can be performed."
+          action: "1. Check if pod/container is running\n2. Review logs for crash reasons\n3. Restart service if necessary\n4. Escalate to on-call engineer"
