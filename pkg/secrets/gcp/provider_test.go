@@ -10,10 +10,6 @@ import (
 )
 
 func TestNewProvider(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping GCP integration test in short mode")
-	}
-
 	ctx := context.Background()
 	logger := log.NewLogger()
 	loggerPtr := &logger
@@ -44,7 +40,7 @@ func TestNewProvider(t *testing.T) {
 			name: "valid provider with project",
 			opts: ProviderOptions{
 				Project: "test-project-123",
-				Logger: loggerPtr,
+				Logger:  loggerPtr,
 			},
 			wantErr: false, // Will fail if no credentials, but structure is valid
 		},
@@ -52,7 +48,7 @@ func TestNewProvider(t *testing.T) {
 			name: "valid provider with credentials file",
 			opts: ProviderOptions{
 				Project:         "test-project-123",
-				Logger: loggerPtr,
+				Logger:          loggerPtr,
 				CredentialsFile: "/path/to/creds.json",
 			},
 			wantErr: false, // Will fail if file doesn't exist, but structure is valid
