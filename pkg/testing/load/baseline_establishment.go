@@ -24,11 +24,11 @@ import (
 //   - Proper warmup and cooldown periods
 //
 // To establish baselines:
-//   1. Deploy application to production/staging environment
-//   2. Run: go run cmd/establish-baselines/main.go (or equivalent tool)
-//   3. Review baseline results in the output directory
-//   4. Commit baseline JSON files to the repository
-//   5. Use committed baselines for regression testing
+//  1. Deploy application to production/staging environment
+//  2. Run: go run cmd/establish-baselines/main.go (or equivalent tool)
+//  3. Review baseline results in the output directory
+//  4. Commit baseline JSON files to the repository
+//  5. Use committed baselines for regression testing
 //
 // Regression tests will skip gracefully if baseline data is not available.
 type BaselineEstablishmentSuite struct {

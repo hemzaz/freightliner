@@ -150,7 +150,7 @@ func testDockerMultiStageValidation(t *testing.T, ctx context.Context) {
 				// Check if it's a stage-not-found error (acceptable for some Dockerfiles)
 				outputStr := string(output)
 				if strings.Contains(outputStr, "failed to reach build target") ||
-				   strings.Contains(outputStr, "target stage") {
+					strings.Contains(outputStr, "target stage") {
 					t.Skipf("Stage %s not found in Dockerfile (acceptable): %v", stage, err)
 					return
 				}
@@ -519,7 +519,7 @@ func isDockerRunning() bool {
 	}
 	// Check if Docker daemon is actually responding
 	return strings.Contains(string(output), "Server Version") ||
-		   strings.Contains(string(output), "Server:")
+		strings.Contains(string(output), "Server:")
 }
 
 func findDockerfile(projectRoot string) string {

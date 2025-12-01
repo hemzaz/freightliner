@@ -87,21 +87,21 @@ type SecretsConfig struct {
 
 // ServerConfig contains server related configuration
 type ServerConfig struct {
-	Host              string        // Bind address: "localhost", "0.0.0.0", or specific IP
-	Port              int           // Bind port
-	ExternalURL       string        // External URL for API access (e.g., "https://api.example.com")
+	Host              string // Bind address: "localhost", "0.0.0.0", or specific IP
+	Port              int    // Bind port
+	ExternalURL       string // External URL for API access (e.g., "https://api.example.com")
 	TLSEnabled        bool
 	TLSCertFile       string
 	TLSKeyFile        string
 	APIKeyAuth        bool
 	APIKey            string
-	EnableCORS        bool          // Enable CORS middleware
-	AllowedOrigins    []string      // CORS allowed origins
+	EnableCORS        bool     // Enable CORS middleware
+	AllowedOrigins    []string // CORS allowed origins
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	ShutdownTimeout   time.Duration
-	HealthCheckPath   string        // Health check endpoint path
-	MetricsPath       string        // Metrics endpoint path
+	HealthCheckPath   string // Health check endpoint path
+	MetricsPath       string // Metrics endpoint path
 	ReplicatePath     string
 	TreeReplicatePath string
 	StatusPath        string
@@ -171,15 +171,15 @@ func NewDefaultConfig() *Config {
 			EncryptionKeysSecret: "freightliner-encryption-keys",
 		},
 		Server: ServerConfig{
-			Host:              "localhost",  // Default to localhost for security
+			Host:              "localhost", // Default to localhost for security
 			Port:              8080,
-			ExternalURL:       "",           // Empty means use Host:Port
+			ExternalURL:       "", // Empty means use Host:Port
 			TLSEnabled:        false,
 			TLSCertFile:       "",
 			TLSKeyFile:        "",
 			APIKeyAuth:        false,
 			APIKey:            "",
-			EnableCORS:        true,         // Enable CORS by default
+			EnableCORS:        true, // Enable CORS by default
 			AllowedOrigins:    []string{"*"},
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      60 * time.Second,

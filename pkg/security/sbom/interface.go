@@ -140,7 +140,7 @@ type GenerateOptions struct {
 	Timeout time.Duration
 
 	// Author information
-	Author string
+	Author      string
 	AuthorEmail string
 }
 

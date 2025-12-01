@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package integration
@@ -126,9 +127,9 @@ func TestEndToEndReplication(t *testing.T) {
 
 		copier := copy.NewCopier(logger)
 		replicator := tree.NewTreeReplicator(logger, copier, tree.TreeReplicatorOptions{
-			WorkerCount:          1,
-			EnableCheckpointing:  true,
-			CheckpointDirectory:  tempDir,
+			WorkerCount:         1,
+			EnableCheckpointing: true,
+			CheckpointDirectory: tempDir,
 		})
 
 		result, err := replicator.ReplicateTree(ctx, tree.ReplicateTreeOptions{
@@ -374,13 +375,13 @@ func BenchmarkReplication(b *testing.B) {
 
 // MockRegistryClient implements interfaces.RegistryClient for testing
 type MockRegistryClient struct {
-	registryName   string
-	repositories   []string
-	tags           map[string][]string
-	logger         log.Logger
-	simulateError  bool
-	failOnRepo     string
-	delayDuration  time.Duration
+	registryName  string
+	repositories  []string
+	tags          map[string][]string
+	logger        log.Logger
+	simulateError bool
+	failOnRepo    string
+	delayDuration time.Duration
 }
 
 func NewMockRegistryClient(registryName string, logger log.Logger) *MockRegistryClient {

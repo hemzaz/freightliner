@@ -17,7 +17,7 @@ type SecurityEvent struct {
 	// Severity and Classification
 	Severity    Severity `json:"severity"`
 	Priority    int      `json:"priority"`
-	Category    string   `json:"category"`    // privilege_escalation, data_exfiltration, etc.
+	Category    string   `json:"category"`     // privilege_escalation, data_exfiltration, etc.
 	ThreatScore float64  `json:"threat_score"` // 0.0 to 10.0
 
 	// Event Details
@@ -52,28 +52,28 @@ type Policy struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 
 	// Policy Configuration
-	Enabled     bool     `json:"enabled"`
-	Priority    int      `json:"priority"`
-	Scope       []string `json:"scope"`        // cluster, namespace, workload, container
-	Tags        []string `json:"tags"`
-	Category    string   `json:"category"`
-	Severity    Severity `json:"severity"`
+	Enabled  bool     `json:"enabled"`
+	Priority int      `json:"priority"`
+	Scope    []string `json:"scope"` // cluster, namespace, workload, container
+	Tags     []string `json:"tags"`
+	Category string   `json:"category"`
+	Severity Severity `json:"severity"`
 
 	// Rules and Conditions
-	Rules       []Rule            `json:"rules"`
-	Conditions  []PolicyCondition `json:"conditions"`
-	Exceptions  []Exception       `json:"exceptions,omitempty"`
+	Rules      []Rule            `json:"rules"`
+	Conditions []PolicyCondition `json:"conditions"`
+	Exceptions []Exception       `json:"exceptions,omitempty"`
 
 	// Actions
 	Actions     []Action          `json:"actions"`
 	OnViolation OnViolationAction `json:"on_violation"`
 
 	// Metadata
-	Author      string            `json:"author"`
-	Source      string            `json:"source"` // custom, falco, apparmor, etc.
-	Compliance  []string          `json:"compliance,omitempty"` // CIS, PCI-DSS, etc.
-	References  []string          `json:"references,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Author     string            `json:"author"`
+	Source     string            `json:"source"`               // custom, falco, apparmor, etc.
+	Compliance []string          `json:"compliance,omitempty"` // CIS, PCI-DSS, etc.
+	References []string          `json:"references,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 // Alert represents a security alert generated from a security event.
@@ -92,16 +92,16 @@ type Alert struct {
 	Priority    int      `json:"priority"`
 
 	// Classification
-	Category        string   `json:"category"`
-	Tags            []string `json:"tags"`
+	Category         string   `json:"category"`
+	Tags             []string `json:"tags"`
 	ThreatIndicators []string `json:"threat_indicators"`
-	MITRE_ATT       []string `json:"mitre_attack,omitempty"` // MITRE ATT&CK framework IDs
+	MITRE_ATT        []string `json:"mitre_attack,omitempty"` // MITRE ATT&CK framework IDs
 
 	// Context
-	Source      string            `json:"source"`
-	Destination string            `json:"destination,omitempty"`
-	Affected    []AffectedResource `json:"affected"`
-	RelatedEvents []string        `json:"related_events,omitempty"`
+	Source        string             `json:"source"`
+	Destination   string             `json:"destination,omitempty"`
+	Affected      []AffectedResource `json:"affected"`
+	RelatedEvents []string           `json:"related_events,omitempty"`
 
 	// Response
 	RecommendedActions []string `json:"recommended_actions"`
@@ -109,10 +109,10 @@ type Alert struct {
 	AssignedTo         string   `json:"assigned_to,omitempty"`
 
 	// Lifecycle
-	AcknowledgedAt *time.Time         `json:"acknowledged_at,omitempty"`
-	AcknowledgedBy string             `json:"acknowledged_by,omitempty"`
-	ResolvedAt     *time.Time         `json:"resolved_at,omitempty"`
-	Resolution     *AlertResolution   `json:"resolution,omitempty"`
+	AcknowledgedAt *time.Time       `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy string           `json:"acknowledged_by,omitempty"`
+	ResolvedAt     *time.Time       `json:"resolved_at,omitempty"`
+	Resolution     *AlertResolution `json:"resolution,omitempty"`
 
 	// Metadata
 	Evidence map[string]interface{} `json:"evidence,omitempty"`
@@ -122,15 +122,15 @@ type Alert struct {
 
 // ThreatIndicator represents an indicator of compromise or suspicious activity.
 type ThreatIndicator struct {
-	Type        string    `json:"type"`        // ioc, behavior, anomaly, signature
-	Value       string    `json:"value"`
-	Confidence  float64   `json:"confidence"`  // 0.0 to 1.0
-	Severity    Severity  `json:"severity"`
-	Description string    `json:"description"`
-	FirstSeen   time.Time `json:"first_seen"`
-	LastSeen    time.Time `json:"last_seen"`
-	Count       int       `json:"count"`
-	Source      string    `json:"source,omitempty"` // threat intel feed, ML model, etc.
+	Type        string            `json:"type"` // ioc, behavior, anomaly, signature
+	Value       string            `json:"value"`
+	Confidence  float64           `json:"confidence"` // 0.0 to 1.0
+	Severity    Severity          `json:"severity"`
+	Description string            `json:"description"`
+	FirstSeen   time.Time         `json:"first_seen"`
+	LastSeen    time.Time         `json:"last_seen"`
+	Count       int               `json:"count"`
+	Source      string            `json:"source,omitempty"` // threat intel feed, ML model, etc.
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
@@ -175,12 +175,12 @@ type ProcessContext struct {
 
 // NetworkContext provides network-specific context for security events
 type NetworkContext struct {
-	Protocol      string `json:"protocol"`      // tcp, udp, icmp, etc.
+	Protocol      string `json:"protocol"` // tcp, udp, icmp, etc.
 	SourceIP      string `json:"source_ip"`
 	SourcePort    int    `json:"source_port"`
 	DestIP        string `json:"dest_ip"`
 	DestPort      int    `json:"dest_port"`
-	Direction     string `json:"direction"`     // inbound, outbound
+	Direction     string `json:"direction"` // inbound, outbound
 	BytesSent     int64  `json:"bytes_sent"`
 	BytesReceived int64  `json:"bytes_received"`
 	ConnectionID  string `json:"connection_id,omitempty"`
@@ -188,14 +188,14 @@ type NetworkContext struct {
 
 // FileContext provides file-specific context for security events
 type FileContext struct {
-	Path        string      `json:"path"`
-	Mode        string      `json:"mode,omitempty"`
-	Operation   string      `json:"operation"`   // read, write, execute, delete
-	Permissions string      `json:"permissions,omitempty"`
-	Owner       string      `json:"owner,omitempty"`
-	Group       string      `json:"group,omitempty"`
-	Size        int64       `json:"size,omitempty"`
-	Hash        *FileHash   `json:"hash,omitempty"`
+	Path        string    `json:"path"`
+	Mode        string    `json:"mode,omitempty"`
+	Operation   string    `json:"operation"` // read, write, execute, delete
+	Permissions string    `json:"permissions,omitempty"`
+	Owner       string    `json:"owner,omitempty"`
+	Group       string    `json:"group,omitempty"`
+	Size        int64     `json:"size,omitempty"`
+	Hash        *FileHash `json:"hash,omitempty"`
 }
 
 // FileHash contains file hash information
@@ -207,14 +207,14 @@ type FileHash struct {
 
 // UserContext provides user-specific context for security events
 type UserContext struct {
-	UID         int      `json:"uid"`
-	Username    string   `json:"username"`
-	GID         int      `json:"gid"`
-	GroupName   string   `json:"group_name"`
-	Groups      []string `json:"groups,omitempty"`
-	SessionID   string   `json:"session_id,omitempty"`
-	AuthMethod  string   `json:"auth_method,omitempty"`
-	Privileges  []string `json:"privileges,omitempty"`
+	UID        int      `json:"uid"`
+	Username   string   `json:"username"`
+	GID        int      `json:"gid"`
+	GroupName  string   `json:"group_name"`
+	Groups     []string `json:"groups,omitempty"`
+	SessionID  string   `json:"session_id,omitempty"`
+	AuthMethod string   `json:"auth_method,omitempty"`
+	Privileges []string `json:"privileges,omitempty"`
 }
 
 // Rule represents a single detection rule within a policy
@@ -222,8 +222,8 @@ type Rule struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
-	Condition   string            `json:"condition"`   // Rule logic/expression
-	Output      string            `json:"output"`      // Alert message template
+	Condition   string            `json:"condition"` // Rule logic/expression
+	Output      string            `json:"output"`    // Alert message template
 	Priority    Severity          `json:"priority"`
 	Tags        []string          `json:"tags"`
 	Enabled     bool              `json:"enabled"`
@@ -232,10 +232,10 @@ type Rule struct {
 
 // PolicyCondition defines a condition that must be met for policy evaluation
 type PolicyCondition struct {
-	Field    string      `json:"field"`
-	Operator string      `json:"operator"` // equals, not_equals, contains, matches, etc.
-	Value    interface{} `json:"value"`
-	CaseSensitive bool   `json:"case_sensitive"`
+	Field         string      `json:"field"`
+	Operator      string      `json:"operator"` // equals, not_equals, contains, matches, etc.
+	Value         interface{} `json:"value"`
+	CaseSensitive bool        `json:"case_sensitive"`
 }
 
 // Exception defines an exception to a policy rule
@@ -251,8 +251,8 @@ type Exception struct {
 
 // Action defines an action to take when a policy is violated
 type Action struct {
-	Type     string            `json:"type"`     // alert, block, log, quarantine, kill
-	Target   string            `json:"target"`   // container, process, network
+	Type     string            `json:"type"`   // alert, block, log, quarantine, kill
+	Target   string            `json:"target"` // container, process, network
 	Config   map[string]string `json:"config"`
 	Enabled  bool              `json:"enabled"`
 	Priority int               `json:"priority"`
@@ -271,12 +271,12 @@ type OnViolationAction struct {
 
 // AffectedResource represents a resource affected by a security event
 type AffectedResource struct {
-	Type       string            `json:"type"`       // container, pod, node, service
+	Type       string            `json:"type"` // container, pod, node, service
 	ID         string            `json:"id"`
 	Name       string            `json:"name"`
 	Namespace  string            `json:"namespace,omitempty"`
 	Cluster    string            `json:"cluster,omitempty"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
-	Impact     string            `json:"impact"`     // high, medium, low
+	Impact     string            `json:"impact"` // high, medium, low
 	Remediated bool              `json:"remediated"`
 }

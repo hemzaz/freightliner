@@ -1,3 +1,4 @@
+//go:build performance
 // +build performance
 
 package performance
@@ -135,9 +136,9 @@ func TestMemoryUsage(t *testing.T) {
 	logger := log.NewLogger()
 
 	testCases := []struct {
-		name       string
-		imageSize  int64 // MB
-		concurrent int
+		name        string
+		imageSize   int64 // MB
+		concurrent  int
 		maxMemoryMB int64
 	}{
 		{"SmallImages", 10, 5, 200},

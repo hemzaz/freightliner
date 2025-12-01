@@ -125,30 +125,30 @@ type MonitorStatus struct {
 
 // MonitorMetrics contains performance and operational metrics
 type MonitorMetrics struct {
-	EventsPerSecond     float64           `json:"events_per_second"`
-	AlertsPerSecond     float64           `json:"alerts_per_second"`
-	AverageLatency      time.Duration     `json:"average_latency_ms"`
-	P95Latency          time.Duration     `json:"p95_latency_ms"`
-	P99Latency          time.Duration     `json:"p99_latency_ms"`
-	DroppedEvents       int64             `json:"dropped_events"`
-	PolicyEvaluations   int64             `json:"policy_evaluations"`
-	CPUUsagePercent     float64           `json:"cpu_usage_percent"`
-	MemoryUsageMB       float64           `json:"memory_usage_mb"`
-	EventTypeBreakdown  map[string]int64  `json:"event_type_breakdown"`
-	SeverityBreakdown   map[string]int64  `json:"severity_breakdown"`
-	ThroughputBySource  map[string]int64  `json:"throughput_by_source"`
-	CollectionTimestamp time.Time         `json:"collection_timestamp"`
+	EventsPerSecond     float64          `json:"events_per_second"`
+	AlertsPerSecond     float64          `json:"alerts_per_second"`
+	AverageLatency      time.Duration    `json:"average_latency_ms"`
+	P95Latency          time.Duration    `json:"p95_latency_ms"`
+	P99Latency          time.Duration    `json:"p99_latency_ms"`
+	DroppedEvents       int64            `json:"dropped_events"`
+	PolicyEvaluations   int64            `json:"policy_evaluations"`
+	CPUUsagePercent     float64          `json:"cpu_usage_percent"`
+	MemoryUsageMB       float64          `json:"memory_usage_mb"`
+	EventTypeBreakdown  map[string]int64 `json:"event_type_breakdown"`
+	SeverityBreakdown   map[string]int64 `json:"severity_breakdown"`
+	ThroughputBySource  map[string]int64 `json:"throughput_by_source"`
+	CollectionTimestamp time.Time        `json:"collection_timestamp"`
 }
 
 // PolicyDecision represents the result of policy evaluation
 type PolicyDecision struct {
-	Allow          bool              `json:"allow"`           // Whether the event is allowed
-	MatchedPolicies []string         `json:"matched_policies"` // IDs of matched policies
-	Actions        []string          `json:"actions"`         // Actions to take
-	Severity       string            `json:"severity"`        // Severity level
-	Reason         string            `json:"reason"`          // Reason for decision
-	Metadata       map[string]string `json:"metadata"`        // Additional metadata
-	GenerateAlert  bool              `json:"generate_alert"`  // Whether to generate an alert
+	Allow           bool              `json:"allow"`            // Whether the event is allowed
+	MatchedPolicies []string          `json:"matched_policies"` // IDs of matched policies
+	Actions         []string          `json:"actions"`          // Actions to take
+	Severity        string            `json:"severity"`         // Severity level
+	Reason          string            `json:"reason"`           // Reason for decision
+	Metadata        map[string]string `json:"metadata"`         // Additional metadata
+	GenerateAlert   bool              `json:"generate_alert"`   // Whether to generate an alert
 }
 
 // HandlerMetadata provides information about an event handler
@@ -176,12 +176,12 @@ type AlertFilter struct {
 
 // AlertResolution contains information about how an alert was resolved
 type AlertResolution struct {
-	ResolvedBy   string            `json:"resolved_by"`
-	ResolvedAt   time.Time         `json:"resolved_at"`
-	Resolution   string            `json:"resolution"` // fixed, false_positive, accepted_risk, etc.
-	Notes        string            `json:"notes"`
-	RemediationSteps []string      `json:"remediation_steps,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	ResolvedBy       string            `json:"resolved_by"`
+	ResolvedAt       time.Time         `json:"resolved_at"`
+	Resolution       string            `json:"resolution"` // fixed, false_positive, accepted_risk, etc.
+	Notes            string            `json:"notes"`
+	RemediationSteps []string          `json:"remediation_steps,omitempty"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
 }
 
 // RoutingRule defines how alerts should be routed to destinations
@@ -204,37 +204,37 @@ type Condition struct {
 
 // Destination defines where alerts should be sent
 type Destination struct {
-	Type     string            `json:"type"`     // slack, pagerduty, webhook, email, etc.
-	Config   map[string]string `json:"config"`   // Destination-specific configuration
+	Type     string            `json:"type"`   // slack, pagerduty, webhook, email, etc.
+	Config   map[string]string `json:"config"` // Destination-specific configuration
 	Enabled  bool              `json:"enabled"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // SuppressionRule defines criteria for suppressing alerts
 type SuppressionRule struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Enabled     bool              `json:"enabled"`
-	Conditions  []Condition       `json:"conditions"`
-	StartTime   time.Time         `json:"start_time"`
-	EndTime     *time.Time        `json:"end_time,omitempty"` // nil means no expiration
-	Reason      string            `json:"reason"`
-	CreatedBy   string            `json:"created_by"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Enabled    bool              `json:"enabled"`
+	Conditions []Condition       `json:"conditions"`
+	StartTime  time.Time         `json:"start_time"`
+	EndTime    *time.Time        `json:"end_time,omitempty"` // nil means no expiration
+	Reason     string            `json:"reason"`
+	CreatedBy  string            `json:"created_by"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 // AlertStatistics provides statistical information about alerts
 type AlertStatistics struct {
-	TimeRange          TimeRange         `json:"time_range"`
-	TotalAlerts        int64             `json:"total_alerts"`
-	AlertsBySeverity   map[string]int64  `json:"alerts_by_severity"`
-	AlertsBySource     map[string]int64  `json:"alerts_by_source"`
-	AlertsByStatus     map[string]int64  `json:"alerts_by_status"`
-	AlertsByPolicy     map[string]int64  `json:"alerts_by_policy"`
+	TimeRange           TimeRange        `json:"time_range"`
+	TotalAlerts         int64            `json:"total_alerts"`
+	AlertsBySeverity    map[string]int64 `json:"alerts_by_severity"`
+	AlertsBySource      map[string]int64 `json:"alerts_by_source"`
+	AlertsByStatus      map[string]int64 `json:"alerts_by_status"`
+	AlertsByPolicy      map[string]int64 `json:"alerts_by_policy"`
 	TopThreatIndicators []string         `json:"top_threat_indicators"`
-	MeanTimeToAck      time.Duration     `json:"mean_time_to_ack"`
-	MeanTimeToResolve  time.Duration     `json:"mean_time_to_resolve"`
-	TrendData          []TrendDataPoint  `json:"trend_data"`
+	MeanTimeToAck       time.Duration    `json:"mean_time_to_ack"`
+	MeanTimeToResolve   time.Duration    `json:"mean_time_to_resolve"`
+	TrendData           []TrendDataPoint `json:"trend_data"`
 }
 
 // TimeRange defines a time range for queries

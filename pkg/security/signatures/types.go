@@ -231,11 +231,11 @@ const (
 type AttestationType string
 
 const (
-	AttestationTypeSLSAProvenance   AttestationType = "slsaprovenance"
-	AttestationTypeSPDX             AttestationType = "spdx"
-	AttestationTypeCycloneDX        AttestationType = "cyclonedx"
+	AttestationTypeSLSAProvenance    AttestationType = "slsaprovenance"
+	AttestationTypeSPDX              AttestationType = "spdx"
+	AttestationTypeCycloneDX         AttestationType = "cyclonedx"
 	AttestationTypeVulnerabilityScan AttestationType = "vulnerabilityscan"
-	AttestationTypeCustom           AttestationType = "custom"
+	AttestationTypeCustom            AttestationType = "custom"
 )
 
 // AttestationResult contains the result of attestation verification
