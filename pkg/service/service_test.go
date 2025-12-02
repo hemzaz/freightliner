@@ -197,21 +197,66 @@ func TestParseRegistryPath(t *testing.T) {
 // TestIsValidRegistryType tests registry type validation
 func TestIsValidRegistryType(t *testing.T) {
 	tests := []struct {
-		registry string
-		expected bool
+		registry   string
+		configRegs []config.RegistryConfig
+		expected   bool
 	}{
-		{"ecr", true},
-		{"gcr", true},
-		{"docker", false},
-		{"", false},
-		{"ECR", false}, // case sensitive
-		{"GCR", false},
-		{"invalid", false},
+		{
+			registry:   "ecr",
+			configRegs: []config.RegistryConfig{},
+			expected:   true,
+		},
+		{
+			registry:   "gcr",
+			configRegs: []config.RegistryConfig{},
+			expected:   true,
+		},
+		{
+			registry: "docker",
+			configRegs: []config.RegistryConfig{
+				{Name: "docker", Type: config.RegistryTypeGeneric},
+			},
+			expected: true,
+		},
+		{
+			registry:   "docker",
+			configRegs: []config.RegistryConfig{},
+			expected:   false,
+		},
+		{
+			registry:   "",
+			configRegs: []config.RegistryConfig{},
+			expected:   false,
+		},
+		{
+			registry:   "ECR",
+			configRegs: []config.RegistryConfig{},
+			expected:   false, // case sensitive
+		},
+		{
+			registry:   "GCR",
+			configRegs: []config.RegistryConfig{},
+			expected:   false,
+		},
+		{
+			registry:   "invalid",
+			configRegs: []config.RegistryConfig{},
+			expected:   false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.registry, func(t *testing.T) {
-			result := isValidRegistryType(tt.registry)
+			cfg := &config.Config{
+				Registries: config.RegistriesConfig{
+					Registries: tt.configRegs,
+				},
+			}
+			svc := &replicationService{
+				cfg:    cfg,
+				logger: log.NewBasicLogger(log.InfoLevel),
+			}
+			result := svc.isValidRegistryType(tt.registry)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

@@ -98,15 +98,15 @@ func (s *TreeReplicationService) ReplicateTree(ctx context.Context, source, dest
 		return nil, err
 	}
 
-	// Validate registry types
-	if !isValidRegistryType(sourceRegistry) || !isValidRegistryType(destRegistry) {
-		return nil, errors.InvalidInputf("registry type must be 'ecr' or 'gcr'")
-	}
-
 	// Create registry clients - need to access implementation methods
 	replicationSvc, ok := s.replicationService.(*replicationService)
 	if !ok {
 		return nil, errors.InvalidInputf("replication service must be concrete implementation for tree replication")
+	}
+
+	// Validate registry types
+	if !replicationSvc.isValidRegistryType(sourceRegistry) || !replicationSvc.isValidRegistryType(destRegistry) {
+		return nil, errors.InvalidInputf("unknown registry '%s' or '%s'. Registry must be 'ecr', 'gcr', or a configured custom registry", sourceRegistry, destRegistry)
 	}
 
 	clients, err := replicationSvc.createRegistryClients(ctx, sourceRegistry, destRegistry)

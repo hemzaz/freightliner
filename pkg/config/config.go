@@ -16,8 +16,9 @@ type Config struct {
 	LogLevel string
 
 	// Registry configuration
-	ECR ECRConfig
-	GCR GCRConfig
+	ECR        ECRConfig
+	GCR        GCRConfig
+	Registries RegistriesConfig
 
 	// Worker configuration
 	Workers WorkerConfig
@@ -146,6 +147,11 @@ func NewDefaultConfig() *Config {
 		GCR: GCRConfig{
 			Project:  "",
 			Location: "us",
+		},
+		Registries: RegistriesConfig{
+			DefaultSource:      "",
+			DefaultDestination: "",
+			Registries:         []RegistryConfig{},
 		},
 		Workers: WorkerConfig{
 			ReplicateWorkers: 0,

@@ -116,20 +116,57 @@ func TestReplicateRepository_ParseRegistryPath(t *testing.T) {
 // TestReplicateRepository_IsValidRegistryType tests registry type validation
 func TestReplicateRepository_IsValidRegistryType(t *testing.T) {
 	tests := []struct {
-		name     string
-		registry string
-		expected bool
+		name       string
+		registry   string
+		configRegs []config.RegistryConfig
+		expected   bool
 	}{
-		{"ECR is valid", "ecr", true},
-		{"GCR is valid", "gcr", true},
-		{"docker hub is invalid", "dockerhub", false},
-		{"empty is invalid", "", false},
-		{"random is invalid", "random", false},
+		{
+			name:       "ECR is valid",
+			registry:   "ecr",
+			configRegs: []config.RegistryConfig{},
+			expected:   true,
+		},
+		{
+			name:       "GCR is valid",
+			registry:   "gcr",
+			configRegs: []config.RegistryConfig{},
+			expected:   true,
+		},
+		{
+			name:     "configured custom registry is valid",
+			registry: "harbor",
+			configRegs: []config.RegistryConfig{
+				{Name: "harbor", Type: config.RegistryTypeGeneric},
+			},
+			expected: true,
+		},
+		{
+			name:       "empty is invalid",
+			registry:   "",
+			configRegs: []config.RegistryConfig{},
+			expected:   false,
+		},
+		{
+			name:       "unconfigured registry is invalid",
+			registry:   "random",
+			configRegs: []config.RegistryConfig{},
+			expected:   false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidRegistryType(tt.registry)
+			cfg := &config.Config{
+				Registries: config.RegistriesConfig{
+					Registries: tt.configRegs,
+				},
+			}
+			svc := &replicationService{
+				cfg:    cfg,
+				logger: log.NewBasicLogger(log.InfoLevel),
+			}
+			result := svc.isValidRegistryType(tt.registry)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

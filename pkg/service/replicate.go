@@ -8,8 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"freightliner/pkg/client/ecr"
-	"freightliner/pkg/client/gcr"
+	"freightliner/pkg/client"
 	freightlinerConfig "freightliner/pkg/config"
 	"freightliner/pkg/copy"
 	"freightliner/pkg/helper/errors"
@@ -89,8 +88,8 @@ func (s *replicationService) ReplicateRepository(ctx context.Context, source, de
 	}
 
 	// Validate registry types
-	if !isValidRegistryType(sourceRegistry) || !isValidRegistryType(destRegistry) {
-		return nil, errors.InvalidInputf("registry type must be 'ecr' or 'gcr'")
+	if !s.isValidRegistryType(sourceRegistry) || !s.isValidRegistryType(destRegistry) {
+		return nil, errors.InvalidInputf("unknown registry '%s' or '%s'. Registry must be 'ecr', 'gcr', or a configured custom registry", sourceRegistry, destRegistry)
 	}
 
 	// Create registry clients
@@ -475,41 +474,53 @@ func parseRegistryPath(path string) (string, string, error) {
 }
 
 // isValidRegistryType checks if a registry type is supported
-func isValidRegistryType(registry string) bool {
-	return registry == "ecr" || registry == "gcr"
+func (s *replicationService) isValidRegistryType(registry string) bool {
+	// Check if it's a built-in registry type
+	if registry == "ecr" || registry == "gcr" {
+		return true
+	}
+
+	// Check if it's a configured custom registry
+	for _, reg := range s.cfg.Registries.Registries {
+		if reg.Name == registry {
+			return true
+		}
+	}
+
+	return false
 }
 
 // createRegistryClients creates registry clients for the specified registry types
 func (s *replicationService) createRegistryClients(ctx context.Context, registries ...string) (map[string]RegistryClient, error) {
-	registrySet := make(map[string]bool)
-	for _, r := range registries {
-		registrySet[r] = true
-	}
-
 	registryClients := make(map[string]RegistryClient)
+	factory := client.NewFactory(s.cfg, s.logger)
 
-	if len(registries) == 0 || registrySet["ecr"] {
-		ecrClient, err := ecr.NewClient(ecr.ClientOptions{
-			Region:    s.cfg.ECR.Region,
-			AccountID: s.cfg.ECR.AccountID,
-			Logger:    s.logger,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create ECR client")
-		}
-		registryClients["ecr"] = ecrClient
-	}
+	for _, registryName := range registries {
+		var registryClient RegistryClient
+		var err error
 
-	if len(registries) == 0 || registrySet["gcr"] {
-		gcrClient, err := gcr.NewClient(gcr.ClientOptions{
-			Project:  s.cfg.GCR.Project,
-			Location: s.cfg.GCR.Location,
-			Logger:   s.logger,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create GCR client")
+		switch registryName {
+		case "ecr":
+			registryClient, err = factory.CreateECRClient()
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to create ECR client")
+			}
+
+		case "gcr":
+			registryClient, err = factory.CreateGCRClient()
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to create GCR client")
+			}
+
+		default:
+			// It's a custom registry - use the factory to create it
+			registryClient, err = factory.CreateCustomClient(registryName)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to create client for registry '%s'", registryName)
+			}
 		}
-		registryClients["gcr"] = gcrClient
+
+		registryClients[registryName] = registryClient
 	}
 
 	return registryClients, nil
