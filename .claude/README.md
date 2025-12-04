@@ -207,6 +207,17 @@ Key files for AI context:
 - **structure.md**: Project structure overview
 - **product.md**: Product vision and goals
 
+### Architecture Documents (NEW!)
+
+Core architecture documentation following agent-based design:
+
+- **MISSION_BRIEF.md** (`docs/architecture/`): Production-readiness contract and behavioral parity requirements
+- **AGENTS.md** (`docs/architecture/`): 100 specialized agents with clear responsibilities (A01-A100)
+- **CLAUDE_IMPLEMENTATION.md** (`docs/architecture/`): Implementation guide for AI agents
+- **architecture-config.md** (`.claude/`): Quick reference for architecture patterns
+
+**IMPORTANT:** Always consult these documents before making changes. Every commit should reference affected agents (e.g., "Agents: A32, A52, A60")
+
 ## 🎯 Common Tasks
 
 ### Start Development
