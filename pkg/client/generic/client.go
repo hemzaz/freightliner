@@ -4,6 +4,7 @@ package generic
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,6 +68,21 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	if opts.RegistryConfig.TLS.InsecureSkipVerify {
 		insecure = true
 	}
+
+	// Log security warning if insecure mode is requested
+	if insecure {
+		allowInsecure := os.Getenv("FREIGHTLINER_ALLOW_INSECURE_TLS")
+		if allowInsecure == "true" || allowInsecure == "1" {
+			opts.Logger.WithFields(map[string]interface{}{
+				"registry": registry,
+			}).Warn("SECURITY WARNING: Insecure TLS mode enabled - certificate verification disabled")
+		} else {
+			opts.Logger.WithFields(map[string]interface{}{
+				"registry": registry,
+			}).Info("Insecure TLS requested but blocked - set FREIGHTLINER_ALLOW_INSECURE_TLS=true to enable")
+		}
+	}
+
 	httpTransport := createHTTPTransport(insecure)
 
 	// Create transport option
@@ -157,6 +173,18 @@ func (c *Client) GetTransport(repositoryName string) (http.RoundTripper, error) 
 
 	// Create transport with authentication
 	insecure := c.registryConf.Insecure || c.registryConf.TLS.InsecureSkipVerify
+
+	// Log security warning if insecure mode is enabled
+	if insecure {
+		allowInsecure := os.Getenv("FREIGHTLINER_ALLOW_INSECURE_TLS")
+		if allowInsecure == "true" || allowInsecure == "1" {
+			c.logger.WithFields(map[string]interface{}{
+				"registry":   c.registry,
+				"repository": repositoryName,
+			}).Warn("SECURITY WARNING: Creating insecure transport - certificate verification disabled")
+		}
+	}
+
 	httpTransport := createHTTPTransport(insecure)
 
 	rt, err := transport.NewWithContext(
@@ -181,6 +209,14 @@ func (c *Client) GetRemoteOptions() []remote.Option {
 
 	insecure := c.registryConf.Insecure || c.registryConf.TLS.InsecureSkipVerify
 	if insecure {
+		// Log security warning if insecure mode is enabled
+		allowInsecure := os.Getenv("FREIGHTLINER_ALLOW_INSECURE_TLS")
+		if allowInsecure == "true" || allowInsecure == "1" {
+			c.logger.WithFields(map[string]interface{}{
+				"registry": c.registry,
+			}).Warn("SECURITY WARNING: Using insecure remote options - certificate verification disabled")
+		}
+
 		httpTransport := createHTTPTransport(true)
 		opts = append(opts, remote.WithTransport(httpTransport))
 	}
@@ -282,16 +318,41 @@ func createAuthenticator(conf config.RegistryConfig) (authn.Authenticator, error
 	}
 }
 
-// createHTTPTransport creates an HTTP transport with optional insecure TLS
+// createHTTPTransport creates an HTTP transport with secure TLS configuration
+// insecureSkipVerify should only be used for testing/development
 func createHTTPTransport(insecureSkipVerify bool) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
+	// Create TLS config with system cert pool
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12, // Enforce TLS 1.2+
+	}
+
+	// Load system cert pool for certificate verification
+	if certPool, err := x509.SystemCertPool(); err == nil {
+		tlsConfig.RootCAs = certPool
+	}
+
+	// SECURITY WARNING: InsecureSkipVerify disables certificate validation
+	// This should ONLY be used for testing/development, NEVER in production
 	if insecureSkipVerify {
-		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
+		// Check if explicitly allowed via environment variable
+		allowInsecure := os.Getenv("FREIGHTLINER_ALLOW_INSECURE_TLS")
+		if allowInsecure != "true" && allowInsecure != "1" {
+			// Block insecure TLS unless explicitly enabled
+			// This is a breaking change but necessary for security
+			// Set FREIGHTLINER_ALLOW_INSECURE_TLS=true to allow (NOT recommended)
+			tlsConfig.InsecureSkipVerify = false
+			// Certificate verification will use system cert pool
+		} else {
+			// Insecure mode explicitly enabled - log warning
+			tlsConfig.InsecureSkipVerify = true
+			// Note: We can't log here as we don't have a logger,
+			// but the caller should log this warning
 		}
 	}
 
+	transport.TLSClientConfig = tlsConfig
 	return transport
 }
 

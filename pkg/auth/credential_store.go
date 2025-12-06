@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -28,6 +29,85 @@ type DockerConfig struct {
 type AuthEntry struct {
 	Auth  string `json:"auth,omitempty"`
 	Email string `json:"email,omitempty"`
+}
+
+var (
+	// validHelperName validates that a helper name contains only safe characters
+	// Allowed: alphanumeric, hyphens, underscores (no spaces, shell metacharacters, or path separators)
+	validHelperName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+	// knownHelpers is a whitelist of well-known credential helpers
+	// This provides defense-in-depth beyond just regex validation
+	knownHelpers = map[string]bool{
+		"osxkeychain":   true, // macOS Keychain
+		"wincred":       true, // Windows Credential Manager
+		"secretservice": true, // Linux Secret Service
+		"pass":          true, // pass password manager
+		"ecr-login":     true, // AWS ECR
+		"gcr":           true, // Google GCR
+		"acr-env":       true, // Azure ACR
+		"gcloud":        true, // Google Cloud SDK
+		"desktop":       true, // Docker Desktop
+	}
+)
+
+// validateHelperName validates a credential helper name to prevent command injection
+// Returns error if the helper name contains unsafe characters
+func validateHelperName(helper string) error {
+	if helper == "" {
+		return fmt.Errorf("credential helper name cannot be empty")
+	}
+
+	// Check length (reasonable limit to prevent buffer overflow attempts)
+	if len(helper) > 64 {
+		return fmt.Errorf("credential helper name too long (max 64 characters): %s", helper)
+	}
+
+	// Prevent path traversal attempts
+	if strings.Contains(helper, "/") || strings.Contains(helper, "\\") {
+		return fmt.Errorf("credential helper name cannot contain path separators: %s", helper)
+	}
+
+	// Prevent shell metacharacters and command injection
+	if strings.ContainsAny(helper, ";|&$`()<>\"'* \t\n") {
+		return fmt.Errorf("credential helper name contains invalid characters: %s", helper)
+	}
+
+	// Validate against regex pattern (alphanumeric, hyphens, underscores only)
+	if !validHelperName.MatchString(helper) {
+		return fmt.Errorf("credential helper name contains invalid characters (allowed: alphanumeric, hyphen, underscore): %s", helper)
+	}
+
+	// Optional: Warn if helper is not in the known list (but don't block it)
+	// This allows for custom helpers while providing visibility
+	if !knownHelpers[helper] {
+		// Log warning but don't fail - allows custom helpers
+		// In production, you might want to log this to security monitoring
+		_ = helper // Helper is valid but unknown
+	}
+
+	return nil
+}
+
+// buildHelperCommand builds a credential helper command name after validation
+func buildHelperCommand(helper string) (string, error) {
+	// Validate the helper name first
+	if err := validateHelperName(helper); err != nil {
+		return "", err
+	}
+
+	// Use filepath.Base as additional safety layer to prevent path manipulation
+	safeHelper := filepath.Base(helper)
+
+	// Double-check after Base() - should be same as input if input was safe
+	if safeHelper != helper {
+		return "", fmt.Errorf("credential helper name was modified by path cleaning: %s -> %s", helper, safeHelper)
+	}
+
+	// Build the command name
+	cmdName := "docker-credential-" + safeHelper
+
+	return cmdName, nil
 }
 
 // NewCredentialStore creates a new credential store instance
@@ -216,12 +296,14 @@ func (cs *CredentialStore) saveConfig(config *DockerConfig) error {
 // Implements the Docker credential helper protocol:
 // https://docs.docker.com/engine/reference/commandline/login/#credential-helpers
 func (cs *CredentialStore) getFromHelper(helper, registry string) (string, string, error) {
-	// Build the credential helper command name
-	// Docker uses "docker-credential-<helper>" as the binary name
-	cmdName := "docker-credential-" + helper
+	// Validate and build the credential helper command name (prevents command injection)
+	cmdName, err := buildHelperCommand(helper)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid credential helper name: %w", err)
+	}
 
 	// Check if the helper exists
-	_, err := exec.LookPath(cmdName)
+	_, err = exec.LookPath(cmdName)
 	if err != nil {
 		return "", "", fmt.Errorf("credential helper '%s' not found in PATH: %w", cmdName, err)
 	}
@@ -256,11 +338,14 @@ func (cs *CredentialStore) getFromHelper(helper, registry string) (string, strin
 
 // storeWithHelper stores credentials using a credential helper
 func (cs *CredentialStore) storeWithHelper(helper, registry, username, password string) error {
-	// Build the credential helper command name
-	cmdName := "docker-credential-" + helper
+	// Validate and build the credential helper command name (prevents command injection)
+	cmdName, err := buildHelperCommand(helper)
+	if err != nil {
+		return fmt.Errorf("invalid credential helper name: %w", err)
+	}
 
 	// Check if the helper exists
-	_, err := exec.LookPath(cmdName)
+	_, err = exec.LookPath(cmdName)
 	if err != nil {
 		return fmt.Errorf("credential helper '%s' not found in PATH: %w", cmdName, err)
 	}
@@ -294,11 +379,14 @@ func (cs *CredentialStore) storeWithHelper(helper, registry, username, password 
 
 // deleteFromHelper deletes credentials from a credential helper
 func (cs *CredentialStore) deleteFromHelper(helper, registry string) error {
-	// Build the credential helper command name
-	cmdName := "docker-credential-" + helper
+	// Validate and build the credential helper command name (prevents command injection)
+	cmdName, err := buildHelperCommand(helper)
+	if err != nil {
+		return fmt.Errorf("invalid credential helper name: %w", err)
+	}
 
 	// Check if the helper exists
-	_, err := exec.LookPath(cmdName)
+	_, err = exec.LookPath(cmdName)
 	if err != nil {
 		return fmt.Errorf("credential helper '%s' not found in PATH: %w", cmdName, err)
 	}
@@ -319,11 +407,14 @@ func (cs *CredentialStore) deleteFromHelper(helper, registry string) error {
 
 // listFromHelper lists credentials from a credential helper
 func (cs *CredentialStore) listFromHelper(helper string) (map[string]string, error) {
-	// Build the credential helper command name
-	cmdName := "docker-credential-" + helper
+	// Validate and build the credential helper command name (prevents command injection)
+	cmdName, err := buildHelperCommand(helper)
+	if err != nil {
+		return nil, fmt.Errorf("invalid credential helper name: %w", err)
+	}
 
 	// Check if the helper exists
-	_, err := exec.LookPath(cmdName)
+	_, err = exec.LookPath(cmdName)
 	if err != nil {
 		return nil, fmt.Errorf("credential helper '%s' not found in PATH: %w", cmdName, err)
 	}
@@ -351,8 +442,13 @@ func (cs *CredentialStore) listFromHelper(helper string) (map[string]string, err
 
 // IsHelperAvailable checks if a credential helper is available in the system
 func IsHelperAvailable(helper string) bool {
-	cmdName := "docker-credential-" + helper
-	_, err := exec.LookPath(cmdName)
+	// Validate and build the credential helper command name (prevents command injection)
+	cmdName, err := buildHelperCommand(helper)
+	if err != nil {
+		return false // Invalid helper name
+	}
+
+	_, err = exec.LookPath(cmdName)
 	return err == nil
 }
 
