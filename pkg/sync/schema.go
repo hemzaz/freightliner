@@ -35,6 +35,15 @@ type Config struct {
 	// BatchSize for optimized batch operations (default: 10)
 	BatchSize int `yaml:"batch_size,omitempty"`
 
+	// EnableAdaptiveBatching enables dynamic batch size adjustment based on workload
+	EnableAdaptiveBatching bool `yaml:"enable_adaptive_batching,omitempty"`
+
+	// MinBatchSize minimum batch size for adaptive batching (default: 1)
+	MinBatchSize int `yaml:"min_batch_size,omitempty"`
+
+	// MaxBatchSize maximum batch size for adaptive batching (default: 50)
+	MaxBatchSize int `yaml:"max_batch_size,omitempty"`
+
 	// EnableDeduplication enables content-addressable storage deduplication
 	EnableDeduplication bool `yaml:"enable_deduplication,omitempty"`
 
@@ -244,6 +253,13 @@ func (c *Config) SetDefaults() {
 	if c.RetryBackoff <= 0 {
 		c.RetryBackoff = 5
 	}
+	if c.MinBatchSize <= 0 {
+		c.MinBatchSize = 1
+	}
+	if c.MaxBatchSize <= 0 {
+		c.MaxBatchSize = 50
+	}
+	// EnableAdaptiveBatching defaults to false for backward compatibility
 
 	// Set default registry types if not specified
 	if c.Source.Type == "" {

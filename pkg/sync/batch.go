@@ -26,25 +26,40 @@ type BatchExecutor struct {
 	factory     *client.Factory
 	clientCache map[string]service.RegistryClient // Cache clients by registry URL
 	cacheMu     sync.RWMutex                      // Protect client cache
+
+	// Adaptive batching state
+	currentBatchSize int       // Current batch size (adjusted dynamically)
+	batchStats       batchStat // Statistics from previous batches
+	statsMu          sync.Mutex // Protect batch statistics
+}
+
+// batchStat tracks statistics for adaptive batch sizing
+type batchStat struct {
+	successRate     float64 // Success rate of last batch (0.0 to 1.0)
+	avgDuration     int64   // Average task duration in milliseconds
+	lastAdjustment  time.Time
+	consecutiveFails int // Number of consecutive batches with failures
 }
 
 // NewBatchExecutor creates a new batch executor
 func NewBatchExecutor(config *Config, logger log.Logger) *BatchExecutor {
 	return &BatchExecutor{
-		config:  config,
-		logger:  logger,
-		results: make([]SyncResult, 0),
+		config:           config,
+		logger:           logger,
+		results:          make([]SyncResult, 0),
+		currentBatchSize: config.BatchSize, // Initialize with configured batch size
 	}
 }
 
 // NewBatchExecutorWithFactory creates a new batch executor with a client factory
 func NewBatchExecutorWithFactory(config *Config, logger log.Logger, factory *client.Factory) *BatchExecutor {
 	return &BatchExecutor{
-		config:      config,
-		logger:      logger,
-		results:     make([]SyncResult, 0),
-		factory:     factory,
-		clientCache: make(map[string]service.RegistryClient),
+		config:           config,
+		logger:           logger,
+		results:          make([]SyncResult, 0),
+		factory:          factory,
+		clientCache:      make(map[string]service.RegistryClient),
+		currentBatchSize: config.BatchSize, // Initialize with configured batch size
 	}
 }
 
@@ -58,10 +73,14 @@ func (be *BatchExecutor) Execute(ctx context.Context, tasks []SyncTask) ([]SyncR
 		"total_tasks": len(tasks),
 		"batch_size":  be.config.BatchSize,
 		"parallelism": be.config.Parallel,
+		"adaptive":    be.config.EnableAdaptiveBatching,
 	}).Info("Starting batch execution")
 
 	// Initialize results
 	be.results = make([]SyncResult, len(tasks))
+
+	// Adjust batch size based on previous performance (if adaptive batching enabled)
+	be.adjustBatchSize()
 
 	// Create batches
 	batches := be.createBatches(tasks)
@@ -111,11 +130,15 @@ func (be *BatchExecutor) Execute(ctx context.Context, tasks []SyncTask) ([]SyncR
 	return be.results, nil
 }
 
-// createBatches groups tasks into batches
+// createBatches groups tasks into batches using adaptive or fixed batch size
 func (be *BatchExecutor) createBatches(tasks []SyncTask) [][]SyncTask {
-	batchSize := be.config.BatchSize
+	// Use adaptive batch size if enabled, otherwise use configured size
+	batchSize := be.currentBatchSize
 	if batchSize <= 0 {
-		batchSize = 10
+		batchSize = be.config.BatchSize
+		if batchSize <= 0 {
+			batchSize = 10
+		}
 	}
 
 	numBatches := (len(tasks) + batchSize - 1) / batchSize
@@ -130,6 +153,103 @@ func (be *BatchExecutor) createBatches(tasks []SyncTask) [][]SyncTask {
 	}
 
 	return batches
+}
+
+// adjustBatchSize adjusts the current batch size based on previous batch performance
+func (be *BatchExecutor) adjustBatchSize() {
+	if !be.config.EnableAdaptiveBatching {
+		return // Adaptive batching disabled
+	}
+
+	be.statsMu.Lock()
+	defer be.statsMu.Unlock()
+
+	stats := be.batchStats
+
+	// Don't adjust too frequently (wait at least 5 seconds between adjustments)
+	if time.Since(stats.lastAdjustment) < 5*time.Second {
+		return
+	}
+
+	oldSize := be.currentBatchSize
+	newSize := oldSize
+
+	// Adjust based on success rate
+	if stats.successRate < 0.5 {
+		// High failure rate - reduce batch size aggressively
+		newSize = oldSize / 2
+		stats.consecutiveFails++
+	} else if stats.successRate < 0.8 {
+		// Moderate failure rate - reduce batch size slightly
+		newSize = oldSize - (oldSize / 4)
+		stats.consecutiveFails++
+	} else if stats.successRate >= 0.95 && stats.consecutiveFails == 0 {
+		// High success rate and no recent failures - increase batch size
+		newSize = oldSize + (oldSize / 4)
+	} else if stats.successRate >= 0.9 {
+		// Good success rate - reset consecutive failures
+		stats.consecutiveFails = 0
+	}
+
+	// Enforce bounds
+	if newSize < be.config.MinBatchSize {
+		newSize = be.config.MinBatchSize
+	}
+	if newSize > be.config.MaxBatchSize {
+		newSize = be.config.MaxBatchSize
+	}
+
+	// Apply adjustment
+	if newSize != oldSize {
+		be.currentBatchSize = newSize
+		stats.lastAdjustment = time.Now()
+		be.batchStats = stats
+
+		be.logger.WithFields(map[string]interface{}{
+			"old_size":     oldSize,
+			"new_size":     newSize,
+			"success_rate": fmt.Sprintf("%.1f%%", stats.successRate*100),
+			"avg_duration": stats.avgDuration,
+		}).Info("Adjusted batch size based on performance")
+	}
+}
+
+// updateBatchStats updates batch statistics after a batch completes
+func (be *BatchExecutor) updateBatchStats(batchResults []SyncResult) {
+	if !be.config.EnableAdaptiveBatching {
+		return
+	}
+
+	be.statsMu.Lock()
+	defer be.statsMu.Unlock()
+
+	if len(batchResults) == 0 {
+		return
+	}
+
+	// Calculate success rate
+	successes := 0
+	var totalDuration int64
+	for _, result := range batchResults {
+		if result.Success {
+			successes++
+		}
+		totalDuration += result.Duration
+	}
+
+	successRate := float64(successes) / float64(len(batchResults))
+	avgDuration := totalDuration / int64(len(batchResults))
+
+	// Update statistics
+	be.batchStats.successRate = successRate
+	be.batchStats.avgDuration = avgDuration
+
+	be.logger.WithFields(map[string]interface{}{
+		"success_rate": fmt.Sprintf("%.1f%%", successRate*100),
+		"successes":    successes,
+		"failures":     len(batchResults) - successes,
+		"avg_duration": avgDuration,
+	}).Debug("Updated batch statistics")
 }
 
 // executeBatch executes a single batch of tasks
@@ -177,6 +297,17 @@ func (be *BatchExecutor) executeBatch(ctx context.Context, batchIdx int, tasks [
 	}
 
 	wg.Wait()
+
+	// Collect results for this batch to update statistics
+	batchResults := make([]SyncResult, len(tasks))
+	be.mu.Lock()
+	for i := 0; i < len(tasks); i++ {
+		batchResults[i] = be.results[startIdx+i]
+	}
+	be.mu.Unlock()
+
+	// Update batch statistics for adaptive sizing
+	be.updateBatchStats(batchResults)
 
 	be.logger.WithFields(map[string]interface{}{
 		"batch": batchIdx,
