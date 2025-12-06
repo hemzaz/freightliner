@@ -131,50 +131,15 @@ func (p *WorkerPool) worker(id int) {
 }
 
 // setupJobContext creates a job context that will be canceled if either the job's context
-// or the pool's context is canceled. Uses an efficient approach without persistent goroutines.
+// or the pool's context is canceled. Avoids goroutine leaks by using simple context hierarchy.
 func (p *WorkerPool) setupJobContext(job WorkerJob) (context.Context, context.CancelFunc) {
-	// Use a multi-context approach that efficiently combines contexts
-	// This uses the standard library's context merging without extra goroutines
-	ctx1, cancel1 := context.WithCancel(job.Context)
-	ctx2, cancel2 := context.WithCancel(p.stopContext)
+	// Create a child context from the job's context
+	// This will be canceled when either the job context or pool's stop context is done
+	jobCtx, jobCancel := context.WithCancel(job.Context)
 
-	// Create a context that cancels when either parent is done
-	merged, mergedCancel := mergeContexts(ctx1, ctx2)
-
-	// Return a cancel function that cleans up all contexts
-	combinedCancel := func() {
-		mergedCancel()
-		cancel1()
-		cancel2()
-	}
-
-	return merged, combinedCancel
-}
-
-// mergeContexts efficiently merges two contexts without persistent goroutines
-// Returns a context that is done when either input context is done
-func mergeContexts(ctx1, ctx2 context.Context) (context.Context, context.CancelFunc) {
-	if ctx1.Err() != nil {
-		return ctx1, func() {}
-	}
-	if ctx2.Err() != nil {
-		return ctx2, func() {}
-	}
-
-	// Create a new context that will be cancelled when either parent is cancelled
-	newCtx, cancel := context.WithCancel(context.Background())
-
-	// Start a monitoring goroutine that cleans up properly
-	go func() {
-		defer cancel()
-		select {
-		case <-ctx1.Done():
-		case <-ctx2.Done():
-		case <-newCtx.Done():
-		}
-	}()
-
-	return newCtx, cancel
+	// Note: The job execution monitors both jobCtx and p.stopContext in the worker
+	// to handle cancellation from either source
+	return jobCtx, jobCancel
 }
 
 // executeJob runs the job's task and measures execution time

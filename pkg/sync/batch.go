@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -17,12 +18,14 @@ import (
 
 // BatchExecutor executes sync tasks in optimized batches
 type BatchExecutor struct {
-	config    *Config
-	logger    log.Logger
-	scheduler *replication.Scheduler
-	results   []SyncResult
-	mu        sync.Mutex
-	factory   *client.Factory
+	config      *Config
+	logger      log.Logger
+	scheduler   *replication.Scheduler
+	results     []SyncResult
+	mu          sync.Mutex
+	factory     *client.Factory
+	clientCache map[string]service.RegistryClient // Cache clients by registry URL
+	cacheMu     sync.RWMutex                      // Protect client cache
 }
 
 // NewBatchExecutor creates a new batch executor
@@ -37,10 +40,11 @@ func NewBatchExecutor(config *Config, logger log.Logger) *BatchExecutor {
 // NewBatchExecutorWithFactory creates a new batch executor with a client factory
 func NewBatchExecutorWithFactory(config *Config, logger log.Logger, factory *client.Factory) *BatchExecutor {
 	return &BatchExecutor{
-		config:  config,
-		logger:  logger,
-		results: make([]SyncResult, 0),
-		factory: factory,
+		config:      config,
+		logger:      logger,
+		results:     make([]SyncResult, 0),
+		factory:     factory,
+		clientCache: make(map[string]service.RegistryClient),
 	}
 }
 
@@ -247,6 +251,46 @@ func (be *BatchExecutor) executeTask(ctx context.Context, task SyncTask) SyncRes
 	}
 }
 
+// getOrCreateClient gets a cached client or creates a new one for the registry
+func (be *BatchExecutor) getOrCreateClient(ctx context.Context, registryURL string) (service.RegistryClient, error) {
+	// Check if factory is initialized
+	if be.factory == nil {
+		return nil, fmt.Errorf("client factory not initialized")
+	}
+
+	// Try to get from cache first (read lock)
+	be.cacheMu.RLock()
+	if client, exists := be.clientCache[registryURL]; exists {
+		be.cacheMu.RUnlock()
+		return client, nil
+	}
+	be.cacheMu.RUnlock()
+
+	// Not in cache, create new client (write lock)
+	be.cacheMu.Lock()
+	defer be.cacheMu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have created it)
+	if client, exists := be.clientCache[registryURL]; exists {
+		return client, nil
+	}
+
+	// Create new client
+	client, err := be.factory.CreateClientForRegistry(ctx, registryURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client for registry %s: %w", registryURL, err)
+	}
+
+	// Store in cache
+	be.clientCache[registryURL] = client
+
+	be.logger.WithFields(map[string]interface{}{
+		"registry": registryURL,
+	}).Debug("Created and cached new registry client")
+
+	return client, nil
+}
+
 // syncImage performs the actual image synchronization using freightliner's copy infrastructure
 func (be *BatchExecutor) syncImage(ctx context.Context, task SyncTask) (int64, error) {
 	// Create source registry reference
@@ -272,26 +316,16 @@ func (be *BatchExecutor) syncImage(ctx context.Context, task SyncTask) (int64, e
 		return 0, fmt.Errorf("failed to parse destination reference: %w", err)
 	}
 
-	// Create or get source registry client
-	var srcClient service.RegistryClient
-	if be.factory != nil {
-		srcClient, err = be.factory.CreateClientForRegistry(ctx, task.SourceRegistry)
-		if err != nil {
-			return 0, fmt.Errorf("failed to create source registry client: %w", err)
-		}
-	} else {
-		return 0, fmt.Errorf("client factory not initialized")
+	// Get or create source registry client (with caching)
+	srcClient, err := be.getOrCreateClient(ctx, task.SourceRegistry)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get source registry client: %w", err)
 	}
 
-	// Create or get destination registry client
-	var destClient service.RegistryClient
-	if be.factory != nil {
-		destClient, err = be.factory.CreateClientForRegistry(ctx, task.DestRegistry)
-		if err != nil {
-			return 0, fmt.Errorf("failed to create destination registry client: %w", err)
-		}
-	} else {
-		return 0, fmt.Errorf("client factory not initialized")
+	// Get or create destination registry client (with caching)
+	destClient, err := be.getOrCreateClient(ctx, task.DestRegistry)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get destination registry client: %w", err)
 	}
 
 	// Get source repository
@@ -384,23 +418,19 @@ func OptimizeBatches(tasks []SyncTask) []SyncTask {
 		}
 	}
 
-	// Stable sort to preserve relative order within same priority/registry
-	for i := 0; i < len(optimized)-1; i++ {
-		for j := i + 1; j < len(optimized); j++ {
-			ki := keys[i]
-			kj := keys[j]
+	// Stable sort using O(n log n) algorithm to preserve relative order within same priority/registry
+	sort.SliceStable(optimized, func(i, j int) bool {
+		ki := keys[i]
+		kj := keys[j]
 
-			// Higher priority first
-			if kj.priority > ki.priority {
-				optimized[i], optimized[j] = optimized[j], optimized[i]
-				keys[i], keys[j] = keys[j], keys[i]
-			} else if kj.priority == ki.priority && kj.registry < ki.registry {
-				// Same priority, group by registry alphabetically
-				optimized[i], optimized[j] = optimized[j], optimized[i]
-				keys[i], keys[j] = keys[j], keys[i]
-			}
+		// Higher priority first
+		if ki.priority != kj.priority {
+			return ki.priority > kj.priority
 		}
-	}
+
+		// Same priority, group by registry alphabetically
+		return ki.registry < kj.registry
+	})
 
 	return optimized
 }

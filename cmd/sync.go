@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"freightliner/pkg/client"
 	"freightliner/pkg/client/generic"
 	"freightliner/pkg/config"
 	"freightliner/pkg/helper/log"
@@ -95,30 +96,30 @@ func runSync(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	// Load sync configuration using pkg/sync
-	config, err := sync.LoadConfig(syncConfigFile)
+	syncConfig, err := sync.LoadConfig(syncConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Validate configuration
-	if err := config.Validate(); err != nil {
+	if err := syncConfig.Validate(); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
 	// Override parallel workers if specified
 	if syncParallel > 0 {
-		config.Parallel = syncParallel
+		syncConfig.Parallel = syncParallel
 	}
 
 	logger.WithFields(map[string]interface{}{
-		"source":      config.Source.Registry,
-		"destination": config.Destination.Registry,
-		"parallel":    config.Parallel,
+		"source":      syncConfig.Source.Registry,
+		"destination": syncConfig.Destination.Registry,
+		"parallel":    syncConfig.Parallel,
 		"dry-run":     syncDryRun,
 	}).Info("Starting sync operation")
 
 	// Build list of sync tasks
-	syncTasks, err := buildSyncTasks(ctx, logger, config)
+	syncTasks, err := buildSyncTasks(ctx, logger, syncConfig)
 	if err != nil {
 		return fmt.Errorf("failed to build sync tasks: %w", err)
 	}
@@ -144,8 +145,22 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Execute sync tasks using batch executor
-	executor := sync.NewBatchExecutor(config, logger)
+	// Create client factory (use global cfg or create minimal one)
+	var factoryCfg *config.Config
+	if cfg != nil {
+		factoryCfg = cfg
+	} else {
+		// Create minimal config for factory if global config not loaded
+		factoryCfg = &config.Config{
+			Registries: config.RegistriesConfig{
+				Registries: []config.RegistryConfig{},
+			},
+		}
+	}
+	factory := client.NewFactory(factoryCfg, logger)
+
+	// Execute sync tasks using batch executor with factory
+	executor := sync.NewBatchExecutorWithFactory(syncConfig, logger, factory)
 	results, err := executor.Execute(ctx, syncTasks)
 	if err != nil {
 		return fmt.Errorf("batch execution failed: %w", err)

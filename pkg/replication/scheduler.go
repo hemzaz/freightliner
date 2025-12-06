@@ -137,7 +137,7 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 	}
 
 	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	// Note: Unlock is done explicitly before returning (no defer)
 
 	// Parse the schedule as a cron expression
 	var nextRun time.Time
@@ -174,17 +174,18 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		"next_run": nextRun,
 	}).Info("Added scheduled job")
 
-	// If this is an immediate execution job, trigger a check
-	if rule.Schedule == "@now" || rule.Schedule == "@once" {
-		// Unlock before triggering check to avoid deadlock
-		s.mutex.Unlock()
-		// Trigger an immediate check in a goroutine to avoid blocking
+	// If this is an immediate execution job, trigger a check after releasing lock
+	triggerImmediate := rule.Schedule == "@now" || rule.Schedule == "@once"
+
+	// Release lock before spawning goroutine
+	s.mutex.Unlock()
+
+	// Trigger immediate check if needed (outside critical section)
+	if triggerImmediate {
 		go func() {
 			time.Sleep(10 * time.Millisecond) // Small delay to ensure job is registered
 			s.checkJobs()
 		}()
-		// Re-acquire lock before returning (defer will unlock)
-		s.mutex.Lock()
 	}
 
 	return nil
