@@ -30,6 +30,7 @@ type Client struct {
 	logger        log.Logger
 	authenticator authn.Authenticator
 	transportOpt  remote.Option
+	httpTransport *http.Transport // Reusable HTTP transport with connection pooling
 }
 
 // ClientOptions provides configuration for connecting to a generic registry
@@ -83,6 +84,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		}
 	}
 
+	// Create and store HTTP transport for connection pooling
 	httpTransport := createHTTPTransport(insecure)
 
 	// Create transport option
@@ -97,6 +99,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		logger:        opts.Logger,
 		authenticator: auth,
 		transportOpt:  transportOpt,
+		httpTransport: httpTransport, // Store for reuse in GetTransport/GetRemoteOptions
 	}, nil
 }
 
@@ -185,13 +188,12 @@ func (c *Client) GetTransport(repositoryName string) (http.RoundTripper, error) 
 		}
 	}
 
-	httpTransport := createHTTPTransport(insecure)
-
+	// Reuse stored HTTP transport for connection pooling
 	rt, err := transport.NewWithContext(
 		context.Background(),
 		repository.Registry,
 		c.authenticator,
-		httpTransport,
+		c.httpTransport,
 		[]string{repository.Scope(transport.PullScope)},
 	)
 	if err != nil {
@@ -217,8 +219,8 @@ func (c *Client) GetRemoteOptions() []remote.Option {
 			}).Warn("SECURITY WARNING: Using insecure remote options - certificate verification disabled")
 		}
 
-		httpTransport := createHTTPTransport(true)
-		opts = append(opts, remote.WithTransport(httpTransport))
+		// Reuse stored HTTP transport for connection pooling
+		opts = append(opts, remote.WithTransport(c.httpTransport))
 	}
 
 	return opts
