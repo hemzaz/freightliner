@@ -165,6 +165,47 @@ func (r *Repository) GetManifest(ctx context.Context, ref string) (*interfaces.M
 	return manifest, nil
 }
 
+// GetConfigBlob fetches a config blob by digest from the repository
+// This is needed to determine architecture for single-arch manifests
+func (r *Repository) GetConfigBlob(ctx context.Context, digest string) ([]byte, error) {
+	if digest == "" {
+		return nil, errors.InvalidInputf("digest cannot be empty")
+	}
+
+	// Parse digest as a name.Digest for the go-containerregistry API
+	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", r.repository.Name(), digest))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse digest")
+	}
+
+	// Get the layer/blob from the registry
+	layer, err := remote.Layer(digestRef, r.client.GetRemoteOptions()...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get config blob from registry")
+	}
+
+	// Get the uncompressed content (config blobs are typically uncompressed)
+	reader, err := layer.Uncompressed()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get config blob reader")
+	}
+	defer reader.Close()
+
+	// Read all data from the config blob
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read config blob data")
+	}
+
+	r.client.logger.WithFields(map[string]interface{}{
+		"repository": r.name,
+		"digest":     digest,
+		"size":       len(data),
+	}).Debug("Successfully retrieved config blob from generic registry")
+
+	return data, nil
+}
+
 // GetRemoteOptions returns remote options for registry operations
 func (r *Repository) GetRemoteOptions() ([]remote.Option, error) {
 	// Return the client's remote options

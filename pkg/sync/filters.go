@@ -176,6 +176,10 @@ func ApplyLimit(tags []string, limit int) []string {
 type ArchitectureFilterer interface {
 	// GetManifest returns the manifest for a given repository and tag
 	GetManifest(ctx context.Context, repository, tag string) ([]byte, string, error)
+
+	// GetConfigBlob fetches a config blob by digest from the given repository
+	// This is needed to determine architecture for single-arch manifests
+	GetConfigBlob(ctx context.Context, repository, digest string) ([]byte, error)
 }
 
 // ApplyArchitectureFilter filters tags by architecture using manifest inspection
@@ -201,7 +205,7 @@ func ApplyArchitectureFilter(ctx context.Context, filterer ArchitectureFilterer,
 		}
 
 		// Check if this tag matches any desired architecture
-		if hasMatchingArchitecture(manifestData, mediaType, archMap) {
+		if hasMatchingArchitecture(ctx, filterer, repository, manifestData, mediaType, archMap) {
 			filtered = append(filtered, tag)
 		}
 	}
@@ -210,7 +214,7 @@ func ApplyArchitectureFilter(ctx context.Context, filterer ArchitectureFilterer,
 }
 
 // hasMatchingArchitecture checks if a manifest contains any of the specified architectures
-func hasMatchingArchitecture(manifestData []byte, mediaType string, desiredArchs map[string]bool) bool {
+func hasMatchingArchitecture(ctx context.Context, filterer ArchitectureFilterer, repository string, manifestData []byte, mediaType string, desiredArchs map[string]bool) bool {
 	switch mediaType {
 	case "application/vnd.oci.image.index.v1+json",
 		"application/vnd.docker.distribution.manifest.list.v2+json":
@@ -219,8 +223,8 @@ func hasMatchingArchitecture(manifestData []byte, mediaType string, desiredArchs
 
 	case "application/vnd.oci.image.manifest.v1+json",
 		"application/vnd.docker.distribution.manifest.v2+json":
-		// Single-arch manifest - need to inspect config
-		return checkSingleArchManifest(manifestData, desiredArchs)
+		// Single-arch manifest - need to inspect config blob
+		return checkSingleArchManifest(ctx, filterer, repository, manifestData, desiredArchs)
 
 	default:
 		// Unknown media type - assume it doesn't match
@@ -257,33 +261,63 @@ func checkMultiArchManifest(manifestData []byte, desiredArchs map[string]bool) b
 }
 
 // checkSingleArchManifest checks if a single-arch manifest matches desired architectures
-func checkSingleArchManifest(manifestData []byte, desiredArchs map[string]bool) bool {
-	// For single-arch manifests, we need to look at the platform in the descriptor
-	// or parse the config to get architecture info
-
+// by fetching and parsing the config blob
+func checkSingleArchManifest(ctx context.Context, filterer ArchitectureFilterer, repository string, manifestData []byte, desiredArchs map[string]bool) bool {
 	// Try parsing as OCI Manifest
 	var ociManifest manifest.OCIManifest
 	if err := json.Unmarshal(manifestData, &ociManifest); err == nil {
-		// Check if config descriptor has platform info
+		// Check if config descriptor has platform info (optional in OCI spec)
 		if ociManifest.Config.Platform != nil {
 			return desiredArchs[ociManifest.Config.Platform.Architecture]
 		}
-		// For single-arch without platform info, we'd need to fetch the config blob
-		// For now, we'll be conservative and include it
+
+		// Fetch config blob to determine architecture
+		if arch := fetchArchFromConfig(ctx, filterer, repository, ociManifest.Config.Digest); arch != "" {
+			return desiredArchs[arch]
+		}
+
+		// Failed to determine architecture - be conservative and include it
 		return true
 	}
 
 	// Try parsing as Docker V2 Manifest
 	var dockerManifest manifest.DockerV2Schema2Manifest
 	if err := json.Unmarshal(manifestData, &dockerManifest); err == nil {
-		// Docker V2 manifests don't include architecture in the manifest itself
-		// We'd need to fetch the config blob to determine architecture
-		// For now, be conservative and include it
+		// Docker V2 manifests don't include architecture in manifest
+		// Fetch config blob to determine architecture
+		if arch := fetchArchFromConfig(ctx, filterer, repository, dockerManifest.Config.Digest); arch != "" {
+			return desiredArchs[arch]
+		}
+
+		// Failed to determine architecture - be conservative and include it
 		return true
 	}
 
 	// Unknown format - be conservative and include it
 	return true
+}
+
+// fetchArchFromConfig fetches a config blob and extracts the architecture
+func fetchArchFromConfig(ctx context.Context, filterer ArchitectureFilterer, repository, digest string) string {
+	// Fetch the config blob
+	configBlob, err := filterer.GetConfigBlob(ctx, repository, digest)
+	if err != nil {
+		// Failed to fetch config - can't determine architecture
+		return ""
+	}
+
+	// Parse the config blob to extract architecture
+	// Both OCI and Docker V2 configs have "architecture" field at root level
+	var config struct {
+		Architecture string `json:"architecture"`
+	}
+
+	if err := json.Unmarshal(configBlob, &config); err != nil {
+		// Failed to parse config
+		return ""
+	}
+
+	return config.Architecture
 }
 
 // CombineFilters combines multiple tag filters with AND logic
