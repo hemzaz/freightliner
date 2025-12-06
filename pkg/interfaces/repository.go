@@ -49,6 +49,18 @@ type TagLister interface {
 	ListTags(ctx context.Context) ([]string, error)
 }
 
+// LayerDescriptor represents a layer in a manifest
+type LayerDescriptor struct {
+	// Digest is the digest of the layer
+	Digest string `json:"digest"`
+
+	// Size is the size of the layer in bytes
+	Size int64 `json:"size"`
+
+	// MediaType is the media type of the layer
+	MediaType string `json:"mediaType"`
+}
+
 // Manifest represents a container image manifest
 type Manifest struct {
 	// Content is the raw manifest content
@@ -59,6 +71,15 @@ type Manifest struct {
 
 	// Digest is the SHA256 digest of the manifest
 	Digest string
+
+	// SchemaVersion is the manifest schema version
+	SchemaVersion int `json:"schemaVersion,omitempty"`
+
+	// Layers is the list of layers in the manifest
+	Layers []LayerDescriptor `json:"layers,omitempty"`
+
+	// Config is the config descriptor
+	Config *LayerDescriptor `json:"config,omitempty"`
 }
 
 // ManifestAccessor provides access to manifests

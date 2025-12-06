@@ -136,8 +136,8 @@ func (pm *PerformanceMetrics) GetSummary() map[string]interface{} {
 	}
 }
 
-// generateTestData creates test data of specified size with realistic characteristics
-func generateTestData(size int) []byte {
+// generateTestDataForPerformanceTest creates test data of specified size with realistic characteristics
+func generateTestDataForPerformanceTest(size int) []byte {
 	data := make([]byte, size)
 
 	// Create data that compresses somewhat realistically
@@ -163,7 +163,7 @@ func testCompressionPerformance(t *testing.T, config PerformanceTestConfig) *Per
 	for _, payloadSize := range config.PayloadSizes {
 		for _, compressionLevel := range config.CompressionLevels {
 			t.Run(fmt.Sprintf("Size_%dKB_Level_%d", payloadSize/1024, compressionLevel), func(t *testing.T) {
-				testData := generateTestData(payloadSize)
+				testData := generateTestDataForPerformanceTest(payloadSize)
 
 				// Test compression performance
 				for i := 0; i < config.Iterations; i++ {
@@ -206,7 +206,7 @@ func testConcurrentCompressionPerformance(t *testing.T, config PerformanceTestCo
 
 	// Use a fixed payload size for concurrent testing
 	payloadSize := 1024 * 1024 // 1MB
-	testData := generateTestData(payloadSize)
+	testData := generateTestDataForPerformanceTest(payloadSize)
 
 	var wg sync.WaitGroup
 	var concurrentOps int64
@@ -350,7 +350,7 @@ func BenchmarkCompressionOperations(b *testing.B) {
 
 	for _, size := range sizes {
 		for _, level := range levels {
-			testData := generateTestData(size)
+			testData := generateTestDataForPerformanceTest(size)
 
 			b.Run(fmt.Sprintf("Size_%dKB_Level_%d", size/1024, level), func(b *testing.B) {
 				b.ResetTimer()
@@ -383,7 +383,7 @@ func BenchmarkDecompressionOperations(b *testing.B) {
 	sizes := []int{1024, 10240, 102400, 1048576} // 1KB to 1MB
 
 	for _, size := range sizes {
-		testData := generateTestData(size)
+		testData := generateTestDataForPerformanceTest(size)
 
 		// Pre-compress the data
 		var compressedBuf bytes.Buffer
@@ -422,7 +422,7 @@ func TestMemoryUsageDuringCompression(t *testing.T) {
 
 	// Use smaller payload for CI environments
 	payloadSize := 10 * 1024 * 1024 // 10MB (reduced from 50MB)
-	testData := generateTestData(payloadSize)
+	testData := generateTestDataForPerformanceTest(payloadSize)
 
 	t.Log("Testing memory usage during compression...")
 

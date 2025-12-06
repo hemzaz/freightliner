@@ -1,0 +1,174 @@
+# Freightliner Registry Configuration Example
+#
+# This file demonstrates how to configure multiple container registries
+# for use with Freightliner. You can configure AWS ECR, Google GCR,
+# DockerHub, Harbor, Quay, GitLab, GitHub Container Registry, and more.
+
+# Default source and destination registries
+# These are used when no registry is explicitly specified
+default_source: "ecr-production"
+default_destination: "gcr-production"
+
+# Registry configurations
+registries:
+  # AWS Elastic Container Registry (ECR)
+  - name: "ecr-production"
+    type: "ecr"
+    region: "us-east-1"
+    account_id: "123456789012"  # Optional, uses default from credentials if empty
+    auth:
+      type: "aws"
+      profile: ""               # Optional AWS profile
+      role_arn: ""              # Optional IAM role to assume
+      credentials_file: ""      # Optional path to AWS credentials file
+    timeout: 30
+    retry_attempts: 3
+
+  # AWS ECR in different region
+  - name: "ecr-development"
+    type: "ecr"
+    region: "us-west-2"
+    account_id: "123456789012"
+    auth:
+      type: "aws"
+
+  # Google Container Registry (GCR)
+  - name: "gcr-production"
+    type: "gcr"
+    project: "my-gcp-project"
+    region: "us"  # Options: us, eu, asia
+    auth:
+      type: "gcp"
+      credentials_file: "/path/to/service-account-key.json"
+    timeout: 30
+    retry_attempts: 3
+
+  # Docker Hub (public)
+  - name: "dockerhub-public"
+    type: "dockerhub"
+    endpoint: "https://registry-1.docker.io"
+    auth:
+      type: "anonymous"
+
+  # Docker Hub (authenticated)
+  - name: "dockerhub-private"
+    type: "dockerhub"
+    endpoint: "https://registry-1.docker.io"
+    auth:
+      type: "basic"
+      username: "myusername"
+      password: "mypassword"
+      # For production, use secrets manager:
+      # use_secrets_manager: true
+      # secret_name: "dockerhub-credentials"
+
+  # Harbor (self-hosted)
+  - name: "harbor-internal"
+    type: "harbor"
+    endpoint: "https://harbor.company.com"
+    auth:
+      type: "basic"
+      username: "admin"
+      password: "Harbor12345"
+    tls:
+      cert_file: "/path/to/client.crt"
+      key_file: "/path/to/client.key"
+      ca_file: "/path/to/ca.crt"
+      insecure_skip_verify: false
+    timeout: 60
+    retry_attempts: 5
+    metadata:
+      environment: "production"
+      team: "platform"
+
+  # Quay.io
+  - name: "quay-production"
+    type: "quay"
+    endpoint: "https://quay.io"
+    auth:
+      type: "basic"
+      username: "myorg+robot"
+      password: "robot-token-here"
+
+  # GitLab Container Registry
+  - name: "gitlab-registry"
+    type: "gitlab"
+    endpoint: "https://registry.gitlab.com"
+    project: "mygroup/myproject"
+    auth:
+      type: "token"
+      token: "gitlab-deploy-token"
+
+  # GitHub Container Registry (ghcr.io)
+  - name: "github-registry"
+    type: "github"
+    endpoint: "https://ghcr.io"
+    project: "myorg"
+    auth:
+      type: "token"
+      token: "ghp_your_personal_access_token"
+
+  # Azure Container Registry (ACR)
+  - name: "azure-registry"
+    type: "azure"
+    endpoint: "https://myregistry.azurecr.io"
+    project: "myregistry"
+    auth:
+      type: "basic"
+      username: "myregistry"
+      password: "azure-access-token"
+
+  # Generic OCI Registry (self-hosted)
+  - name: "generic-registry"
+    type: "generic"
+    endpoint: "https://registry.example.com"
+    auth:
+      type: "basic"
+      username: "user"
+      password: "pass"
+    insecure: false  # Set to true for testing with self-signed certs
+    timeout: 45
+    retry_attempts: 3
+    metadata:
+      location: "on-premises"
+      datacenter: "dc1"
+
+  # Registry with secrets manager integration
+  - name: "secure-registry"
+    type: "harbor"
+    endpoint: "https://secure.company.com"
+    auth:
+      type: "basic"
+      use_secrets_manager: true
+      secret_name: "harbor-production-credentials"
+    timeout: 30
+
+# Configuration Notes:
+#
+# 1. Authentication Types:
+#    - "basic": Username and password authentication
+#    - "token": Bearer token authentication
+#    - "aws": AWS IAM authentication (for ECR)
+#    - "gcp": GCP service account authentication (for GCR)
+#    - "oauth": OAuth2 authentication
+#    - "anonymous": No authentication
+#
+# 2. Secrets Manager:
+#    Set use_secrets_manager: true to fetch credentials from cloud provider
+#    secrets manager instead of hardcoding them in this file.
+#
+# 3. TLS Configuration:
+#    Configure client certificates and CA certificates for registries
+#    that require mTLS authentication.
+#
+# 4. Timeout and Retry:
+#    Adjust timeout and retry_attempts based on your network conditions
+#    and registry performance.
+#
+# 5. Default Registries:
+#    Set default_source and default_destination to avoid specifying
+#    registries for every replication operation.
+#
+# 6. Metadata:
+#    Use the metadata field to add custom key-value pairs for organization,
+#    filtering, or reporting purposes.

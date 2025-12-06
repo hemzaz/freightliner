@@ -1,0 +1,705 @@
+openapi: 3.0.3
+info:
+  title: Freightliner Container Registry Replication API
+  description: |
+    RESTful API for container image replication across multiple registries.
+    Supports AWS ECR, GCP GCR, Azure ACR, Docker Hub, Harbor, and generic OCI registries.
+  version: 1.0.0
+  contact:
+    name: Freightliner Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+  - url: https://freightliner.example.com/api/v1
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Replication
+    description: Image replication operations
+  - name: Jobs
+    description: Job management and monitoring
+  - name: Registries
+    description: Registry configuration and health
+  - name: Checkpoints
+    description: Checkpoint management for resumable operations
+  - name: System
+    description: System health and statistics
+
+paths:
+  /replicate:
+    post:
+      tags: [Replication]
+      summary: Replicate a container repository
+      description: Replicates images from source to destination registry
+      operationId: replicateRepository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplicateRequest'
+      responses:
+        '202':
+          description: Replication job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /replicate-tree:
+    post:
+      tags: [Replication]
+      summary: Replicate a tree of repositories
+      description: Replicates multiple repositories and tags in bulk
+      operationId: replicateTree
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplicateTreeRequest'
+      responses:
+        '202':
+          description: Tree replication job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List jobs
+      description: Returns a list of replication jobs
+      operationId: listJobs
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [replicate, replicate-tree, checkpoint]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, cancelled]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Get job details
+      description: Returns detailed information about a specific job
+      operationId: getJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /jobs/{id}/cancel:
+    post:
+      tags: [Jobs]
+      summary: Cancel a job
+      description: Cancels a running or pending job
+      operationId: cancelJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /jobs/{id}/retry:
+    post:
+      tags: [Jobs]
+      summary: Retry a failed job
+      description: Creates a new job with the same parameters as a failed job
+      operationId: retryJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Retry job created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  original_job_id:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /registries:
+    get:
+      tags: [Registries]
+      summary: List configured registries
+      description: Returns all configured container registries
+      operationId: listRegistries
+      responses:
+        '200':
+          description: List of registries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Registry'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /registries/{name}/health:
+    get:
+      tags: [Registries]
+      summary: Check registry health
+      description: Performs a health check on a specific registry
+      operationId: checkRegistryHealth
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Registry health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryHealth'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /checkpoints:
+    get:
+      tags: [Checkpoints]
+      summary: List checkpoints
+      description: Returns all available checkpoints for tree replication
+      operationId: listCheckpoints
+      responses:
+        '200':
+          description: List of checkpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkpoints:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Checkpoint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /checkpoints/{id}:
+    get:
+      tags: [Checkpoints]
+      summary: Get checkpoint details
+      description: Returns detailed information about a specific checkpoint
+      operationId: getCheckpoint
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Checkpoint details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Checkpoint'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Checkpoints]
+      summary: Delete a checkpoint
+      description: Removes a checkpoint from storage
+      operationId: deleteCheckpoint
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Checkpoint deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /system/health:
+    get:
+      tags: [System]
+      summary: System health check
+      description: Returns overall system health including all components
+      operationId: getSystemHealth
+      security: []
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealth'
+
+  /system/stats:
+    get:
+      tags: [System]
+      summary: Worker pool statistics
+      description: Returns statistics about the worker pool performance
+      operationId: getWorkerPoolStats
+      responses:
+        '200':
+          description: Worker pool statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerPoolStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    ReplicateRequest:
+      type: object
+      required:
+        - source_registry
+        - source_repo
+        - dest_registry
+        - dest_repo
+      properties:
+        source_registry:
+          type: string
+          description: Source registry name or URL
+          example: "docker.io"
+        source_repo:
+          type: string
+          description: Source repository path
+          example: "library/nginx"
+        dest_registry:
+          type: string
+          description: Destination registry name
+          example: "ecr"
+        dest_repo:
+          type: string
+          description: Destination repository path
+          example: "my-project/nginx"
+        tags:
+          type: array
+          items:
+            type: string
+          description: Specific tags to replicate (optional, defaults to all)
+          example: ["latest", "1.21", "1.21.0"]
+        force:
+          type: boolean
+          default: false
+          description: Force overwrite existing images
+        dry_run:
+          type: boolean
+          default: false
+          description: Preview changes without actually replicating
+
+    ReplicateTreeRequest:
+      type: object
+      required:
+        - source_registry
+        - source_repo
+        - dest_registry
+        - dest_repo
+      properties:
+        source_registry:
+          type: string
+        source_repo:
+          type: string
+        dest_registry:
+          type: string
+        dest_repo:
+          type: string
+        exclude_repos:
+          type: array
+          items:
+            type: string
+          description: Repository patterns to exclude
+        exclude_tags:
+          type: array
+          items:
+            type: string
+          description: Tag patterns to exclude
+        include_tags:
+          type: array
+          items:
+            type: string
+          description: Only include specific tag patterns
+        force:
+          type: boolean
+          default: false
+        dry_run:
+          type: boolean
+          default: false
+        enable_checkpoint:
+          type: boolean
+          default: true
+          description: Enable checkpointing for resumability
+        checkpoint_dir:
+          type: string
+          description: Directory for checkpoint files
+        resume_id:
+          type: string
+          description: Resume from an existing checkpoint
+
+    JobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running]
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [replicate, replicate-tree, checkpoint]
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        source:
+          type: string
+        destination:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        duration:
+          type: number
+          description: Duration in seconds
+        progress:
+          type: object
+          properties:
+            current:
+              type: integer
+            total:
+              type: integer
+            percentage:
+              type: number
+        result:
+          type: object
+          description: Job-specific result data
+        error:
+          type: string
+          description: Error message if job failed
+
+    Registry:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [ecr, gcr, acr, dockerhub, harbor, quay, generic]
+        endpoint:
+          type: string
+        region:
+          type: string
+        enabled:
+          type: boolean
+
+    RegistryHealth:
+      type: object
+      properties:
+        registry:
+          type: string
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        message:
+          type: string
+        response_time:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    Checkpoint:
+      type: object
+      properties:
+        id:
+          type: string
+        job_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        source:
+          type: string
+        destination:
+          type: string
+        progress:
+          type: object
+        completed_repos:
+          type: array
+          items:
+            type: string
+        failed_repos:
+          type: array
+          items:
+            type: string
+
+    SystemHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        components:
+          type: object
+          properties:
+            server:
+              $ref: '#/components/schemas/ComponentHealth'
+            worker_pool:
+              $ref: '#/components/schemas/ComponentHealth'
+            job_manager:
+              $ref: '#/components/schemas/ComponentHealth'
+
+    ComponentHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+
+    WorkerPoolStats:
+      type: object
+      properties:
+        workers:
+          type: object
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            idle:
+              type: integer
+        jobs:
+          type: object
+          properties:
+            queued:
+              type: integer
+            running:
+              type: integer
+            complete:
+              type: integer
+            failed:
+              type: integer
+        performance:
+          type: object
+          properties:
+            avg_job_duration:
+              type: number
+              description: Average duration in seconds
+            throughput:
+              type: number
+              description: Jobs per minute
+        timestamp:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+        details:
+          type: object
+          description: Additional error details
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Authentication required or failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Request limit per window
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in current window
+        X-RateLimit-Reset:
+          schema:
+            type: string
+            format: date-time
+          description: Time when rate limit resets
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

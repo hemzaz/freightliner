@@ -52,11 +52,10 @@ invalid: [yaml
 			tmpDir := t.TempDir()
 			configPath := filepath.Join(tmpDir, "config.yaml")
 
-			if tt.content != "" {
-				err := os.WriteFile(configPath, []byte(tt.content), 0644)
-				if err != nil {
-					t.Fatalf("Failed to write test config: %v", err)
-				}
+			// Always write the file, even if content is empty
+			err := os.WriteFile(configPath, []byte(tt.content), 0644)
+			if err != nil {
+				t.Fatalf("Failed to write test config: %v", err)
 			}
 
 			config, err := LoadFromFile(configPath)

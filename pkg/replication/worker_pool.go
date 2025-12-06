@@ -22,6 +22,7 @@ type WorkerPool struct {
 	closed        atomic.Bool
 	jobsClosed    atomic.Bool
 	resultsClosed atomic.Bool
+	stats         *statsCollector
 }
 
 // WorkerJob represents a unit of work to be processed by a worker
@@ -65,14 +66,16 @@ func NewWorkerPool(workerCount int, logger log.Logger) *WorkerPool {
 		bufferSize = maxBufferSize
 	}
 
-	return &WorkerPool{
+	pool := &WorkerPool{
 		workers:     workerCount,
 		jobQueue:    make(chan WorkerJob, bufferSize),
 		results:     make(chan JobResult, bufferSize),
 		stopContext: ctx,
 		stopFunc:    cancel,
 		logger:      logger,
+		stats:       newStatsCollector(),
 	}
+	return pool
 }
 
 // Start starts the worker pool
@@ -231,6 +234,15 @@ func (p *WorkerPool) processJob(workerID int, job WorkerJob) {
 
 	// Execute the job and measure duration
 	duration, err := p.executeJob(jobCtx, job)
+
+	// Record stats
+	if p.stats != nil {
+		if err != nil {
+			p.stats.recordJobFailure(duration)
+		} else {
+			p.stats.recordJobCompletion(duration)
+		}
+	}
 
 	// Create job result
 	result := JobResult{

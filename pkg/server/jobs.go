@@ -43,6 +43,9 @@ const (
 
 	// JobStatusCanceled indicates a job was canceled
 	JobStatusCanceled JobStatus = "canceled"
+
+	// JobStatusCancelled indicates a job was cancelled (British spelling)
+	JobStatusCancelled JobStatus = "cancelled"
 )
 
 // JobManager manages job execution and tracking
@@ -96,6 +99,14 @@ func (m *JobManager) ListJobs(jobType JobType, status JobStatus) []Job {
 	}
 
 	return result
+}
+
+// GetJobCount returns the total number of jobs
+func (m *JobManager) GetJobCount() int {
+	m.jobsMutex.RLock()
+	defer m.jobsMutex.RUnlock()
+
+	return len(m.jobs)
 }
 
 // UpdateJob updates a job's status and result

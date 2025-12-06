@@ -1,0 +1,284 @@
+{
+  "analysis_date": "2025-12-05",
+  "tool": "skopeo",
+  "version": "latest",
+
+  "core_commands": {
+    "copy": {
+      "purpose": "Copy images between transports with optional transformations",
+      "key_features": [
+        "Multi-transport support (8 transports)",
+        "Format conversion (oci, v2s1, v2s2)",
+        "Multi-architecture handling",
+        "Encryption/decryption (experimental)",
+        "Signing support (GPG, Sigstore, Sequoia-PGP)",
+        "Parallel layer operations",
+        "Compression control"
+      ],
+      "authentication": [
+        "Basic auth (username:password)",
+        "Bearer tokens",
+        "Credential files",
+        "Anonymous access"
+      ]
+    },
+    "inspect": {
+      "purpose": "Retrieve image metadata without downloading",
+      "outputs": [
+        "Manifest (raw or parsed)",
+        "Configuration blob",
+        "Layer information",
+        "Repository tags",
+        "Platform details"
+      ]
+    },
+    "sync": {
+      "purpose": "Bulk image synchronization with filtering",
+      "sources": ["docker", "dir", "yaml"],
+      "destinations": ["docker", "dir"],
+      "filtering": [
+        "Explicit tag lists",
+        "Regex patterns",
+        "Semver constraints"
+      ]
+    },
+    "delete": {
+      "purpose": "Remove images from registries",
+      "transports": ["docker://", "containers-storage:", "oci:"]
+    },
+    "login": {
+      "purpose": "Authenticate to registries",
+      "credential_storage": "${XDG_RUNTIME_DIR}/containers/auth.json"
+    },
+    "list-tags": {
+      "purpose": "Enumerate repository tags",
+      "transports": ["docker://", "docker-archive:"]
+    }
+  },
+
+  "transports": {
+    "docker": {
+      "protocol": "Docker Registry HTTP API V2",
+      "read": true,
+      "write": true,
+      "features": [
+        "Authentication (Basic, Bearer)",
+        "TLS verification",
+        "Blob mounting",
+        "Resumable uploads",
+        "Multi-arch manifest lists"
+      ]
+    },
+    "oci": {
+      "spec": "OCI Image Layout v1.0+",
+      "read": true,
+      "write": true,
+      "structure": "index.json + blobs/sha256/"
+    },
+    "dir": {
+      "read": true,
+      "write": true,
+      "structure": "manifest.json + layer tarballs"
+    },
+    "docker-archive": {
+      "compatible_with": "docker save/load",
+      "read": true,
+      "write": true
+    },
+    "oci-archive": {
+      "read": true,
+      "write": true
+    },
+    "containers-storage": {
+      "shared_with": ["Podman", "Buildah", "CRI-O"],
+      "read": true,
+      "write": true
+    },
+    "docker-daemon": {
+      "read": true,
+      "write": "limited"
+    }
+  },
+
+  "authentication_patterns": {
+    "methods": [
+      "username_password",
+      "bearer_token",
+      "credential_file",
+      "anonymous"
+    ],
+    "credential_file_format": "Docker-compatible JSON",
+    "tls_verification": {
+      "default": true,
+      "configurable": true,
+      "certificate_paths": [
+        "registry.example.com.crt",
+        "registry.example.com.cert",
+        "registry.example.com.key",
+        "ca.crt"
+      ]
+    }
+  },
+
+  "manifest_formats": {
+    "docker_v2_schema1": {
+      "media_type": "application/vnd.docker.distribution.manifest.v1+json",
+      "status": "deprecated",
+      "supported": true
+    },
+    "docker_v2_schema2": {
+      "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+      "features": ["separate_config_blob", "content_addressable_layers"]
+    },
+    "oci_v1": {
+      "media_type": "application/vnd.oci.image.manifest.v1+json",
+      "features": ["annotations", "artifact_support"]
+    },
+    "manifest_lists": {
+      "docker": "application/vnd.docker.distribution.manifest.list.v2+json",
+      "oci": "application/vnd.oci.image.index.v1+json",
+      "purpose": "multi-architecture support"
+    }
+  },
+
+  "security_features": {
+    "signature_types": [
+      "GPG (simple signing)",
+      "Sigstore",
+      "Sequoia-PGP"
+    ],
+    "verification": {
+      "policy_based": true,
+      "policy_file": "/etc/containers/policy.json",
+      "signature_storage": "registries.d configuration"
+    },
+    "encryption": {
+      "status": "experimental",
+      "library": "ocicrypt",
+      "methods": ["JWE", "PGP", "PKCS7"],
+      "granularity": "per-layer"
+    }
+  },
+
+  "performance_features": {
+    "parallel_operations": {
+      "flag": "--image-parallel-copies N",
+      "scope": "layer downloads/uploads"
+    },
+    "optimization": {
+      "blob_mounting": "cross-repository zero-copy",
+      "shared_blob_dir": "deduplication across OCI repos",
+      "precompute_digests": "skip existing layers"
+    },
+    "retry": {
+      "configurable": true,
+      "backoff": "exponential or fixed",
+      "flags": ["--retry-times", "--retry-delay"]
+    }
+  },
+
+  "registry_support": {
+    "compatible_registries": [
+      "Docker Hub",
+      "Quay.io",
+      "Google Container Registry (GCR)",
+      "Amazon Elastic Container Registry (ECR)",
+      "Azure Container Registry (ACR)",
+      "Harbor",
+      "JFrog Artifactory",
+      "GitLab Container Registry"
+    ],
+    "ecr_limitations": [
+      "Tag listing requires ecr:ListImages IAM permission",
+      "Public ECR doesn't implement tag listing endpoint"
+    ]
+  },
+
+  "architectural_patterns": {
+    "transport_abstraction": {
+      "interface": "Transport",
+      "methods": ["Name", "ParseReference"],
+      "reference_interface": ["NewImageSource", "NewImageDestination"]
+    },
+    "system_context": {
+      "purpose": "Unified configuration context",
+      "combines": [
+        "authentication",
+        "TLS settings",
+        "registry configuration",
+        "platform overrides",
+        "storage paths"
+      ]
+    },
+    "error_handling": {
+      "types": ["retryable", "non-retryable", "not-found"],
+      "codes": ["EPIPE", "retryable", "other"]
+    }
+  },
+
+  "recommendations_for_freightliner": {
+    "high_priority": [
+      "Multi-transport architecture pattern",
+      "Authentication credential management",
+      "TLS certificate handling",
+      "Retry logic with exponential backoff",
+      "Manifest format detection and conversion"
+    ],
+    "medium_priority": [
+      "Signature verification framework",
+      "Sync filtering mechanisms (regex/semver)",
+      "Blob mounting optimization"
+    ],
+    "low_priority": [
+      "Proxy mode IPC (experimental)",
+      "Layer encryption (experimental)"
+    ],
+    "code_patterns_to_adopt": [
+      "SystemContext pattern for unified config",
+      "Transport abstraction with interface",
+      "Retry wrapper functions",
+      "Structured error types",
+      "Reference parsing and validation"
+    ]
+  },
+
+  "key_insights": {
+    "strengths": [
+      "Daemonless operation - no privileged daemon required",
+      "Comprehensive multi-transport support",
+      "Production-ready error handling",
+      "Registry-agnostic design",
+      "Powerful bulk operations with YAML config",
+      "Mature signature verification framework"
+    ],
+    "unique_features": [
+      "YAML-driven bulk sync with filtering",
+      "Regex and semver tag selection",
+      "Standalone offline signing",
+      "Experimental proxy mode for programmatic access",
+      "Per-layer encryption support"
+    ],
+    "limitations": [
+      "No image building capabilities",
+      "No container execution",
+      "Sequential sync operations",
+      "Full manifests loaded in memory"
+    ]
+  },
+
+  "implementation_notes": {
+    "libraries_used": [
+      "github.com/containers/image/v5",
+      "github.com/containers/storage",
+      "github.com/containers/common",
+      "github.com/opencontainers/go-digest",
+      "github.com/opencontainers/image-spec"
+    ],
+    "ecosystem_compatibility": [
+      "Podman",
+      "Buildah",
+      "CRI-O",
+      "Docker (format compatible)"
+    ]
+  }
+}

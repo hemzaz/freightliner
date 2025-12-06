@@ -70,13 +70,21 @@ func init() {
 	// Add configuration flags to root command
 	cfg.AddFlagsToCommand(rootCmd)
 
-	// Add commands
+	// Add existing commands
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newHealthCheckCmd())
 	rootCmd.AddCommand(newReplicateCmd())
 	rootCmd.AddCommand(newReplicateTreeCmd())
 	rootCmd.AddCommand(newCheckpointCmd())
 	rootCmd.AddCommand(newServeCmd())
+	rootCmd.AddCommand(newSBOMCmd())
+	rootCmd.AddCommand(newScanCmd())
+
+	// Add new advanced CLI commands (Skopeo-like functionality)
+	rootCmd.AddCommand(newInspectCmd())
+	rootCmd.AddCommand(newListTagsCmd())
+	rootCmd.AddCommand(newDeleteCmd())
+	rootCmd.AddCommand(newSyncCmd())
 }
 
 // setupCommand creates a logger and a cancellable context

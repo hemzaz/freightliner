@@ -129,7 +129,7 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 	}
 
 	// Pre-validate the schedule if it's not a special case
-	if rule.Schedule != "@now" {
+	if rule.Schedule != "@now" && rule.Schedule != "@once" {
 		_, err := s.cronParser.Parse(rule.Schedule)
 		if err != nil {
 			return errors.Wrap(err, "invalid cron expression: %s", rule.Schedule)
@@ -142,7 +142,7 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 	// Parse the schedule as a cron expression
 	var nextRun time.Time
 
-	if rule.Schedule == "@now" {
+	if rule.Schedule == "@now" || rule.Schedule == "@once" {
 		// Special case for immediate execution
 		nextRun = time.Now()
 	} else {
@@ -173,6 +173,19 @@ func (s *Scheduler) AddJob(rule ReplicationRule) error {
 		"id":       id,
 		"next_run": nextRun,
 	}).Info("Added scheduled job")
+
+	// If this is an immediate execution job, trigger a check
+	if rule.Schedule == "@now" || rule.Schedule == "@once" {
+		// Unlock before triggering check to avoid deadlock
+		s.mutex.Unlock()
+		// Trigger an immediate check in a goroutine to avoid blocking
+		go func() {
+			time.Sleep(10 * time.Millisecond) // Small delay to ensure job is registered
+			s.checkJobs()
+		}()
+		// Re-acquire lock before returning (defer will unlock)
+		s.mutex.Lock()
+	}
 
 	return nil
 }
@@ -227,7 +240,8 @@ func (s *Scheduler) checkJobs() {
 	now := time.Now()
 
 	for id, job := range s.jobs {
-		if !job.Running && now.After(job.NextRun) {
+		// Check if job should run (not running and next run time has passed or is now)
+		if !job.Running && (now.After(job.NextRun) || now.Equal(job.NextRun)) {
 			// Mark the job as running
 			job.Running = true
 

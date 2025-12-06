@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -185,6 +186,48 @@ func (c *Client) GetRemoteOptions() []remote.Option {
 	}
 
 	return opts
+}
+
+// GetManifest is a convenience method to get a manifest from a repository
+func (c *Client) GetManifest(ctx context.Context, repoName string, tag string) (*interfaces.Manifest, error) {
+	repo, err := c.GetRepository(ctx, repoName)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get repository")
+	}
+
+	return repo.GetManifest(ctx, tag)
+}
+
+// ListTags is a convenience method to list tags from a repository
+func (c *Client) ListTags(ctx context.Context, repoName string) ([]string, error) {
+	repo, err := c.GetRepository(ctx, repoName)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get repository")
+	}
+
+	return repo.ListTags(ctx)
+}
+
+// DownloadLayer is a convenience method to download a layer from a repository
+func (c *Client) DownloadLayer(ctx context.Context, repoName string, digest string) ([]byte, error) {
+	repo, err := c.GetRepository(ctx, repoName)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get repository")
+	}
+
+	reader, err := repo.GetLayerReader(ctx, digest)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get layer reader")
+	}
+	defer reader.Close()
+
+	// Read all data from the layer
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read layer data")
+	}
+
+	return data, nil
 }
 
 // normalizeRegistryURL removes http/https schemes from registry URLs
