@@ -185,7 +185,7 @@ func (be *BatchExecutor) executeBatch(ctx context.Context, batchIdx int, tasks [
 	return nil
 }
 
-// executeTask executes a single sync task with retries
+// executeTask executes a single sync task with retries and timeout enforcement
 func (be *BatchExecutor) executeTask(ctx context.Context, task SyncTask) SyncResult {
 	startTime := time.Now()
 	var lastErr error
@@ -198,20 +198,74 @@ func (be *BatchExecutor) executeTask(ctx context.Context, task SyncTask) SyncRes
 		"dest":   dstRef,
 	}).Debug("Starting sync task")
 
+	// Create timeout context for the entire task (all retry attempts)
+	// Use configured timeout, default 5 minutes
+	timeout := time.Duration(be.config.Timeout) * time.Second
+	taskCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Check for cancellation before starting
+	select {
+	case <-taskCtx.Done():
+		return SyncResult{
+			Task:     task,
+			Success:  false,
+			Error:    fmt.Errorf("task cancelled before execution: %w", taskCtx.Err()),
+			Duration: time.Since(startTime).Milliseconds(),
+		}
+	default:
+	}
+
 	// Retry loop
 	for attempt := 0; attempt <= be.config.RetryAttempts; attempt++ {
+		// Check for context cancellation/timeout at start of each attempt
+		select {
+		case <-taskCtx.Done():
+			duration := time.Since(startTime).Milliseconds()
+			be.logger.WithFields(map[string]interface{}{
+				"source":   srcRef,
+				"dest":     dstRef,
+				"attempts": attempt,
+				"elapsed":  duration,
+			}).Warn("Sync task cancelled or timed out")
+
+			return SyncResult{
+				Task:     task,
+				Success:  false,
+				Error:    fmt.Errorf("sync cancelled/timed out after %d attempts: %w", attempt, taskCtx.Err()),
+				Duration: duration,
+				Retries:  attempt,
+			}
+		default:
+		}
 		if attempt > 0 {
-			// Exponential backoff
+			// Exponential backoff with context-aware sleep
 			backoff := time.Duration(be.config.RetryBackoff*(1<<(attempt-1))) * time.Second
 			be.logger.WithFields(map[string]interface{}{
 				"attempt": attempt,
 				"backoff": backoff,
 			}).Debug("Retrying sync task")
-			time.Sleep(backoff)
+
+			// Use context-aware sleep to allow immediate cancellation
+			timer := time.NewTimer(backoff)
+			select {
+			case <-taskCtx.Done():
+				timer.Stop()
+				duration := time.Since(startTime).Milliseconds()
+				return SyncResult{
+					Task:     task,
+					Success:  false,
+					Error:    fmt.Errorf("sync cancelled during retry backoff: %w", taskCtx.Err()),
+					Duration: duration,
+					Retries:  attempt,
+				}
+			case <-timer.C:
+				// Backoff complete, continue to next attempt
+			}
 		}
 
-		// Execute sync
-		bytesCopied, err := be.syncImage(ctx, task)
+		// Execute sync with timeout context
+		bytesCopied, err := be.syncImage(taskCtx, task)
 		if err == nil {
 			duration := time.Since(startTime).Milliseconds()
 			be.logger.WithFields(map[string]interface{}{
