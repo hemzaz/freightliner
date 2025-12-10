@@ -364,7 +364,7 @@ jobs:
       # SECURITY: Upload container scan results
       - name: Upload container scan results
         if: always() && env.CONTAINER_SCAN_ENABLED == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-container-results.sarif
           category: trivy-container-scan
@@ -440,7 +440,7 @@ jobs:
       # SECURITY: Upload security scan results
       - name: Upload security scan results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gosec-results.sarif
           category: gosec-security-scan
@@ -469,6 +469,7 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: --timeout=10m --verbose --enable=gosec,gocritic,gocyclo --out-format=github-actions
+          install-mode: goinstall
 
   # SECURITY: Final security validation and reporting
   security-validation:

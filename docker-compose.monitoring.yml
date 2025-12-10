@@ -110,7 +110,7 @@ services:
       context: .
       dockerfile: Dockerfile.dev
       args:
-        - GO_VERSION=1.21
+        - GO_VERSION=1.25.4
     ports:
       - "${API_PORT:-8080}:8080"     # API endpoint
       - "${METRICS_PORT:-2112}:2112" # Prometheus metrics endpoint

@@ -49,11 +49,11 @@ jobs:
           echo "test-level=$TEST_LEVEL" >> $GITHUB_OUTPUT
           
           if [[ "$TEST_LEVEL" == "comprehensive" ]]; then
-            echo "matrix={\"go-version\":[\"1.24.5\"],\"os\":[\"ubuntu-latest\",\"windows-latest\",\"macos-latest\"],\"test-type\":[\"unit\",\"integration\",\"load\",\"security\",\"config\"]}" >> $GITHUB_OUTPUT
+            echo "matrix={\"go-version\":[\"1.25.4\"],\"os\":[\"ubuntu-latest\",\"windows-latest\",\"macos-latest\"],\"test-type\":[\"unit\",\"integration\",\"load\",\"security\",\"config\"]}" >> $GITHUB_OUTPUT
           elif [[ "$TEST_LEVEL" == "standard" ]]; then
-            echo "matrix={\"go-version\":[\"1.24.5\"],\"os\":[\"ubuntu-latest\",\"macos-latest\"],\"test-type\":[\"unit\",\"integration\",\"security\",\"config\"]}" >> $GITHUB_OUTPUT
+            echo "matrix={\"go-version\":[\"1.25.4\"],\"os\":[\"ubuntu-latest\",\"macos-latest\"],\"test-type\":[\"unit\",\"integration\",\"security\",\"config\"]}" >> $GITHUB_OUTPUT
           else
-            echo "matrix={\"go-version\":[\"1.24.5\"],\"os\":[\"ubuntu-latest\"],\"test-type\":[\"unit\",\"config\"]}" >> $GITHUB_OUTPUT
+            echo "matrix={\"go-version\":[\"1.25.4\"],\"os\":[\"ubuntu-latest\"],\"test-type\":[\"unit\",\"config\"]}" >> $GITHUB_OUTPUT
           fi
 
   validation-tests:
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload security results
         if: matrix.test-type == 'security' && always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gosec-results-${{ matrix.os }}.sarif
         continue-on-error: true
@@ -215,7 +215,7 @@ jobs:
 
       - name: Upload vulnerability scan results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
         continue-on-error: true

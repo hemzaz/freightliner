@@ -130,6 +130,7 @@ jobs:
           args: --timeout=8m --config=.golangci.yml --out-format=colored-line-number
           skip-cache: false
           skip-pkg-cache: false
+          install-mode: goinstall
           skip-build-cache: false
 
       - name: Run go vet
@@ -394,7 +395,7 @@ jobs:
           exit-code: '0'
 
       - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif

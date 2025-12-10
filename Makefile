@@ -5,7 +5,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
-GO_VERSION ?= 1.23.4
+GO_VERSION ?= 1.25.4
 
 # Build flags
 LDFLAGS := -w -s \

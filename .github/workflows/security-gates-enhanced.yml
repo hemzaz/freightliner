@@ -259,7 +259,7 @@ jobs:
       # SECURITY: Upload SAST results
       - name: Upload SAST results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gosec-results.sarif
         continue-on-error: true
@@ -429,7 +429,7 @@ jobs:
       # SECURITY: Upload container scan results
       - name: Upload container scan results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
         continue-on-error: true
@@ -503,7 +503,7 @@ jobs:
       # SECURITY: Upload IaC scan results
       - name: Upload IaC scan results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: checkov-results.sarif
         continue-on-error: true
