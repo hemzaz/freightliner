@@ -56,6 +56,10 @@ on:
         description: 'Name of the artifact containing scan results'
         value: ${{ jobs.scan.outputs.artifact-name }}
 
+permissions:
+  contents: read
+  security-events: write  # For uploading SARIF results
+
 jobs:
   scan:
     name: Security Scan (${{ inputs.scan-type }})

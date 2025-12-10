@@ -7,6 +7,9 @@ on:
     - cron: '0 2 * * *'
   workflow_dispatch:  # Security: No inputs allowed (CKV_GHA_7)
 
+permissions:
+  contents: read  # Minimal read-only access
+
 # Separate concurrency for comprehensive tests
 concurrency:
   group: comprehensive-${{ github.run_id }}

@@ -26,6 +26,10 @@ on:
           - compression
           - network
 
+permissions:
+  contents: read
+  pull-requests: write  # For PR comments with benchmark results
+
 env:
   GO_VERSION: '1.25.4'
   BENCHMARK_COUNT: '5'
@@ -132,7 +136,7 @@ jobs:
   copy-benchmarks:
     name: Copy Operation Benchmarks
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 35
     if: |
       github.event.inputs.benchmark-suite == 'all' ||
       github.event.inputs.benchmark-suite == 'copy' ||

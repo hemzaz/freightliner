@@ -26,6 +26,9 @@ on:
       CODECOV_TOKEN:
         required: false
 
+permissions:
+  contents: read  # Minimal read-only access for tests
+
 jobs:
   test:
     name: Test (${{ inputs.os }}, ${{ inputs.test-type }})

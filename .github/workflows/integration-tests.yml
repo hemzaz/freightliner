@@ -9,14 +9,18 @@ on:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
 
+permissions:
+  contents: read
+  pull-requests: write  # For PR comments with test results
+
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.25.4'
 
 jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
 
     services:
       registry-source:
@@ -164,7 +168,7 @@ jobs:
   performance-tests:
     name: Performance Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
 
     steps:
       - name: Checkout code

@@ -255,19 +255,15 @@ jobs:
 
       - name: Create GitHub Release
         if: github.event.inputs.dry_run != 'true' && success()
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.build-and-push.outputs.image-tag }}
-          release_name: Release ${{ needs.build-and-push.outputs.image-tag }}
-          body: |
-            Deployed to production
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ needs.build-and-push.outputs.image-tag }}" \
+            --title "Release ${{ needs.build-and-push.outputs.image-tag }}" \
+            --notes "Deployed to production
 
-            Image: ${{ env.DOCKER_IMAGE }}:${{ needs.build-and-push.outputs.image-tag }}
-            Digest: ${{ needs.build-and-push.outputs.image-digest }}
-          draft: false
-          prerelease: false
+          Image: ${{ env.DOCKER_IMAGE }}:${{ needs.build-and-push.outputs.image-tag }}
+          Digest: ${{ needs.build-and-push.outputs.image-digest }}"
         continue-on-error: true
 
       - name: Notify Slack

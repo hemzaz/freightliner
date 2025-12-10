@@ -103,6 +103,12 @@ on:
         description: 'SBOM artifact name'
         value: ${{ jobs.build-and-publish.outputs.sbom-artifact }}
 
+permissions:
+  contents: read
+  packages: write  # For publishing to GitHub Container Registry
+  id-token: write  # For OIDC authentication and signing
+  security-events: write  # For uploading vulnerability scan results
+
 jobs:
   build-and-publish:
     name: Build & Publish Docker Image

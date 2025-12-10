@@ -16,6 +16,9 @@ on:
         type: boolean
         default: true
 
+permissions:
+  contents: read  # Minimal read-only access
+
 env:
   GO_VERSION: ${{ inputs.go-version }}
   TEST_TIMEOUT: ${{ inputs.test-timeout }}
