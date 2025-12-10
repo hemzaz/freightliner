@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner
+  annotations:
+    description: "Dev environment service"
+spec:
+  type: NodePort

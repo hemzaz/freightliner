@@ -1,0 +1,199 @@
+# Example: Release Workflow with OIDC Authentication
+# This is an example of how to modernize the release workflow with OIDC-based authentication
+# Replace long-lived secrets with short-lived tokens for enhanced security
+
+name: Release (OIDC Example)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        type: string
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.24.5'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Example: AWS deployment with OIDC
+  deploy-aws-oidc:
+    name: Deploy to AWS (OIDC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.inputs.environment == 'production'
+    
+    # OIDC permissions
+    permissions:
+      id-token: write   # Required for OIDC token
+      contents: read    # Required for repository access
+    
+    environment:
+      name: production-aws
+      url: https://freightliner.aws.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Replace with your AWS account ID and role
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionsRole
+          role-session-name: GitHubActions-${{ github.run_id }}
+          aws-region: us-east-1
+          # Optional: Add additional role settings
+          role-duration-seconds: 3600  # 1 hour
+          role-external-id: freightliner-deploy
+
+      - name: Deploy to AWS ECS
+        run: |
+          echo "🚀 Deploying to AWS ECS with OIDC authentication..."
+          
+          # Example ECS deployment
+          aws ecs update-service \
+            --cluster freightliner-prod \
+            --service freightliner \
+            --task-definition freightliner:latest \
+            --force-new-deployment
+          
+          # Wait for deployment to complete
+          aws ecs wait services-stable \
+            --cluster freightliner-prod \
+            --services freightliner
+          
+          echo "✅ AWS deployment completed"
+
+  # Example: GCP deployment with OIDC
+  deploy-gcp-oidc:
+    name: Deploy to GCP (OIDC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.inputs.environment == 'staging'
+    
+    # OIDC permissions
+    permissions:
+      id-token: write   # Required for OIDC token
+      contents: read    # Required for repository access
+    
+    environment:
+      name: staging-gcp
+      url: https://freightliner.gcp.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud with OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          # Replace with your GCP project and workload identity provider
+          workload_identity_provider: projects/123456789/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions@my-project.iam.gserviceaccount.com
+          project_id: my-gcp-project
+          
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Google Cloud Run
+        run: |
+          echo "🚀 Deploying to Google Cloud Run with OIDC authentication..."
+          
+          # Example Cloud Run deployment
+          gcloud run deploy freightliner \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated
+          
+          echo "✅ GCP deployment completed"
+
+  # Example: Azure deployment with OIDC
+  deploy-azure-oidc:
+    name: Deploy to Azure (OIDC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.inputs.environment == 'production'
+    
+    # OIDC permissions
+    permissions:
+      id-token: write   # Required for OIDC token
+      contents: read    # Required for repository access
+    
+    environment:
+      name: production-azure
+      url: https://freightliner.azure.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v2
+        with:
+          # Replace with your Azure tenant, client, and subscription IDs
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Container Instances
+        run: |
+          echo "🚀 Deploying to Azure Container Instances with OIDC authentication..."
+          
+          # Example ACI deployment
+          az container create \
+            --resource-group freightliner-rg \
+            --name freightliner-prod \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} \
+            --cpu 2 \
+            --memory 4 \
+            --restart-policy Always \
+            --ports 80
+          
+          echo "✅ Azure deployment completed"
+
+# OIDC Setup Instructions:
+#
+# 1. AWS Setup:
+#    - Create IAM role with trust policy for GitHub OIDC
+#    - Add required permissions for ECS, ECR, etc.
+#    - Configure role-to-assume in workflow
+#
+# 2. GCP Setup:
+#    - Enable Workload Identity Federation
+#    - Create workload identity pool and provider
+#    - Create service account with required permissions
+#    - Configure workload_identity_provider in workflow
+#
+# 3. Azure Setup:
+#    - Register application in Azure AD
+#    - Configure federated credentials for GitHub
+#    - Assign required RBAC permissions
+#    - Configure client-id, tenant-id, subscription-id
+#
+# Benefits of OIDC:
+# - No long-lived secrets to manage
+# - Automatic token rotation
+# - Fine-grained permissions
+# - Audit trail for all access
+# - Reduced secret sprawl

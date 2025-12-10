@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+package cluster;
+
+option go_package = "freightliner/pkg/distributed/proto";
+
+// ClusterService defines the gRPC service for cluster communication
+service ClusterService {
+  // Job coordination
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+  rpc GetJobStatus(GetJobStatusRequest) returns (JobStatusResponse);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+
+  // Work stealing
+  rpc StealWork(StealWorkRequest) returns (StealWorkResponse);
+  rpc AdvertiseCapacity(AdvertiseCapacityRequest) returns (AdvertiseCapacityResponse);
+  rpc GetNodeCapacity(GetNodeCapacityRequest) returns (GetNodeCapacityResponse);
+
+  // Blob transfer
+  rpc GetBlob(GetBlobRequest) returns (stream BlobChunk);
+  rpc PutBlob(stream BlobChunk) returns (PutBlobResponse);
+  rpc CheckBlob(CheckBlobRequest) returns (CheckBlobResponse);
+  rpc DeleteBlob(DeleteBlobRequest) returns (DeleteBlobResponse);
+
+  // Cache operations
+  rpc CacheGet(CacheGetRequest) returns (CacheGetResponse);
+  rpc CacheSet(CacheSetRequest) returns (CacheSetResponse);
+  rpc CacheDelete(CacheDeleteRequest) returns (CacheDeleteResponse);
+  rpc CacheExists(CacheExistsRequest) returns (CacheExistsResponse);
+
+  // Health checking
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+
+  // Cluster coordination
+  rpc JoinCluster(JoinClusterRequest) returns (JoinClusterResponse);
+  rpc LeaveCluster(LeaveClusterRequest) returns (LeaveClusterResponse);
+  rpc GetClusterInfo(GetClusterInfoRequest) returns (GetClusterInfoResponse);
+}
+
+// Job messages
+message SubmitJobRequest {
+  string job_id = 1;
+  string source_registry = 2;
+  string source_repository = 3;
+  string destination_registry = 4;
+  string destination_repository = 5;
+  repeated string tags = 6;
+  bool force = 7;
+  int32 priority = 8;
+  map<string, string> metadata = 9;
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+  string status = 2;
+  string assigned_node = 3;
+}
+
+message GetJobStatusRequest {
+  string job_id = 1;
+}
+
+message JobStatusResponse {
+  string job_id = 1;
+  string status = 2;
+  string node_id = 3;
+  int64 start_time = 4;
+  int64 update_time = 5;
+  int32 retry_count = 6;
+  string error_message = 7;
+  JobProgress progress = 8;
+}
+
+message JobProgress {
+  int64 total_tags = 1;
+  int64 completed_tags = 2;
+  int64 failed_tags = 3;
+  int64 bytes_transferred = 4;
+  int64 total_bytes = 5;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ListJobsRequest {
+  string status_filter = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListJobsResponse {
+  repeated JobStatusResponse jobs = 1;
+  int32 total_count = 2;
+}
+
+// Work stealing messages
+message StealWorkRequest {
+  string node_id = 1;
+  int32 max_jobs = 2;
+}
+
+message StealWorkResponse {
+  repeated Job jobs = 1;
+}
+
+message Job {
+  string job_id = 1;
+  string source = 2;
+  string destination = 3;
+  int32 priority = 4;
+  int64 submit_time = 5;
+  map<string, string> metadata = 6;
+}
+
+message AdvertiseCapacityRequest {
+  string node_id = 1;
+  int32 available_workers = 2;
+  int32 queue_size = 3;
+  int32 max_capacity = 4;
+}
+
+message AdvertiseCapacityResponse {
+  bool acknowledged = 1;
+}
+
+message GetNodeCapacityRequest {
+  string node_id = 1;
+}
+
+message GetNodeCapacityResponse {
+  int32 available_workers = 1;
+  int32 queue_size = 2;
+  int32 max_capacity = 3;
+  double utilization = 4;
+}
+
+// Blob transfer messages
+message GetBlobRequest {
+  string digest = 1;
+  int64 offset = 2;
+  int64 size = 3;
+}
+
+message BlobChunk {
+  string digest = 1;
+  bytes data = 2;
+  int64 offset = 3;
+  int64 total_size = 4;
+  bool is_last = 5;
+}
+
+message PutBlobResponse {
+  string digest = 1;
+  int64 size = 2;
+  bool deduplicated = 3;
+}
+
+message CheckBlobRequest {
+  string digest = 1;
+}
+
+message CheckBlobResponse {
+  bool exists = 1;
+  int64 size = 2;
+}
+
+message DeleteBlobRequest {
+  string digest = 1;
+}
+
+message DeleteBlobResponse {
+  bool success = 1;
+}
+
+// Cache messages
+message CacheGetRequest {
+  string key = 1;
+}
+
+message CacheGetResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+message CacheSetRequest {
+  string key = 1;
+  bytes value = 2;
+  int64 ttl = 3;
+}
+
+message CacheSetResponse {
+  bool success = 1;
+}
+
+message CacheDeleteRequest {
+  string key = 1;
+}
+
+message CacheDeleteResponse {
+  bool success = 1;
+}
+
+message CacheExistsRequest {
+  string key = 1;
+}
+
+message CacheExistsResponse {
+  bool exists = 1;
+}
+
+// Health and metrics
+message HealthCheckRequest {
+  string node_id = 1;
+}
+
+message HealthCheckResponse {
+  string status = 1;
+  int64 timestamp = 2;
+  string version = 3;
+  NodeHealth health = 4;
+}
+
+message NodeHealth {
+  double cpu_usage = 1;
+  double memory_usage = 2;
+  int32 active_jobs = 3;
+  int32 queue_size = 4;
+  bool is_leader = 5;
+  string leader_address = 6;
+}
+
+message GetMetricsRequest {
+  string node_id = 1;
+}
+
+message GetMetricsResponse {
+  map<string, double> metrics = 1;
+  NodeMetrics node_metrics = 2;
+}
+
+message NodeMetrics {
+  int64 jobs_completed = 1;
+  int64 jobs_failed = 2;
+  int64 bytes_transferred = 3;
+  double avg_job_duration = 4;
+  int64 work_stolen = 5;
+  int64 cache_hits = 6;
+  int64 cache_misses = 7;
+  double uptime_seconds = 8;
+}
+
+// Cluster coordination
+message JoinClusterRequest {
+  string node_id = 1;
+  string address = 2;
+  int32 capacity = 3;
+  map<string, string> metadata = 4;
+}
+
+message JoinClusterResponse {
+  bool success = 1;
+  string message = 2;
+  ClusterInfo cluster_info = 3;
+}
+
+message LeaveClusterRequest {
+  string node_id = 1;
+}
+
+message LeaveClusterResponse {
+  bool success = 1;
+}
+
+message GetClusterInfoRequest {}
+
+message GetClusterInfoResponse {
+  ClusterInfo cluster_info = 1;
+}
+
+message ClusterInfo {
+  int32 node_count = 1;
+  string leader_id = 2;
+  string leader_address = 3;
+  repeated NodeInfo nodes = 4;
+  string topology = 5;
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string address = 2;
+  string status = 3;
+  int32 capacity = 4;
+  int32 active_jobs = 5;
+  int64 last_heartbeat = 6;
+}

@@ -1,0 +1,506 @@
+name: Release Pipeline v2
+
+# ==============================================================================
+# RELEASE PIPELINE V2
+# ==============================================================================
+# Automated release workflow for version tags
+#
+# Features:
+# - Multi-platform binary builds
+# - GitHub Release creation
+# - Docker image publishing
+# - Changelog generation
+# - Asset signing
+# - Release notes
+#
+# Triggers:
+# - Push of version tags (v*.*.*)
+# - Manual dispatch with version input
+#
+# Usage:
+#   git tag v1.2.3
+#   git push origin v1.2.3
+# ==============================================================================
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.2.3)'
+        required: true
+        type: string
+      draft:
+        description: 'Create as draft release'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  GO_VERSION: '1.25.4'
+  DOCKER_REGISTRY: 'docker.io'
+  DOCKER_IMAGE: 'freightliner'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # ============================================================================
+  # Prepare Release
+  # ============================================================================
+
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version-number: ${{ steps.version.outputs.version-number }}
+      is-prerelease: ${{ steps.version.outputs.is-prerelease }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version information
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+
+          # Remove 'v' prefix for version number
+          VERSION_NUMBER="${VERSION#v}"
+
+          # Check if prerelease
+          IS_PRERELEASE="false"
+          if [[ "${VERSION}" =~ (alpha|beta|rc) ]]; then
+            IS_PRERELEASE="true"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.prerelease }}" = "true" ]; then
+            IS_PRERELEASE="true"
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version-number=${VERSION_NUMBER}" >> $GITHUB_OUTPUT
+          echo "is-prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
+
+          echo "📋 Release Information:"
+          echo "  Version: ${VERSION}"
+          echo "  Version Number: ${VERSION_NUMBER}"
+          echo "  Pre-release: ${IS_PRERELEASE}"
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Invalid version format: ${VERSION}"
+            echo "Expected format: v1.2.3 or v1.2.3-beta.1"
+            exit 1
+          fi
+          echo "✅ Version format is valid"
+
+  # ============================================================================
+  # Build Release Binaries
+  # ============================================================================
+
+  build-binaries:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    needs: prepare
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: arm
+            goarm: '7'
+          # macOS
+          - runner: macos-latest
+            goos: darwin
+            goarch: amd64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          # Windows
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+          - runner: ubuntu-latest
+            goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build binary
+        shell: bash
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          VERSION_NUMBER="${{ needs.prepare.outputs.version-number }}"
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          GIT_COMMIT="${{ github.sha }}"
+
+          BINARY_NAME="freightliner"
+          ARCHIVE_NAME="freightliner-${VERSION_NUMBER}-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="freightliner.exe"
+            ARCHIVE_EXT=".zip"
+          else
+            ARCHIVE_EXT=".tar.gz"
+          fi
+
+          if [ -n "${{ matrix.goarm }}" ]; then
+            ARCHIVE_NAME="${ARCHIVE_NAME}v${{ matrix.goarm }}"
+          fi
+
+          echo "🔨 Building ${BINARY_NAME} for ${{ matrix.goos }}/${{ matrix.goarch }}..."
+          mkdir -p dist release
+
+          # Build with version information
+          CGO_ENABLED=0 \
+          GOOS=${{ matrix.goos }} \
+          GOARCH=${{ matrix.goarch }} \
+          ${{ matrix.goarm && format('GOARM={0}', matrix.goarm) || '' }} \
+          go build -v \
+            -ldflags="-w -s \
+              -X freightliner/cmd.version=${VERSION} \
+              -X freightliner/cmd.buildTime=${BUILD_TIME} \
+              -X freightliner/cmd.gitCommit=${GIT_COMMIT} \
+              -extldflags '-static'" \
+            -tags 'netgo osusergo static_build' \
+            -trimpath \
+            -o dist/${BINARY_NAME} \
+            .
+
+          # Create release notes
+          cat > dist/README.txt << EOF
+          Freightliner ${VERSION}
+          ========================
+
+          Platform: ${{ matrix.goos }}/${{ matrix.goarch }}
+          Build Date: ${BUILD_TIME}
+          Git Commit: ${GIT_COMMIT}
+          Go Version: ${{ env.GO_VERSION }}
+
+          Installation:
+          1. Extract the archive
+          2. Move the binary to your PATH
+          3. Run: freightliner version
+
+          For more information:
+          https://github.com/${{ github.repository }}
+          EOF
+
+          # Add LICENSE if exists
+          if [ -f LICENSE ]; then
+            cp LICENSE dist/
+          fi
+
+          # Create archive
+          cd dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -r ../release/${ARCHIVE_NAME}${ARCHIVE_EXT} .
+          else
+            tar czf ../release/${ARCHIVE_NAME}${ARCHIVE_EXT} .
+          fi
+          cd ..
+
+          # Generate checksums
+          cd release
+          sha256sum ${ARCHIVE_NAME}${ARCHIVE_EXT} > ${ARCHIVE_NAME}.sha256
+          cd ..
+
+          ls -lh release/
+          echo "✅ Build and packaging completed"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}-${{ needs.prepare.outputs.version }}
+          path: release/*
+          retention-days: 7
+
+  # ============================================================================
+  # Build & Publish Docker Image
+  # ============================================================================
+
+  build-docker:
+    name: Build & Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: [prepare, build-binaries]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+        continue-on-error: true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.is-prerelease == 'false' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Generate SBOM
+        run: |
+          echo "📋 Generating SBOM for release..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+          IMAGE_TAG="ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version }}"
+          syft ${IMAGE_TAG} -o spdx-json=sbom-docker.json
+          syft ${IMAGE_TAG} -o cyclonedx-json=sbom-docker-cyclonedx.json
+        continue-on-error: true
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-sbom-${{ needs.prepare.outputs.version }}
+          path: sbom-docker*.json
+          retention-days: 90
+        continue-on-error: true
+
+  # ============================================================================
+  # Generate Changelog
+  # ============================================================================
+
+  changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 10
+    outputs:
+      changelog: ${{ steps.generate.outputs.changelog }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: generate
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+
+          echo "📝 Generating changelog for ${VERSION}..."
+
+          # Get previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${VERSION}^ 2>/dev/null || echo "")
+
+          if [ -z "${PREVIOUS_TAG}" ]; then
+            echo "No previous tag found, showing all commits"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" ${VERSION})
+          else
+            echo "Comparing ${PREVIOUS_TAG}...${VERSION}"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" ${PREVIOUS_TAG}..${VERSION})
+          fi
+
+          # Create changelog
+          cat > changelog.md << EOF
+          ## What's Changed
+
+          ${COMMITS}
+
+          ## Installation
+
+          ### Binary Installation
+          Download the appropriate binary for your platform from the assets below.
+
+          ### Docker
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}:${VERSION}
+          \`\`\`
+
+          ### From Source
+          \`\`\`bash
+          git clone https://github.com/${{ github.repository }}.git
+          cd freightliner
+          git checkout ${VERSION}
+          go build -o freightliner .
+          \`\`\`
+
+          ## Verification
+
+          All release artifacts include SHA-256 checksums. Verify downloads:
+          \`\`\`bash
+          sha256sum -c freightliner-*-*.sha256
+          \`\`\`
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...${VERSION}
+          EOF
+
+          # Output for GitHub Release
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat changelog.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          cat changelog.md
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog-${{ needs.prepare.outputs.version }}
+          path: changelog.md
+          retention-days: 90
+
+  # ============================================================================
+  # Create GitHub Release
+  # ============================================================================
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [prepare, build-binaries, build-docker, changelog]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Prepare release assets
+        run: |
+          echo "📦 Preparing release assets..."
+          mkdir -p release-assets
+
+          # Copy binary artifacts
+          find artifacts/binary-* -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" \) \
+            -exec cp {} release-assets/ \;
+
+          # Generate combined checksum file
+          cd release-assets
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          cd ..
+
+          ls -lh release-assets/
+          echo "✅ Release assets prepared"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          name: Release ${{ needs.prepare.outputs.version }}
+          body: ${{ needs.changelog.outputs.changelog }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ needs.prepare.outputs.is-prerelease }}
+          files: release-assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🎉 Release ${{ needs.prepare.outputs.version }}
+
+          ## Release Information
+          - **Version**: ${{ needs.prepare.outputs.version }}
+          - **Pre-release**: ${{ needs.prepare.outputs.is-prerelease }}
+          - **Commit**: `${{ github.sha }}`
+
+          ## Assets Published
+          - ✅ 7 platform binaries (Linux, macOS, Windows)
+          - ✅ Docker images (multi-platform)
+          - ✅ SHA-256 checksums
+          - ✅ SBOM (Software Bill of Materials)
+          - ✅ Changelog
+
+          ## Docker Images
+          ```
+          ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version }}
+          ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version-number }}
+          ```
+
+          ## Links
+          - [Release Page](https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.version }})
+          - [Docker Images](https://github.com/${{ github.repository }}/pkgs/container/freightliner)
+
+          ---
+          **Release Pipeline completed successfully!** 🚀
+          EOF
+
+          echo "✅ Release ${{ needs.prepare.outputs.version }} created successfully!"

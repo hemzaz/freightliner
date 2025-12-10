@@ -1,0 +1,60 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: freightliner-staging
+
+namespace: freightliner-staging
+
+# Base configuration
+resources:
+  - ../../base
+  - ingress.yaml
+
+# Namespace suffix for staging
+nameSuffix: -staging
+
+# Common labels for staging environment
+commonLabels:
+  environment: staging
+  app.kubernetes.io/instance: staging
+
+# Patches for staging environment
+patches:
+  - path: deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: freightliner
+  - path: hpa-patch.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: freightliner
+  - path: pdb-patch.yaml
+    target:
+      kind: PodDisruptionBudget
+      name: freightliner
+
+# Configuration patches
+configMapGenerator:
+  - name: freightliner-config
+    behavior: merge
+    files:
+      - config.yaml
+
+# Secret patches
+secretGenerator:
+  - name: freightliner-secrets
+    behavior: merge
+    envs:
+      - secrets.env
+
+# Image tag override
+images:
+  - name: freightliner
+    newName: freightliner
+    newTag: staging-latest
+
+# Replicas for staging
+replicas:
+  - name: freightliner
+    count: 2

@@ -1,0 +1,48 @@
+# Development Dockerfile with hot-reload and debugging support
+FROM golang:1.25.4-alpine3.19
+
+# Install development tools
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    gcc \
+    musl-dev \
+    make \
+    bash \
+    curl \
+    vim
+
+# Install Air for hot reload
+RUN go install github.com/cosmtrek/air@latest
+
+# Install Delve debugger
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Install development tools
+RUN go install golang.org/x/tools/gopls@latest && \
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# Set working directory
+WORKDIR /app
+
+# Configure Go environment
+ENV GO111MODULE=on \
+    CGO_ENABLED=1 \
+    GOOS=linux \
+    GOARCH=amd64
+
+# Copy go module files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code (will be mounted as volume in docker-compose)
+COPY . .
+
+# Expose application port and debugger port
+EXPOSE 8080 2345 2112
+
+# Default command (can be overridden)
+CMD ["air", "-c", ".air.toml"]

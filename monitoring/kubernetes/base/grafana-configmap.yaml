@@ -1,0 +1,73 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  namespace: monitoring
+data:
+  # Deployment mode: local, remote, cloud
+  DEPLOYMENT_MODE: "local"
+  # Auto-detected or custom root URL
+  GRAFANA_ROOT_URL: "http://localhost:3000"
+  # External IP for remote access (empty for local)
+  EXTERNAL_IP: ""
+  # Freightliner API endpoint
+  API_BASE_URL: "http://freightliner-api:8080"
+  # Server configuration
+  GF_SERVER_DOMAIN: "localhost"
+  GF_SERVER_HTTP_PORT: "3000"
+  GF_SERVER_PROTOCOL: "http"
+  # Security settings
+  GF_ANALYTICS_REPORTING_ENABLED: "false"
+  GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+  GF_USERS_ALLOW_SIGN_UP: "false"
+  # Install plugins
+  GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-clock-panel"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: "30s"
+          queryTimeout: "60s"
+          httpMethod: "POST"
+      - name: Freightliner API
+        type: prometheus
+        access: proxy
+        url: ${API_BASE_URL}
+        editable: true
+        jsonData:
+          timeInterval: "15s"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config
+  namespace: monitoring
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'freightliner'
+        orgId: 1
+        folder: 'Freightliner'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards

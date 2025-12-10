@@ -1,0 +1,391 @@
+name: Main CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'claude/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.25.4'
+  GOLANGCI_LINT_VERSION: 'v1.62.2'
+
+# Cancel in-progress runs for same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # BUILD JOB - Compile the application
+  # ============================================
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For version info
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Build application
+        run: |
+          make build
+          ./bin/freightliner version || echo "Version command not implemented"
+
+      - name: Build static binary
+        run: make build-static || echo "Static build target not available"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: freightliner-${{ github.sha }}
+          path: bin/freightliner
+          retention-days: 7
+
+  # ============================================
+  # TEST JOB - Run unit tests (skip integration)
+  # ============================================
+  test:
+    name: Unit Tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.25.4', '1.25.4']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Run unit tests
+        run: |
+          # -short skips long-running integration tests
+          # -race enables race detector
+          # -coverprofile generates coverage report
+          go test -v -short -race -coverprofile=coverage.out -covermode=atomic ./...
+        env:
+          SKIP_INTEGRATION: "true"
+          SKIP_CLOUD_TESTS: "true"
+
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25.4'
+        run: |
+          go tool cover -func=coverage.out
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25.4'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: coverage-${{ matrix.os }}-${{ matrix.go-version }}
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload coverage artifacts
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25.4'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30
+
+  # ============================================
+  # LINT JOB - Code quality checks
+  # ============================================
+  lint:
+    name: Code Linting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=10m --config=.golangci.yml
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -s -l .)" ]; then
+            echo "Go code is not formatted:"
+            gofmt -s -d .
+            exit 1
+          fi
+
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "go.mod or go.sum is not tidy:"
+            git diff go.mod go.sum
+            exit 1
+          fi
+
+  # ============================================
+  # SECURITY JOB - Security scanning
+  # ============================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write  # For uploading SARIF results
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec security scan
+        run: |
+          gosec -fmt sarif -out gosec-results.sarif ./...
+        continue-on-error: true
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+        continue-on-error: true
+
+      - name: Check for known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+        continue-on-error: true
+
+      - name: Dependency review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+
+  # ============================================
+  # DOCKER JOB - Build Docker image
+  # ============================================
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: |
+            ghcr.io/hemzaz/freightliner:${{ github.sha }}
+            ghcr.io/hemzaz/freightliner:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Test Docker image
+        run: |
+          # Test image runs
+          docker run --rm ghcr.io/hemzaz/freightliner:${{ github.sha }} version || true
+
+          # Test non-root user
+          docker run --rm --user 1001:1001 ghcr.io/hemzaz/freightliner:${{ github.sha }} echo "Non-root test passed"
+
+          # Check image size
+          docker images ghcr.io/hemzaz/freightliner:${{ github.sha }}
+
+      - name: Scan Docker image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/hemzaz/freightliner:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      - name: Save Docker image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker save ghcr.io/hemzaz/freightliner:${{ github.sha }} | gzip > freightliner-image.tar.gz
+
+      - name: Upload Docker image artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: freightliner-image.tar.gz
+          retention-days: 7
+
+  # ============================================
+  # BENCHMARK JOB - Performance benchmarks
+  # ============================================
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          # Run benchmarks 3 times for stability
+          go test -bench=. -benchmem -count=3 -run=^$ ./... | tee benchmark.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark.txt
+          retention-days: 30
+
+  # ============================================
+  # STATUS JOB - Overall pipeline status
+  # ============================================
+  status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [build, test, lint, security, docker]
+    if: always()
+
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "Build: ${{ needs.build.result }}"
+          echo "Test: ${{ needs.test.result }}"
+          echo "Lint: ${{ needs.lint.result }}"
+          echo "Security: ${{ needs.security.result }}"
+          echo "Docker: ${{ needs.docker.result }}"
+
+          if [[ "${{ needs.build.result }}" != "success" ]] || \
+             [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.security.result }}" != "success" ]] || \
+             [[ "${{ needs.docker.result }}" != "success" ]]; then
+            echo "❌ CI Pipeline Failed"
+            exit 1
+          else
+            echo "✅ CI Pipeline Passed"
+            exit 0
+          fi
+
+      - name: Comment PR status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = {
+              build: '${{ needs.build.result }}',
+              test: '${{ needs.test.result }}',
+              lint: '${{ needs.lint.result }}',
+              security: '${{ needs.security.result }}',
+              docker: '${{ needs.docker.result }}'
+            };
+
+            const passed = Object.values(status).every(s => s === 'success');
+            const emoji = passed ? '✅' : '❌';
+
+            const body = `## ${emoji} CI Pipeline Status
+
+            | Job | Status |
+            |-----|--------|
+            | Build | ${status.build === 'success' ? '✅' : '❌'} ${status.build} |
+            | Test | ${status.test === 'success' ? '✅' : '❌'} ${status.test} |
+            | Lint | ${status.lint === 'success' ? '✅' : '❌'} ${status.lint} |
+            | Security | ${status.security === 'success' ? '✅' : '❌'} ${status.security} |
+            | Docker | ${status.docker === 'success' ? '✅' : '❌'} ${status.docker} |
+
+            **Overall**: ${passed ? 'All checks passed ✅' : 'Some checks failed ❌'}
+
+            <sub>Triggered by commit ${context.sha.substring(0, 7)}</sub>
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        continue-on-error: true

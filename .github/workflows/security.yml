@@ -1,0 +1,446 @@
+name: Security Scanning
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  schedule:
+    # Run daily security scans at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.25.4'
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # GOSEC - Go security scanner
+  # ============================================
+  gosec-scan:
+    name: GoSec Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install gosec
+        run: |
+          echo "🔧 Installing gosec security scanner..."
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec
+        run: |
+          echo "🔒 Running gosec security scan..."
+          gosec -fmt sarif -out gosec-results.sarif -no-fail ./...
+        continue-on-error: true
+
+      - name: Run gosec with detailed output
+        run: |
+          echo "📋 Running gosec with detailed output..."
+          gosec -fmt json -out gosec-results.json ./... || true
+          gosec -fmt text ./... | tee gosec-results.txt || true
+
+      - name: Upload gosec SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+        continue-on-error: true
+
+      - name: Upload gosec results
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-results-${{ github.sha }}
+          path: |
+            gosec-results.sarif
+            gosec-results.json
+            gosec-results.txt
+          retention-days: 30
+
+      - name: Check for critical issues
+        run: |
+          echo "🔍 Checking for critical security issues..."
+          if [ -f gosec-results.json ]; then
+            CRITICAL=$(jq '.Stats.NumFound // 0' gosec-results.json)
+            echo "Found $CRITICAL security issues"
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "⚠️  Security issues detected. Review gosec-results.txt"
+              # Don't fail on security issues in non-main branches
+              if [ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.ref }}" = "refs/heads/master" ]; then
+                echo "❌ Critical security issues found in main branch"
+                exit 1
+              fi
+            fi
+          fi
+
+  # ============================================
+  # GOVULNCHECK - Vulnerability scanning
+  # ============================================
+  vulnerability-scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install govulncheck
+        run: |
+          echo "🔧 Installing govulncheck..."
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: |
+          echo "🔍 Running vulnerability scan..."
+          govulncheck -json ./... | tee govulncheck-results.json || true
+          govulncheck ./... | tee govulncheck-results.txt || true
+
+      - name: Parse vulnerability results
+        run: |
+          echo "📊 Analyzing vulnerability results..."
+          if [ -f govulncheck-results.json ]; then
+            # Count vulnerabilities
+            VULN_COUNT=$(jq -s '[.[] | select(.osv)] | length' govulncheck-results.json)
+            echo "Found $VULN_COUNT vulnerabilities"
+
+            if [ "$VULN_COUNT" -gt 0 ]; then
+              echo "⚠️  Vulnerabilities detected:"
+              jq -s '[.[] | select(.osv) | {id: .osv.id, summary: .osv.summary, severity: .osv.database_specific.severity}]' govulncheck-results.json
+            else
+              echo "✅ No vulnerabilities found"
+            fi
+          fi
+
+      - name: Upload vulnerability results
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulnerability-results-${{ github.sha }}
+          path: |
+            govulncheck-results.json
+            govulncheck-results.txt
+          retention-days: 30
+
+  # ============================================
+  # DEPENDENCY SCAN - Nancy scanner
+  # ============================================
+  dependency-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install nancy
+        run: |
+          echo "🔧 Installing nancy dependency scanner..."
+          go install github.com/sonatypeoss/nancy@latest
+
+      - name: Run nancy scan
+        run: |
+          echo "📦 Scanning dependencies for vulnerabilities..."
+          go list -json -deps ./... | nancy sleuth | tee nancy-results.txt || true
+
+      - name: Upload nancy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nancy-results-${{ github.sha }}
+          path: nancy-results.txt
+          retention-days: 30
+
+  # ============================================
+  # SECRETS SCAN - TruffleHog and GitLeaks
+  # ============================================
+  secrets-scan:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified --json
+        continue-on-error: true
+
+      - name: Run GitLeaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+  # ============================================
+  # LICENSE COMPLIANCE - License scanning
+  # ============================================
+  license-scan:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install go-licenses
+        run: |
+          echo "🔧 Installing go-licenses..."
+          go install github.com/google/go-licenses@latest
+
+      - name: Check licenses
+        run: |
+          echo "📜 Checking license compliance..."
+          go-licenses check ./... | tee license-check.txt || true
+
+      - name: Generate license report
+        run: |
+          echo "📊 Generating license report..."
+          go-licenses csv ./... > licenses.csv
+          go-licenses report ./... > licenses-report.txt
+
+      - name: Upload license reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-reports-${{ github.sha }}
+          path: |
+            license-check.txt
+            licenses.csv
+            licenses-report.txt
+          retention-days: 90
+
+      - name: Check for forbidden licenses
+        run: |
+          echo "🔍 Checking for forbidden licenses..."
+          # Define forbidden licenses (e.g., GPL, AGPL)
+          FORBIDDEN="GPL|AGPL"
+
+          if grep -E "$FORBIDDEN" licenses.csv; then
+            echo "❌ Forbidden licenses detected!"
+            exit 1
+          else
+            echo "✅ No forbidden licenses found"
+          fi
+
+  # ============================================
+  # CONTAINER SCAN - Docker image scanning
+  # ============================================
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: freightliner:security-scan
+          load: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: 'freightliner:security-scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          vuln-type: 'os,library'
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: trivy
+        continue-on-error: true
+
+      - name: Run Trivy with JSON output
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: 'freightliner:security-scan'
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Generate Trivy summary
+        run: |
+          echo "📊 Trivy scan summary:"
+          jq -r '.Results[] | select(.Vulnerabilities) | .Vulnerabilities | group_by(.Severity) | map({(.[0].Severity): length}) | add' trivy-results.json | tee trivy-summary.txt
+
+      - name: Run Grype scanner
+        uses: anchore/scan-action@v4
+        with:
+          image: 'freightliner:security-scan'
+          fail-build: false
+          output-format: sarif
+          severity-cutoff: medium
+
+      - name: Upload Grype results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: grype
+        continue-on-error: true
+
+      - name: Upload container scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-scan-results-${{ github.sha }}
+          path: |
+            trivy-results.sarif
+            trivy-results.json
+            trivy-summary.txt
+            results.sarif
+          retention-days: 30
+
+  # ============================================
+  # CODEQL - Advanced security analysis
+  # ============================================
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+  # ============================================
+  # SECURITY SUMMARY - Aggregate results
+  # ============================================
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs:
+      - gosec-scan
+      - vulnerability-scan
+      - dependency-scan
+      - secrets-scan
+      - license-scan
+      - container-scan
+      - codeql-analysis
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-results
+
+      - name: Generate security summary
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scan Type | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| GoSec | ${{ needs.gosec-scan.result == 'success' && '✅' || '❌' }} | Static analysis for Go |" >> $GITHUB_STEP_SUMMARY
+          echo "| Vulnerabilities | ${{ needs.vulnerability-scan.result == 'success' && '✅' || '❌' }} | Known CVEs in dependencies |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependencies | ${{ needs.dependency-scan.result == 'success' && '✅' || '❌' }} | Third-party package risks |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secrets | ${{ needs.secrets-scan.result == 'success' && '✅' || '❌' }} | Leaked credentials detection |" >> $GITHUB_STEP_SUMMARY
+          echo "| Licenses | ${{ needs.license-scan.result == 'success' && '✅' || '❌' }} | License compliance check |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container | ${{ needs.container-scan.result == 'success' && '✅' || '❌' }} | Docker image vulnerabilities |" >> $GITHUB_STEP_SUMMARY
+          echo "| CodeQL | ${{ needs.codeql-analysis.result == 'success' && '✅' || '❌' }} | Advanced code analysis |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check critical failures
+        run: |
+          echo "🔍 Checking for critical security failures..."
+
+          CRITICAL_FAILED=false
+
+          # GoSec is critical
+          if [ "${{ needs.gosec-scan.result }}" != "success" ]; then
+            echo "❌ GoSec scan failed"
+            CRITICAL_FAILED=true
+          fi
+
+          # Secrets scan is critical
+          if [ "${{ needs.secrets-scan.result }}" != "success" ]; then
+            echo "❌ Secrets scan failed"
+            CRITICAL_FAILED=true
+          fi
+
+          if [ "$CRITICAL_FAILED" = true ]; then
+            echo "🚨 Critical security checks failed!"
+            exit 1
+          else
+            echo "✅ All critical security checks passed"
+          fi

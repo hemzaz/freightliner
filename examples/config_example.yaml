@@ -1,0 +1,92 @@
+# Freightliner Configuration Example
+
+# General configuration
+logLevel: info  # Options: debug, info, warn, error, fatal
+
+# ECR configuration
+ecr:
+  region: us-west-2
+  accountID: "123456789012"  # Your AWS account ID
+
+# GCR configuration
+gcr:
+  project: my-gcp-project
+  location: us  # Options: us, eu, asia
+
+# Worker configuration
+workers:
+  replicateWorkers: 4  # Number of workers for replication tasks
+  serveWorkers: 8      # Number of workers for server mode
+  autoDetect: true     # Auto-detect optimal worker count
+
+# Encryption configuration
+encryption:
+  enabled: false
+  customerManagedKeys: false
+  awsKMSKeyID: ""
+  gcpKMSKeyID: ""
+  gcpKeyRing: freightliner
+  gcpKeyName: image-encryption
+  envelopeEncryption: true
+
+# Secrets configuration
+secrets:
+  useSecretsManager: false
+  secretsManagerType: aws  # Options: aws, gcp
+  awsSecretRegion: ""      # Uses ecr.region if empty
+  gcpSecretProject: ""     # Uses gcr.project if empty
+  gcpCredentialsFile: ""
+  registryCredsSecret: freightliner-registry-credentials
+  encryptionKeysSecret: freightliner-encryption-keys
+
+# Server configuration
+server:
+  port: 8080
+  tlsEnabled: false
+  tlsCertFile: ""
+  tlsKeyFile: ""
+  apiKeyAuth: false
+  apiKey: ""
+  allowedOrigins:
+    - "*"
+  readTimeout: 30s
+  writeTimeout: 60s
+  shutdownTimeout: 15s
+  healthCheckPath: /health
+  metricsPath: /metrics
+  replicatePath: /api/v1/replicate
+  treeReplicatePath: /api/v1/replicate-tree
+  statusPath: /api/v1/status
+
+# Checkpoint configuration
+checkpoint:
+  directory: ${HOME}/.freightliner/checkpoints
+  id: ""
+
+# Tree replication configuration
+treeReplicate:
+  workers: 0  # 0 means auto-detect
+  excludeRepos:
+    - temp-*
+    - test-*
+  excludeTags:
+    - dev-*
+    - test-*
+  includeTags:
+    - v*
+    - latest
+  dryRun: false
+  force: false
+  enableCheckpoint: true
+  checkpointDir: ${HOME}/.freightliner/checkpoints
+  resumeID: ""
+  skipCompleted: true
+  retryFailed: true
+
+# Single repository replication configuration
+replicate:
+  force: false
+  dryRun: false
+  tags:
+    - latest
+    - v1.0.0

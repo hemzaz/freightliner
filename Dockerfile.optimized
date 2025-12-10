@@ -1,0 +1,126 @@
+# syntax=docker/dockerfile:1.7
+# Production-optimized multi-stage Dockerfile for Freightliner
+
+# ============================================
+# BUILD STAGE - Compile the application
+# ============================================
+FROM golang:1.25.4-alpine3.19 AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    gcc \
+    musl-dev \
+    upx
+
+# Set working directory
+WORKDIR /build
+
+# Configure Go environment for optimal builds
+ENV GO111MODULE=on \
+    CGO_ENABLED=1 \
+    GOOS=linux \
+    GOARCH=amd64
+
+# Copy go module files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies with cache mount (speeds up rebuilds)
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# ============================================
+# TEST STAGE - Optional testing in container
+# ============================================
+FROM builder AS test
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go test -v -race -short -coverprofile=coverage.out ./...
+
+# ============================================
+# BUILD BINARY - Optimized compilation
+# ============================================
+FROM builder AS build
+
+# Build static binary with optimizations
+ENV CGO_ENABLED=0
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build \
+    -ldflags="-w -s -X main.Version=${VERSION:-dev} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -extldflags '-static'" \
+    -trimpath \
+    -tags netgo \
+    -o freightliner \
+    .
+
+# Compress binary with UPX (optional, saves 40-60% space)
+RUN upx --best --lzma freightliner || true
+
+# Verify binary works
+RUN ./freightliner --version || ./freightliner --help
+
+# ============================================
+# SECURITY SCAN STAGE - Optional security scanning
+# ============================================
+FROM aquasec/trivy:latest AS security-scan
+
+COPY --from=build /build/freightliner /scan/freightliner
+
+RUN trivy rootfs --severity HIGH,CRITICAL --no-progress /scan || true
+
+# ============================================
+# PRODUCTION STAGE - Minimal runtime image
+# ============================================
+FROM alpine:3.19 AS production
+
+# Install only runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    && update-ca-certificates
+
+# Create non-root user with specific UID/GID
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup -h /app -D
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from build stage
+COPY --from=build --chown=1001:1001 /build/freightliner /app/freightliner
+
+# Copy any necessary config files (if needed)
+# COPY --chown=1001:1001 config/ /app/config/
+
+# Switch to non-root user
+USER 1001:1001
+
+# Expose ports (adjust as needed)
+EXPOSE 8080 2112
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/freightliner", "--version"]
+
+# Set entrypoint and default command
+ENTRYPOINT ["/app/freightliner"]
+CMD ["--help"]
+
+# ============================================
+# METADATA - Image labels
+# ============================================
+LABEL org.opencontainers.image.title="freightliner" \
+      org.opencontainers.image.description="Container registry replication tool with multi-cloud support" \
+      org.opencontainers.image.vendor="Freightliner Team" \
+      org.opencontainers.image.source="https://github.com/hemzaz/freightliner" \
+      org.opencontainers.image.version="${VERSION:-dev}" \
+      org.opencontainers.image.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      maintainer="DevOps Team"

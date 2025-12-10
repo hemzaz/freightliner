@@ -1,0 +1,105 @@
+# Freightliner Sync Configuration Example
+#
+# This YAML configuration enables bulk image synchronization between registries
+# with advanced filtering, parallel execution, and retry capabilities.
+
+# Source registry configuration
+source:
+  registry: "registry-1.docker.io"  # Docker Hub
+  auth:
+    username: "${DOCKER_USERNAME}"  # Can use environment variables
+    password: "${DOCKER_PASSWORD}"
+  insecure: false
+
+# Destination registry configuration
+destination:
+  registry: "my-registry.example.com"
+  auth:
+    username: "${DEST_USERNAME}"
+    password: "${DEST_PASSWORD}"
+  insecure: false
+
+# Global sync settings
+parallel: 5                    # Number of concurrent sync operations
+skip_existing: true           # Skip images that already exist in destination
+continue_on_error: true       # Continue syncing even if some images fail
+timeout: 600                  # Timeout for each sync operation (seconds)
+
+# Images to sync with various filtering options
+images:
+  # Example 1: Sync specific tags
+  - repository: "library/nginx"
+    tags:
+      - "latest"
+      - "1.21"
+      - "1.22"
+      - "1.23-alpine"
+
+  # Example 2: Sync with regex pattern
+  - repository: "library/redis"
+    tag_regex: "^7\\..*"       # Match all Redis 7.x tags
+    destination_repository: "cache/redis"
+    limit: 10                  # Only sync first 10 matching tags
+
+  # Example 3: Sync all tags with destination prefix
+  - repository: "library/postgres"
+    all_tags: true
+    destination_prefix: "pg-"  # Tags will be: pg-latest, pg-14, etc.
+    limit: 20
+
+  # Example 4: Simple copy with renamed repository
+  - repository: "library/alpine"
+    tags: ["latest", "3.18", "3.19"]
+    destination_repository: "base/alpine"
+
+  # Example 5: Sync production images with regex
+  - repository: "mycompany/webapp"
+    tag_regex: "^prod-.*"
+    destination_repository: "production/webapp"
+
+  # Example 6: Sync all LTS versions
+  - repository: "library/node"
+    tag_regex: "^\\d+\\.\\d+\\.\\d+-lts$"
+    limit: 5
+
+  # Example 7: Mirror entire repository
+  - repository: "library/ubuntu"
+    all_tags: true
+    limit: 50
+
+  # Example 8: Sync with version filtering
+  - repository: "library/python"
+    tag_regex: "^3\\.(9|10|11|12)-slim$"
+    destination_repository: "lang/python"
+
+# Advanced Examples:
+
+# Multi-environment sync
+# You can maintain separate config files for different environments:
+# - sync-dev.yaml
+# - sync-staging.yaml
+# - sync-prod.yaml
+
+# Usage examples:
+#
+# 1. Basic sync:
+#    freightliner sync --config sync.yaml
+#
+# 2. Dry run (see what would be synced):
+#    freightliner sync --config sync.yaml --dry-run
+#
+# 3. Override parallelism:
+#    freightliner sync --config sync.yaml --parallel 10
+#
+# 4. With environment variables:
+#    export DOCKER_USERNAME=myuser
+#    export DOCKER_PASSWORD=mypass
+#    freightliner sync --config sync.yaml
+
+# Notes:
+# - Authentication can use environment variables for security
+# - Regular expressions use Go regex syntax (RE2)
+# - Tags are synced in the order returned by the registry
+# - Limit applies after regex filtering
+# - Destination repository defaults to source repository if not specified
+# - Use skip_existing: true to avoid re-syncing unchanged images

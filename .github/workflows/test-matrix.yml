@@ -1,0 +1,214 @@
+name: Test Matrix
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        type: string
+        default: '1.25.4'
+      test-timeout:
+        required: false
+        type: string
+        default: '10m'
+      enable-race:
+        required: false
+        type: boolean
+        default: true
+
+env:
+  GO_VERSION: ${{ inputs.go-version }}
+  TEST_TIMEOUT: ${{ inputs.test-timeout }}
+
+jobs:
+  # Matrix testing for comprehensive coverage
+  test-matrix:
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go-version }}, ${{ matrix.test-type }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.25.4', '1.25.4']
+        test-type: [unit, integration]
+        exclude:
+          # Skip expensive combinations for faster CI
+          - os: macos-latest
+            test-type: integration
+          - os: windows-latest
+            test-type: integration
+          - os: macos-latest
+            go-version: '1.21.15'
+          - os: windows-latest
+            go-version: '1.21.15'
+
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Setup test environment
+        shell: bash
+        run: |
+          # Create test directories
+          mkdir -p test-results
+          
+          # Set environment variables based on OS
+          case "${{ runner.os }}" in
+            "Windows")
+              echo "TEST_CACHE_DIR=$TEMP\\go-test-cache" >> $GITHUB_ENV
+              echo "REGISTRY_HOST=localhost:5100" >> $GITHUB_ENV
+              ;;
+            "macOS")
+              echo "TEST_CACHE_DIR=$HOME/.cache/go-test" >> $GITHUB_ENV
+              echo "REGISTRY_HOST=localhost:5100" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "TEST_CACHE_DIR=$HOME/.cache/go-test" >> $GITHUB_ENV
+              echo "REGISTRY_HOST=localhost:5100" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: Wait for registry (Linux/macOS only)
+        if: matrix.test-type == 'integration' && runner.os != 'Windows'
+        shell: bash
+        run: |
+          timeout 60 bash -c 'until curl -sf http://localhost:5100/v2/; do sleep 2; done' || {
+            echo "Registry not ready, continuing without it"
+          }
+
+      - name: Run tests
+        shell: bash
+        run: |
+          # Configure test flags
+          TEST_FLAGS="-v -timeout=${{ env.TEST_TIMEOUT }}"
+          
+          # Add race detection on supported platforms
+          if [[ "${{ inputs.enable-race }}" == "true" && "${{ runner.os }}" != "Windows" && "${{ matrix.test-type }}" == "unit" ]]; then
+            TEST_FLAGS="$TEST_FLAGS -race"
+          fi
+          
+          # Add coverage for primary platform
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" && "${{ matrix.go-version }}" == "${{ env.GO_VERSION }}" ]]; then
+            TEST_FLAGS="$TEST_FLAGS -coverprofile=coverage-${{ matrix.test-type }}.out -covermode=atomic"
+          fi
+          
+          # Run tests based on type
+          case "${{ matrix.test-type }}" in
+            "unit")
+              echo "Running unit tests..."
+              go test $TEST_FLAGS -short ./...
+              ;;
+            "integration")
+              echo "Running integration tests..."
+              go test $TEST_FLAGS -run Integration ./...
+              ;;
+          esac
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == env.GO_VERSION
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage-${{ matrix.test-type }}.out
+          flags: ${{ matrix.test-type }}-${{ matrix.os }}-go${{ matrix.go-version }}
+          name: codecov-${{ matrix.test-type }}-${{ matrix.os }}-go${{ matrix.go-version }}
+        continue-on-error: true
+
+      - name: Test summary
+        if: always()
+        shell: bash
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Test Results - ${{ matrix.os }}, Go ${{ matrix.go-version }}, ${{ matrix.test-type }}
+          
+          **Status**: ${{ job.status }}
+          **OS**: ${{ matrix.os }}
+          **Go Version**: ${{ matrix.go-version }}
+          **Test Type**: ${{ matrix.test-type }}
+          **Race Detection**: ${{ inputs.enable-race && runner.os != 'Windows' && matrix.test-type == 'unit' }}
+          
+          EOF
+
+  # Benchmark testing
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          echo "Running benchmarks..."
+          go test -bench=. -benchmem -run=^$ ./... | tee benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+          retention-days: 30
+
+  # Load testing
+  load-test:
+    name: Load Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request' || contains(github.event.head_commit.message, '[load-test]')
+    
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Wait for registry
+        run: |
+          timeout 60 bash -c 'until curl -sf http://localhost:5100/v2/; do sleep 2; done'
+
+      - name: Run load tests
+        env:
+          REGISTRY_HOST: localhost:5100
+        run: |
+          echo "Running load tests..."
+          if [ -f "pkg/testing/load/load_test.go" ]; then
+            go test -v -timeout=15m -run=TestLoad ./pkg/testing/load/...
+          else
+            echo "No load tests found, skipping"
+          fi

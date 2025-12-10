@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner-service
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: container-registry-replication
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: https
+    service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "https"
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "300"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: LoadBalancer
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8080
+    protocol: TCP
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner-internal
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+    app.kubernetes.io/component: container-registry-replication
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner-headless
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+    app.kubernetes.io/component: container-registry-replication
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production

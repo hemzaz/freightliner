@@ -1,0 +1,160 @@
+version: '3.8'
+
+services:
+  # Local Docker Registry for testing
+  registry-source:
+    image: registry:2
+    container_name: freightliner-test-source
+    ports:
+      - "5000:5000"
+    environment:
+      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
+      - REGISTRY_HTTP_ADDR=0.0.0.0:5000
+    volumes:
+      - registry-source-data:/var/lib/registry
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/v2/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  registry-dest:
+    image: registry:2
+    container_name: freightliner-test-dest
+    ports:
+      - "5001:5000"
+    environment:
+      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
+      - REGISTRY_HTTP_ADDR=0.0.0.0:5000
+    volumes:
+      - registry-dest-data:/var/lib/registry
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/v2/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis for checkpoint testing
+  redis-test:
+    image: redis:7-alpine
+    container_name: freightliner-test-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-test-data:/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # MinIO for S3-compatible checkpoint storage testing
+  minio-test:
+    image: minio/minio:latest
+    container_name: freightliner-test-minio
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      - MINIO_ROOT_USER=testuser
+      - MINIO_ROOT_PASSWORD=testpass123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-test-data:/data
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # MinIO bucket setup
+  minio-setup-test:
+    image: minio/mc:latest
+    container_name: freightliner-test-minio-setup
+    depends_on:
+      - minio-test
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set testminio http://minio-test:9000 testuser testpass123;
+      /usr/bin/mc mb testminio/test-checkpoints || true;
+      /usr/bin/mc policy set public testminio/test-checkpoints || true;
+      exit 0;
+      "
+    networks:
+      - test-network
+
+  # Prometheus for metrics testing
+  prometheus-test:
+    image: prom/prometheus:latest
+    container_name: freightliner-test-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus-test.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-test-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=1h'
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Test container with freightliner binary
+  freightliner-test:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: freightliner-test-runner
+    depends_on:
+      registry-source:
+        condition: service_healthy
+      registry-dest:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      minio-test:
+        condition: service_healthy
+      prometheus-test:
+        condition: service_healthy
+    environment:
+      - SOURCE_REGISTRY=registry-source:5000
+      - DEST_REGISTRY=registry-dest:5000
+      - REDIS_URL=redis://redis-test:6379
+      - MINIO_ENDPOINT=minio-test:9000
+      - MINIO_ACCESS_KEY=testuser
+      - MINIO_SECRET_KEY=testpass123
+      - PROMETHEUS_URL=http://prometheus-test:9090
+      - LOG_LEVEL=debug
+    volumes:
+      - ../..:/app
+      - test-checkpoints:/checkpoints
+    networks:
+      - test-network
+    command: ["sleep", "infinity"]
+
+volumes:
+  registry-source-data:
+  registry-dest-data:
+  redis-test-data:
+  minio-test-data:
+  prometheus-test-data:
+  test-checkpoints:
+
+networks:
+  test-network:
+    driver: bridge

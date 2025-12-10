@@ -1,0 +1,244 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "freightliner-replication",
+    "title": "Freightliner - Replication Overview",
+    "tags": ["freightliner", "replication", "containers"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Replication Success Rate",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "avg(freightliner:replication:success_rate:5m)",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 0.95, "color": "yellow"},
+                {"value": 0.99, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Active Replications",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(freightliner_replications_total[5m]))",
+            "legendFormat": "Replications/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Data Transfer Rate",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(freightliner:replication:bytes_per_second:5m)",
+            "legendFormat": "Bytes/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "P95 Latency",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "avg(freightliner:replication:duration:p95:5m)",
+            "legendFormat": "P95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 60, "color": "yellow"},
+                {"value": 300, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Replication Rate by Registry Pair",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "sum by (source_registry, dest_registry) (rate(freightliner_replications_total{status=\"success\"}[5m]))",
+            "legendFormat": "{{source_registry}} → {{dest_registry}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth"
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "Replication Duration (P50, P95, P99)",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, sum by (le) (rate(freightliner_replication_duration_seconds_bucket[5m])))",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "avg(freightliner:replication:duration:p95:5m)",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "avg(freightliner:replication:duration:p99:5m)",
+            "legendFormat": "P99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "type": "timeseries",
+        "title": "Error Rate by Type",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "sum by (error_type) (rate(freightliner_replication_errors_total[5m]))",
+            "legendFormat": "{{error_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "bars"
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "type": "timeseries",
+        "title": "Data Transfer by Registry Pair",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "sum by (source_registry, dest_registry) (rate(freightliner_replication_bytes_total[5m]))",
+            "legendFormat": "{{source_registry}} → {{dest_registry}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps"
+          }
+        }
+      },
+      {
+        "id": 9,
+        "type": "table",
+        "title": "Top Replication Pairs (Last Hour)",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "targets": [
+          {
+            "expr": "topk(10, sum by (source_registry, dest_registry) (increase(freightliner_replications_total[1h])))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "source_registry": "Source",
+                "dest_registry": "Destination",
+                "Value": "Replications"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "type": "piechart",
+        "title": "Replication Status Distribution",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+        "targets": [
+          {
+            "expr": "sum by (status) (increase(freightliner_replications_total[1h]))",
+            "legendFormat": "{{status}}"
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "source_registry",
+          "type": "query",
+          "label": "Source Registry",
+          "query": "label_values(freightliner_replications_total, source_registry)",
+          "multi": true,
+          "includeAll": true
+        },
+        {
+          "name": "dest_registry",
+          "type": "query",
+          "label": "Destination Registry",
+          "query": "label_values(freightliner_replications_total, dest_registry)",
+          "multi": true,
+          "includeAll": true
+        }
+      ]
+    }
+  }
+}

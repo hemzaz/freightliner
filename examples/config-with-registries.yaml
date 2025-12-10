@@ -1,0 +1,217 @@
+# Freightliner Configuration Example with Custom Registries
+# This example shows how to configure custom and third-party registries
+
+# General configuration
+logLevel: info
+
+# AWS ECR configuration (primary source)
+ecr:
+  region: us-east-1
+  accountID: "123456789012"
+
+# GCP GCR configuration (primary destination)
+gcr:
+  project: my-gcp-project
+  location: us
+
+# Worker configuration
+workers:
+  replicateWorkers: 4
+  serveWorkers: 4
+  autoDetect: true
+
+# Server configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  tlsEnabled: false
+  apiKeyAuth: false
+  enableCORS: true
+  allowedOrigins:
+    - "*"
+
+# Registries configuration for custom and third-party registries
+registries:
+  # Default source registry for pulling images
+  defaultSource: "ecr-prod"
+
+  # Default destination registry for pushing images
+  defaultDestination: "gcr-prod"
+
+  # List of configured registries
+  registries:
+    # AWS ECR Production
+    - name: ecr-prod
+      type: ecr
+      region: us-east-1
+      accountID: "123456789012"
+      auth:
+        type: aws
+        # Uses AWS SDK default credentials
+      metadata:
+        environment: production
+
+    # AWS ECR Staging
+    - name: ecr-staging
+      type: ecr
+      region: us-west-2
+      accountID: "123456789012"
+      auth:
+        type: aws
+        roleARN: "arn:aws:iam::123456789012:role/FreightlinerRole"
+
+    # Google Container Registry Production
+    - name: gcr-prod
+      type: gcr
+      project: my-gcp-project
+      region: us-central1
+      auth:
+        type: gcp
+        credentialsFile: /etc/gcp/service-account.json
+
+    # Harbor Private Registry
+    - name: harbor-prod
+      type: harbor
+      endpoint: https://harbor.example.com
+      auth:
+        type: basic
+        username: admin
+        # Password from environment variable
+        useSecretsManager: false
+      tls:
+        insecureSkipVerify: false
+        caFile: /etc/ssl/certs/harbor-ca.pem
+      metadata:
+        environment: production
+
+    # Local Development Registry
+    - name: local-dev
+      type: generic
+      endpoint: localhost:5000
+      auth:
+        type: anonymous
+      insecure: true
+      timeout: 30
+      retryAttempts: 3
+      metadata:
+        environment: development
+
+    # Docker Hub
+    - name: dockerhub
+      type: dockerhub
+      endpoint: https://registry-1.docker.io
+      auth:
+        type: basic
+        username: myusername
+        # Use access token instead of password
+        password: dckr_pat_1234567890abcdef
+      metadata:
+        environment: public
+
+    # GitHub Container Registry
+    - name: ghcr
+      type: github
+      endpoint: https://ghcr.io
+      auth:
+        type: basic
+        username: myusername
+        # Personal access token with package:read permission
+        token: ghp_1234567890abcdef
+      tls:
+        insecureSkipVerify: false
+
+    # Quay.io Registry
+    - name: quay
+      type: quay
+      endpoint: https://quay.io
+      auth:
+        type: token
+        # Robot account token
+        token: quay-token-here
+      metadata:
+        organization: myorg
+
+    # Azure Container Registry
+    - name: acr-prod
+      type: azure
+      endpoint: myregistry.azurecr.io
+      auth:
+        type: basic
+        username: myregistry
+        # Admin password or service principal
+        password: acr-password-here
+      metadata:
+        subscription: azure-subscription-id
+
+    # GitLab Container Registry
+    - name: gitlab
+      type: gitlab
+      endpoint: registry.gitlab.com
+      auth:
+        type: token
+        # Deploy token or personal access token
+        token: glpat-1234567890
+      metadata:
+        project: mygroup/myproject
+
+    # Artifactory
+    - name: artifactory
+      type: generic
+      endpoint: artifactory.example.com
+      auth:
+        type: basic
+        username: admin
+        password: artifactory-password
+      tls:
+        certFile: /etc/ssl/certs/artifactory-client.pem
+        keyFile: /etc/ssl/private/artifactory-client-key.pem
+        caFile: /etc/ssl/certs/artifactory-ca.pem
+      metadata:
+        repository: docker-local
+
+# Encryption configuration
+encryption:
+  enabled: false
+  customerManagedKeys: false
+  envelopeEncryption: true
+
+# Secrets configuration
+secrets:
+  useSecretsManager: false
+  secretsManagerType: aws
+  registryCredsSecret: freightliner-registry-credentials
+  encryptionKeysSecret: freightliner-encryption-keys
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 2112
+  path: /metrics
+  namespace: freightliner
+
+# Checkpoint configuration
+checkpoint:
+  directory: ${HOME}/.freightliner/checkpoints
+
+# Tree replication defaults
+treeReplicate:
+  workers: 0  # Auto-detect
+  excludeRepos: []
+  excludeTags:
+    - "*-dev"
+    - "*-test"
+  includeTags:
+    - "v*"
+    - "latest"
+  dryRun: false
+  force: false
+  enableCheckpoint: true
+  checkpointDir: ${HOME}/.freightliner/checkpoints
+  skipCompleted: true
+  retryFailed: true
+
+# Single repository replication defaults
+replicate:
+  force: false
+  dryRun: false
+  tags: []

@@ -1,0 +1,90 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.out
+cpu.prof
+freightliner
+network.test
+# Go workspace file
+go.work
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application specific files
+config.yaml
+*.pem
+*.key
+*.log
+
+# Secrets and sensitive files
+.env.secrets
+.env.secrets.*
+.env.local
+.env.production
+*.backup
+*.backup.*
+service-account.json
+credentials.json
+
+test_output_full.txt
+GOTEST_OUTPUT.md
+
+# Claude Code configuration (local development only, not part of product)
+.claude/
+.claude-*
+CLAUDE.md
+claude.md
+
+# Claude Flow generated files
+.mcp.json
+claude-flow.config.json
+claude-flow
+.swarm/
+.hive-mind/
+.claude-flow/
+hive-mind-prompt-*.txt
+
+# Memory and coordination (Claude Flow)
+memory/
+coordination/
+memory/claude-flow-data.json
+memory/sessions/*
+!memory/sessions/README.md
+memory/agents/*
+!memory/agents/README.md
+coordination/memory_bank/*
+coordination/subtasks/*
+coordination/orchestration/*
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal

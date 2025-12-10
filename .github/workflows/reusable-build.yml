@@ -1,0 +1,98 @@
+name: Reusable Build Workflow
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+      goos:
+        required: true
+        type: string
+      goarch:
+        required: true
+        type: string
+      goarm:
+        required: false
+        type: string
+        default: ''
+      binary-name:
+        required: false
+        type: string
+        default: 'freightliner'
+      version:
+        required: false
+        type: string
+        default: 'dev'
+    outputs:
+      artifact-name:
+        description: "Name of the uploaded artifact"
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+jobs:
+  build:
+    name: Build ${{ inputs.goos }}/${{ inputs.goarch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      artifact-name: binary-${{ inputs.goos }}-${{ inputs.goarch }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ inputs.goos }}-${{ inputs.goarch }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ inputs.goos }}-${{ inputs.goarch }}-
+            ${{ runner.os }}-go-
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ inputs.goos }}
+          GOARCH: ${{ inputs.goarch }}
+          GOARM: ${{ inputs.goarm }}
+        run: |
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          GIT_COMMIT=${{ github.sha }}
+          VERSION=${{ inputs.version }}
+
+          BINARY_NAME="${{ inputs.binary-name }}"
+          if [ "${{ inputs.goos }}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+
+          echo "🔨 Building ${BINARY_NAME} for ${{ inputs.goos }}/${{ inputs.goarch }}..."
+          mkdir -p dist
+
+          go build -v \
+            -ldflags="-w -s -X freightliner/cmd.version=${VERSION} -X freightliner/cmd.buildTime=${BUILD_TIME} -X freightliner/cmd.gitCommit=${GIT_COMMIT} -extldflags '-static'" \
+            -tags 'netgo osusergo static_build' \
+            -o dist/${BINARY_NAME} \
+            .
+
+          ls -lh dist/
+          echo "✅ Build completed successfully"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ inputs.goos }}-${{ inputs.goarch }}
+          path: dist/*
+          retention-days: 7
+          compression-level: 9

@@ -1,0 +1,170 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: freightliner-ingress
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+    app.kubernetes.io/component: ingress
+  annotations:
+    # NGINX Ingress Controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    
+    # Timeouts for large replication operations
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    
+    # Security headers - CVE-2021-25742 compliant (safe annotations only)
+    nginx.ingress.kubernetes.io/custom-http-errors: "403,404,500,502,503,504"
+    nginx.ingress.kubernetes.io/default-backend: "default-http-backend"
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+    
+    # Certificate management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/acme-challenge-type: http01
+    
+    # AWS Load Balancer Controller annotations (alternative to NGINX)
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    
+spec:
+  ingressClassName: nginx  # or 'alb' for AWS Load Balancer Controller
+  
+  tls:
+  - hosts:
+    - freightliner.company.com
+    - api.freightliner.company.com
+    secretName: freightliner-tls-cert
+  
+  rules:
+  - host: freightliner.company.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: freightliner-service
+            port:
+              number: 443
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: freightliner-service
+            port:
+              number: 443
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: freightliner-service
+            port:
+              number: 443
+      - path: /metrics
+        pathType: Exact
+        backend:
+          service:
+            name: freightliner-service
+            port:
+              number: 443
+  
+  - host: api.freightliner.company.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: freightliner-service
+            port:
+              number: 443
+---
+# Network Policy for security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: freightliner-network-policy
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: freightliner
+  
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  ingress:
+  # Allow ingress from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow ingress from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow ingress from same namespace (pod-to-pod communication)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: freightliner
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow HTTPS for registry communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  
+  # Allow HTTP for health checks and internal communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 8080
+  
+  # Allow AWS/GCP API communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443

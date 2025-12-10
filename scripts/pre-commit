@@ -1,0 +1,66 @@
+#!/bin/bash
+# Pre-commit hook to organize imports and run linting
+
+# Get list of staged Go files
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep ".go$")
+
+# Exit if no Go files are staged
+if [[ "$STAGED_GO_FILES" = "" ]]; then
+  exit 0
+fi
+
+echo "==> Running pre-commit checks on Go files..."
+
+# Check if required tools are installed
+if ! command -v goimports &> /dev/null; then
+  echo "Error: goimports is not installed. Install it with 'go install golang.org/x/tools/cmd/goimports@v0.29.0'"
+  exit 1
+fi
+
+if ! command -v golangci-lint &> /dev/null; then
+  echo "Error: golangci-lint is not installed. Install it with 'go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.3.0'"
+  exit 1
+fi
+
+# Format all staged Go files and re-stage them
+echo "Running goimports on staged files..."
+for FILE in $STAGED_GO_FILES; do
+  goimports -w -local freightliner "$FILE"
+  git add "$FILE"
+done
+
+# Run linting on staged files
+echo "Running golangci-lint on staged files..."
+LINT_RESULT=0
+for FILE in $STAGED_GO_FILES; do
+  golangci-lint run --fast "$FILE"
+  if [ $? -ne 0 ]; then
+    LINT_RESULT=1
+  fi
+done
+
+# Run go vet on staged files
+echo "Running go vet on staged files..."
+VET_RESULT=0
+go vet $STAGED_GO_FILES
+if [ $? -ne 0 ]; then
+  VET_RESULT=1
+fi
+
+# Staticcheck is now handled by golangci-lint, so we skip it here
+# echo "Running staticcheck on staged files..."
+# STATICCHECK_RESULT=0
+# if command -v staticcheck &> /dev/null; then
+#   staticcheck $STAGED_GO_FILES || STATICCHECK_RESULT=1
+# fi
+STATICCHECK_RESULT=0  # Always pass since golangci-lint handles this
+
+# Exit with error if any check failed (staticcheck now handled by golangci-lint)
+if [ $LINT_RESULT -ne 0 ] || [ $VET_RESULT -ne 0 ]; then
+  echo "Error: Pre-commit checks failed. Please fix the issues before committing."
+  exit 1
+fi
+
+echo "==> Pre-commit checks passed!"
+exit 0
+

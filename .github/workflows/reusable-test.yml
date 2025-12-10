@@ -1,0 +1,125 @@
+name: Reusable Test Workflow
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+      os:
+        required: true
+        type: string
+      test-type:
+        required: false
+        type: string
+        default: 'unit'
+        description: 'Type of tests: unit, integration, e2e'
+      coverage-threshold:
+        required: false
+        type: string
+        default: '85'
+      skip-integration:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+jobs:
+  test:
+    name: Test (${{ inputs.os }}, ${{ inputs.test-type }})
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-test-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-test-
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        shell: bash
+        run: |
+          echo "🧪 Running ${{ inputs.test-type }} tests on ${{ inputs.os }}..."
+
+          TEST_FLAGS="-v -race -timeout=15m -coverprofile=coverage.out -covermode=atomic"
+
+          case "${{ inputs.test-type }}" in
+            unit)
+              TEST_FLAGS="${TEST_FLAGS} -short"
+              ;;
+            integration)
+              TEST_FLAGS="${TEST_FLAGS} -tags=integration"
+              ;;
+            e2e)
+              TEST_FLAGS="${TEST_FLAGS} -tags=e2e"
+              ;;
+          esac
+
+          go test ${TEST_FLAGS} ./...
+        env:
+          SKIP_INTEGRATION: ${{ inputs.skip-integration }}
+          SKIP_CLOUD_TESTS: "true"
+
+      - name: Check test coverage
+        if: inputs.test-type == 'unit' && inputs.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          echo "📊 Analyzing test coverage..."
+          go tool cover -func=coverage.out | tee coverage.txt
+
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+
+          if (( $(echo "$COVERAGE < ${{ inputs.coverage-threshold }}" | bc -l) )); then
+            echo "❌ Coverage ${COVERAGE}% is below threshold ${{ inputs.coverage-threshold }}%"
+            exit 1
+          fi
+          echo "✅ Coverage ${COVERAGE}% meets threshold ${{ inputs.coverage-threshold }}%"
+
+      - name: Generate coverage HTML
+        if: inputs.test-type == 'unit' && inputs.os == 'ubuntu-latest'
+        run: go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage to Codecov
+        if: inputs.test-type == 'unit' && inputs.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: ${{ inputs.test-type }}
+          name: coverage-${{ inputs.os }}-${{ inputs.test-type }}
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload coverage artifacts
+        if: inputs.test-type == 'unit' && inputs.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: |
+            coverage.out
+            coverage.html
+            coverage.txt
+          retention-days: 30

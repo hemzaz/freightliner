@@ -1,0 +1,103 @@
+# golangci-lint configuration for Freightliner
+# Optimized for CI/CD performance and comprehensive analysis
+
+run:
+  # Timeout for analysis
+  timeout: 8m
+  
+  # Exit code when at least one issue was found
+  issues-exit-code: 1
+  
+  # Include test files in analysis
+  tests: true
+  
+  # Allow parallel runners
+  concurrency: 4
+  
+  # Define the Go version to target
+  go: '1.25.4'
+
+# Output configuration
+output:
+  # Format configuration (replaces deprecated colored-line-number)
+  formats:
+    - format: colored-line-number
+      path: stdout
+  print-issued-lines: true
+  print-linter-name: true
+  uniq-by-line: true
+  sort-results: true
+
+# Linters configuration
+linters:
+  # Enable specific linters
+  enable:
+    # Essential linters (always enabled)
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Examine Go source code and report suspicious constructs
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # State-of-the-art Go linter
+    - typecheck     # Parse and type-check Go code
+    - unused        # Check for unused constants, variables, functions and types
+    
+    # Security and reliability
+    - gosec         # Inspect source code for security problems
+    - bodyclose     # Check whether HTTP response body is closed successfully
+    - contextcheck  # Check whether the function uses a non-inherited context
+    - errorlint     # Find code that will cause problems with the error wrapping scheme
+    - rowserrcheck  # Check whether Err of rows is checked successfully
+    - sqlclosecheck # Check that sql.Rows and sql.Stmt are closed
+    
+    # Code quality
+    - dupl          # Tool for code clone detection
+    - gocognit      # Compute and check the cognitive complexity of functions
+    - goconst       # Find repeated strings that could be replaced by a constant
+    - gocyclo       # Compute and check the cyclomatic complexity of functions
+    - revive        # Fast, configurable, extensible, flexible, and beautiful linter for Go
+    - stylecheck    # Replacement for golint
+    
+    # Formatting and imports
+    - gofmt         # Check whether code was gofmt-ed
+    - goimports     # Check import statements are formatted according to the 'goimport' command
+    - misspell      # Find commonly misspelled English words in comments
+    
+    # Performance and best practices
+    - prealloc      # Find slice declarations that could potentially be preallocated
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Report unused function parameters
+
+# Issues configuration
+issues:
+  # Fix found issues (if it's supported by the linter)
+  fix: false
+  
+  # Maximum issues count per one linter
+  max-issues-per-linter: 50
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 3
+  
+  # Exclude some patterns
+  exclude:
+    # errcheck: Almost all programs ignore errors on these functions and in most cases it's ok
+    - Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*print.*|os\.(Un)?Setenv). is not checked
+    # govet: Common false positives
+    - (possible misuse of unsafe.Pointer|should have signature)
+  
+  # Excluding configuration per-path and per-linter
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - goconst
+        - gocognit
+    
+    # Exclude some linters from main.go
+    - path: main\.go
+      linters:
+        - gochecknoglobals

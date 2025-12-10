@@ -1,0 +1,81 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: freightliner
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: freightliner
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow ingress from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow metrics scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow pod-to-pod communication within namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: freightliner
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow HTTPS for external registry communication
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow HTTP for health checks
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+
+    # Allow pod-to-pod communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: freightliner
+      ports:
+        - protocol: TCP
+          port: 8080

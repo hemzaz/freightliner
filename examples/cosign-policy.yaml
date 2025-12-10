@@ -1,0 +1,118 @@
+# Example Cosign Policy Configuration
+# This file demonstrates various policy options for container image signature verification
+
+# Require at least one valid signature
+requireSignature: true
+
+# Minimum number of valid signatures required (for multi-signature scenarios)
+minSignatures: 1
+
+# Enforcement mode: "enforce" (fail on violation), "warn" (log warning), or "audit" (log only)
+enforcementMode: enforce
+
+# Require Rekor transparency log verification
+requireRekor: true
+
+# Allowed signer identities (whitelist)
+# Images must be signed by at least one of these identities
+allowedSigners:
+  # Allow GitHub Actions from specific repository
+  - issuer: "https://token.actions.githubusercontent.com"
+    subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
+
+  # Allow specific email addresses (for traditional key-based signing)
+  - email: "release-engineering@example.com"
+
+  # Allow email pattern matching
+  - emailRegex: ".*@example\\.com$"
+
+  # Allow GitLab CI from specific project
+  - issuer: "https://gitlab.com"
+    uriRegex: "https://gitlab\\.com/myorg/.*"
+
+# Denied signer identities (blacklist)
+# Signatures from these identities will be rejected
+deniedSigners:
+  - email: "untrusted@example.com"
+  - issuer: "https://compromised-issuer.com"
+
+# Allowed OIDC issuers for keyless signatures
+allowedIssuers:
+  - "https://token.actions.githubusercontent.com"
+  - "https://gitlab.com"
+  - "https://accounts.google.com"
+
+# Key requirements (for traditional key-based signing)
+keyRequirements:
+  # Minimum key size in bits
+  minKeySize: 2048
+
+  # Allowed signature algorithms
+  allowedAlgorithms:
+    - "ECDSA"
+    - "RSA"
+
+  # Require hardware-backed keys (YubiKey, HSM, etc.)
+  requireHardwareKey: false
+
+# Required attestations (SLSA provenance, SBOM, etc.)
+requireAttestations:
+  # Require SLSA provenance attestation
+  - predicateType: "https://slsa.dev/provenance/v0.2"
+    minCount: 1
+    requirements:
+      # Require SLSA Build Level 3
+      slsaLevel: 3
+
+  # Require Software Bill of Materials (SBOM)
+  - predicateType: "https://spdx.dev/Document"
+    minCount: 1
+
+---
+# Minimal Policy Example
+# Use this for basic signature verification without strict requirements
+
+requireSignature: true
+minSignatures: 1
+enforcementMode: enforce
+requireRekor: false
+
+---
+# Strict Policy Example
+# Use this for production environments with high security requirements
+
+requireSignature: true
+minSignatures: 2  # Require dual signatures
+enforcementMode: enforce
+requireRekor: true
+
+allowedSigners:
+  - issuer: "https://token.actions.githubusercontent.com"
+    subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
+  - email: "security@example.com"
+
+keyRequirements:
+  minKeySize: 4096
+  allowedAlgorithms:
+    - "ECDSA"
+  requireHardwareKey: true
+
+requireAttestations:
+  - predicateType: "https://slsa.dev/provenance/v0.2"
+    minCount: 1
+    requirements:
+      slsaLevel: 4
+  - predicateType: "https://spdx.dev/Document"
+    minCount: 1
+
+---
+# Warn-Only Policy Example
+# Use this for gradual rollout or testing environments
+
+requireSignature: true
+minSignatures: 1
+enforcementMode: warn  # Only warn, don't fail
+requireRekor: true
+
+allowedSigners:
+  - emailRegex: ".*@example\\.com$"

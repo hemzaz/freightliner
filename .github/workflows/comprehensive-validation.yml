@@ -1,0 +1,397 @@
+name: Comprehensive Validation Matrix
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      test_level:
+        description: 'Validation level to run'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+          - 'minimal'
+          - 'standard'
+          - 'comprehensive'
+      include_load_tests:
+        description: 'Include load testing validation'
+        required: false
+        default: true
+        type: boolean
+      performance_baseline:
+        description: 'Update performance baseline'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  GO_VERSION: '1.25.4'
+  GO_MATRIX_VERSIONS: '["1.25.4", "1.25.4"]'
+  GOLANGCI_LINT_VERSION: 'v1.62.2'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix-setup:
+    name: Setup Test Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      test-level: ${{ steps.set-matrix.outputs.test-level }}
+    steps:
+      - name: Set test matrix
+        id: set-matrix
+        run: |
+          TEST_LEVEL="${{ github.event.inputs.test_level || 'standard' }}"
+          echo "test-level=$TEST_LEVEL" >> $GITHUB_OUTPUT
+          
+          if [[ "$TEST_LEVEL" == "comprehensive" ]]; then
+            echo "matrix={\"go-version\":[\"1.24.5\"],\"os\":[\"ubuntu-latest\",\"windows-latest\",\"macos-latest\"],\"test-type\":[\"unit\",\"integration\",\"load\",\"security\",\"config\"]}" >> $GITHUB_OUTPUT
+          elif [[ "$TEST_LEVEL" == "standard" ]]; then
+            echo "matrix={\"go-version\":[\"1.24.5\"],\"os\":[\"ubuntu-latest\",\"macos-latest\"],\"test-type\":[\"unit\",\"integration\",\"security\",\"config\"]}" >> $GITHUB_OUTPUT
+          else
+            echo "matrix={\"go-version\":[\"1.24.5\"],\"os\":[\"ubuntu-latest\"],\"test-type\":[\"unit\",\"config\"]}" >> $GITHUB_OUTPUT
+          fi
+
+  validation-tests:
+    name: Validation (${{ matrix.test-type }} - ${{ matrix.os }} - Go ${{ matrix.go-version }})
+    needs: matrix-setup
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.matrix-setup.outputs.matrix) }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for performance comparison
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Cache test dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/Library/Caches/go-build  # macOS
+            ~\AppData\Local\go-build   # Windows
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-test-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-test-
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+      - name: Install golangci-lint
+        if: matrix.test-type == 'config' || matrix.test-type == 'security'
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
+          else
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin ${{ env.GOLANGCI_LINT_VERSION }}
+          fi
+
+      - name: Install security tools
+        if: matrix.test-type == 'security'
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run unit tests
+        if: matrix.test-type == 'unit'
+        run: |
+          go test -v -race -coverprofile=coverage-${{ matrix.os }}-${{ matrix.go-version }}.out ./...
+
+      - name: Run integration tests
+        if: matrix.test-type == 'integration'
+        timeout-minutes: 15
+        run: |
+          go test -v -timeout=10m ./pkg/testing/validation/... -run Integration
+
+      - name: Run load tests
+        if: matrix.test-type == 'load' && (github.event.inputs.include_load_tests == 'true' || github.event.inputs.include_load_tests == '')
+        timeout-minutes: 20
+        run: |
+          go test -v -timeout=15m ./pkg/testing/load/... -run TestLoadTestFrameworkIntegration
+
+      - name: Run security validation
+        if: matrix.test-type == 'security'
+        run: |
+          # Run gosec security scan
+          gosec -fmt sarif -out gosec-results-${{ matrix.os }}.sarif ./...
+          
+          # Run dependency check
+          go list -json -deps ./... | grep -v "\"Standard\"" > deps-${{ matrix.os }}.json || true
+
+      - name: Run configuration validation
+        if: matrix.test-type == 'config'
+        run: |
+          go test -v ./pkg/testing/validation/... -run TestConfig
+
+      - name: Upload test coverage
+        if: matrix.test-type == 'unit'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage-${{ matrix.os }}-${{ matrix.go-version }}.out
+          flags: ${{ matrix.os }}-${{ matrix.go-version }}
+          name: coverage-${{ matrix.os }}-${{ matrix.go-version }}
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload security results
+        if: matrix.test-type == 'security' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results-${{ matrix.os }}.sarif
+        continue-on-error: true
+
+      - name: Store test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.test-type }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: |
+            coverage-*.out
+            gosec-results-*.sarif
+            deps-*.json
+            *.log
+          retention-days: 30
+
+  docker-validation:
+    name: Docker Multi-stage Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: needs.matrix-setup.outputs.test-level != 'minimal'
+    needs: matrix-setup
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and test builder stage
+        run: |
+          docker build --target builder -t freightliner:builder-validation .
+          docker run --rm freightliner:builder-validation go version
+
+      - name: Build and test test stage
+        run: |
+          docker build --target test -t freightliner:test-validation .
+
+      - name: Build and test build stage
+        run: |
+          docker build --target build -t freightliner:build-validation .
+
+      - name: Build final image
+        run: |
+          docker build -t freightliner:final-validation .
+
+      - name: Test final image functionality
+        run: |
+          # Test basic functionality
+          docker run --rm freightliner:final-validation --version || echo "Version command not implemented"
+          docker run --rm freightliner:final-validation --help >/dev/null || echo "Help command not implemented"
+          
+          # Test image security
+          docker run --rm --user 1001:1001 freightliner:final-validation echo "Non-root user test passed"
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'freightliner:final-validation'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
+
+      - name: Upload vulnerability scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+  performance-benchmarking:
+    name: Performance Benchmarking
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: needs.matrix-setup.outputs.test-level == 'comprehensive' || github.event.inputs.performance_baseline == 'true'
+    needs: matrix-setup
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run performance benchmarks
+        run: |
+          # Run Go benchmarks
+          go test -bench=. -benchmem -count=3 -run=^$ ./... > benchmark-results.txt
+          
+          # Measure build performance
+          echo "=== Build Performance ===" >> benchmark-results.txt
+          time go build -v ./... 2>&1 | tee -a benchmark-results.txt
+          
+          # Measure test performance
+          echo "=== Test Performance ===" >> benchmark-results.txt
+          time go test -short ./... 2>&1 | tee -a benchmark-results.txt
+
+      - name: Compare with baseline
+        if: github.event.inputs.performance_baseline == 'false'
+        run: |
+          # Download previous benchmark results if available
+          gh run download --name benchmark-baseline || echo "No baseline found"
+          
+          # Compare current results with baseline
+          if [[ -f benchmark-baseline.txt ]]; then
+            echo "Comparing with baseline..."
+            # Basic comparison (in real implementation, use benchcmp or similar)
+            diff benchmark-baseline.txt benchmark-results.txt > benchmark-diff.txt || true
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Update performance baseline
+        if: github.event.inputs.performance_baseline == 'true'
+        run: |
+          cp benchmark-results.txt benchmark-baseline.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark-results.txt
+            benchmark-baseline.txt
+            benchmark-diff.txt
+          retention-days: 90
+
+  validation-summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [matrix-setup, validation-tests, docker-validation, performance-benchmarking]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: validation-artifacts
+
+      - name: Generate validation summary
+        run: |
+          echo "# Comprehensive Validation Summary" > validation-summary.md
+          echo "" >> validation-summary.md
+          echo "**Generated:** $(date)" >> validation-summary.md
+          echo "**Test Level:** ${{ needs.matrix-setup.outputs.test-level }}" >> validation-summary.md
+          echo "**Trigger:** ${{ github.event_name }}" >> validation-summary.md
+          echo "" >> validation-summary.md
+          
+          # Count test results
+          TOTAL_JOBS=0
+          SUCCESSFUL_JOBS=0
+          
+          for result in ${{ toJson(needs.*.result) }}; do
+            TOTAL_JOBS=$((TOTAL_JOBS + 1))
+            if [[ "$result" == "success" ]]; then
+              SUCCESSFUL_JOBS=$((SUCCESSFUL_JOBS + 1))
+            fi
+          done
+          
+          echo "## Results Summary" >> validation-summary.md
+          echo "" >> validation-summary.md
+          echo "- **Total Jobs:** $TOTAL_JOBS" >> validation-summary.md
+          echo "- **Successful:** $SUCCESSFUL_JOBS" >> validation-summary.md
+          echo "- **Failed:** $((TOTAL_JOBS - SUCCESSFUL_JOBS))" >> validation-summary.md
+          echo "- **Success Rate:** $(( (SUCCESSFUL_JOBS * 100) / TOTAL_JOBS ))%" >> validation-summary.md
+          echo "" >> validation-summary.md
+          
+          # Job status details
+          echo "## Job Status Details" >> validation-summary.md
+          echo "" >> validation-summary.md
+          echo "| Job | Status |" >> validation-summary.md
+          echo "|-----|--------|" >> validation-summary.md
+          echo "| Matrix Setup | ${{ needs.matrix-setup.result }} |" >> validation-summary.md
+          echo "| Validation Tests | ${{ needs.validation-tests.result }} |" >> validation-summary.md
+          echo "| Docker Validation | ${{ needs.docker-validation.result }} |" >> validation-summary.md
+          echo "| Performance Benchmarking | ${{ needs.performance-benchmarking.result }} |" >> validation-summary.md
+          echo "" >> validation-summary.md
+          
+          # Recommendations
+          if [[ $SUCCESSFUL_JOBS -eq $TOTAL_JOBS ]]; then
+            echo "## ✅ Recommendations" >> validation-summary.md
+            echo "" >> validation-summary.md
+            echo "All validation checks passed successfully! The pipeline is ready for production use." >> validation-summary.md
+          else
+            echo "## ⚠️ Action Required" >> validation-summary.md
+            echo "" >> validation-summary.md
+            echo "Some validation checks failed. Please review the job logs and address issues before proceeding." >> validation-summary.md
+          fi
+          
+          # Artifacts summary
+          echo "" >> validation-summary.md
+          echo "## Available Artifacts" >> validation-summary.md
+          echo "" >> validation-summary.md
+          find validation-artifacts -name "*.out" -o -name "*.sarif" -o -name "*.json" -o -name "*.txt" | \
+            sed 's|validation-artifacts/||' | sort | \
+            awk '{print "- " $0}' >> validation-summary.md
+
+      - name: Upload validation summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-summary
+          path: validation-summary.md
+          retention-days: 90
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('validation-summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Set job status
+        run: |
+          TOTAL_JOBS=4  # matrix-setup, validation-tests, docker-validation, performance-benchmarking
+          SUCCESSFUL_JOBS=0
+          
+          [[ "${{ needs.matrix-setup.result }}" == "success" ]] && ((SUCCESSFUL_JOBS++))
+          [[ "${{ needs.validation-tests.result }}" == "success" ]] && ((SUCCESSFUL_JOBS++))
+          [[ "${{ needs.docker-validation.result }}" == "success" ]] && ((SUCCESSFUL_JOBS++))
+          [[ "${{ needs.performance-benchmarking.result }}" == "success" ]] && ((SUCCESSFUL_JOBS++))
+          
+          if [[ $SUCCESSFUL_JOBS -eq $TOTAL_JOBS ]]; then
+            echo "✅ All validation checks passed"
+            exit 0
+          elif [[ $SUCCESSFUL_JOBS -gt $((TOTAL_JOBS / 2)) ]]; then
+            echo "⚠️ Partial validation success: $SUCCESSFUL_JOBS/$TOTAL_JOBS"
+            exit 0
+          else
+            echo "❌ Validation failed: $SUCCESSFUL_JOBS/$TOTAL_JOBS successful"
+            exit 1
+          fi

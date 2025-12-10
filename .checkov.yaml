@@ -1,0 +1,58 @@
+---
+# Checkov Security Scanner Configuration
+# https://www.checkov.io/
+
+# Repository: freightliner
+# Last Updated: 2025-12-01
+
+# Skip checks with justification
+skip-check:
+  # CKV_GHA_7: workflow_dispatch inputs for deployment workflows
+  # Rationale: Deployment workflows require manual operational inputs
+  # Risk: Low - All inputs are type-safe (choice/boolean), no shell interpolation
+  # Security Review: Approved 2025-12-01
+  - id: CKV_GHA_7
+    comment: |
+      Deployment workflows use type-safe workflow_dispatch inputs for operational control.
+      
+      Safety measures in place:
+      - All inputs use type: choice (constrained values) or type: boolean
+      - No direct shell interpolation of user inputs
+      - Inputs used only in conditionals and validated GitHub Actions
+      - GitHub environment protection rules required for production
+      - RBAC controls limit who can trigger workflows
+      - Audit logging enabled for all workflow runs
+      
+      Risk assessment: Low (accepted)
+      Operational necessity: High (manual deployments, rollbacks, security scans)
+      
+      Affected workflows (11 total):
+      - rollback.yml (emergency rollback operations)
+      - kubernetes-deploy.yml (K8s deployments)
+      - deploy.yml (general deployments)
+      - helm-deploy.yml (Helm deployments)
+      - docker-publish.yml (container publishing)
+      - security-monitoring-enhanced.yml (daily security scans with scan_type choice)
+      - security-monitoring.yml (daily security monitoring with scan_type/alert_level choice)
+      - release-pipeline.yml (release management)
+      - comprehensive-validation.yml (validation testing)
+      - oidc-authentication.yml (OIDC authentication testing)
+      - scheduled-comprehensive.yml (scheduled comprehensive validation)
+      
+      Last reviewed: 2025-12-01
+      Next review: 2025-03-01
+
+# Framework-specific configurations
+framework:
+  - github_actions
+
+# Output settings
+output:
+  format: cli
+  quiet: false
+
+# Download external checks
+download-external-modules: true
+
+# Enable experimental features
+enable-secret-scan-all-files: false

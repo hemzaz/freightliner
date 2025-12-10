@@ -1,0 +1,243 @@
+# AlertManager Configuration for Freightliner
+# Handles alert routing, grouping, and notifications
+
+global:
+  # Global defaults
+  resolve_timeout: 5m
+
+  # Slack configuration
+  slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+  # PagerDuty configuration
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree for alert routing
+route:
+  # Root route - all alerts start here
+  receiver: 'default-receiver'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  # Child routes
+  routes:
+    # Critical alerts go to PagerDuty immediately
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 1h
+      continue: true  # Also send to other receivers
+
+    # Critical alerts also go to Slack critical channel
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 1h
+
+    # Warning alerts go to Slack warnings channel
+    - match:
+        severity: warning
+      receiver: 'slack-warnings'
+      group_wait: 5m
+      group_interval: 10m
+      repeat_interval: 4h
+
+    # Replication alerts
+    - match:
+        component: replication
+      receiver: 'slack-replication'
+      group_by: ['source_registry', 'dest_registry']
+      group_wait: 1m
+      group_interval: 5m
+      repeat_interval: 2h
+
+    # API alerts
+    - match:
+        component: api
+      receiver: 'slack-api'
+      group_wait: 1m
+      group_interval: 5m
+      repeat_interval: 2h
+
+    # System alerts
+    - match:
+        component: system
+      receiver: 'slack-system'
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 1h
+
+    # Authentication alerts
+    - match:
+        component: auth
+      receiver: 'slack-security'
+      group_wait: 1m
+      group_interval: 5m
+      repeat_interval: 2h
+
+# Inhibition rules - suppress alerts based on other active alerts
+inhibit_rules:
+  # Inhibit warning-level alerts if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+
+  # Inhibit all alerts if service is down
+  - source_match:
+      alertname: 'FreightlinerDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['cluster', 'service']
+
+  # Inhibit replication alerts if no replication activity
+  - source_match:
+      alertname: 'ReplicationStopped'
+    target_match:
+      component: 'replication'
+    equal: ['cluster', 'service']
+
+# Receivers - notification destinations
+receivers:
+  # Default receiver (catch-all)
+  - name: 'default-receiver'
+    slack_configs:
+      - channel: '#freightliner-alerts'
+        username: 'AlertManager'
+        icon_emoji: ':warning:'
+        title: '{{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Severity:* {{ .Labels.severity }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # PagerDuty for critical alerts
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+        severity: 'error'
+        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        details:
+          firing: '{{ .Alerts.Firing | len }}'
+          resolved: '{{ .Alerts.Resolved | len }}'
+          alertname: '{{ .GroupLabels.alertname }}'
+          cluster: '{{ .GroupLabels.cluster }}'
+          service: '{{ .GroupLabels.service }}'
+        links:
+          - href: '{{ .CommonAnnotations.runbook }}'
+            text: 'Runbook'
+
+  # Slack for critical alerts
+  - name: 'slack-critical'
+    slack_configs:
+      - channel: '#freightliner-critical'
+        username: 'AlertManager Critical'
+        icon_emoji: ':rotating_light:'
+        color: 'danger'
+        title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        title_link: '{{ .CommonAnnotations.runbook }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Severity:* {{ .Labels.severity }}
+          *Component:* {{ .Labels.component }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Impact:* {{ .Annotations.impact }}
+          *Action:* {{ .Annotations.action }}
+          *Runbook:* {{ .Annotations.runbook }}
+          {{ end }}
+
+  # Slack for warning alerts
+  - name: 'slack-warnings'
+    slack_configs:
+      - channel: '#freightliner-warnings'
+        username: 'AlertManager'
+        icon_emoji: ':warning:'
+        color: 'warning'
+        title: 'WARNING: {{ .GroupLabels.alertname }}'
+        title_link: '{{ .CommonAnnotations.runbook }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Component:* {{ .Labels.component }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Runbook:* {{ .Annotations.runbook }}
+          {{ end }}
+
+  # Slack for replication alerts
+  - name: 'slack-replication'
+    slack_configs:
+      - channel: '#freightliner-replication'
+        username: 'Replication Monitor'
+        icon_emoji: ':package:'
+        title: 'Replication Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Registries:* {{ .Labels.source_registry }} → {{ .Labels.dest_registry }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # Slack for API alerts
+  - name: 'slack-api'
+    slack_configs:
+      - channel: '#freightliner-api'
+        username: 'API Monitor'
+        icon_emoji: ':globe_with_meridians:'
+        title: 'API Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Endpoint:* {{ .Labels.method }} {{ .Labels.path }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # Slack for system alerts
+  - name: 'slack-system'
+    slack_configs:
+      - channel: '#freightliner-system'
+        username: 'System Monitor'
+        icon_emoji: ':computer:'
+        title: 'System Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Component:* {{ .Labels.component }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Action:* {{ .Annotations.action }}
+          {{ end }}
+
+  # Slack for security/auth alerts
+  - name: 'slack-security'
+    slack_configs:
+      - channel: '#freightliner-security'
+        username: 'Security Monitor'
+        icon_emoji: ':lock:'
+        color: 'danger'
+        title: 'Security Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Type:* {{ .Labels.type }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Action:* {{ .Annotations.action }}
+          {{ end }}

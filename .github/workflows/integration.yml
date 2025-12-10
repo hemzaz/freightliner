@@ -1,0 +1,457 @@
+name: Integration Tests
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test-suite:
+        description: 'Test suite to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - registry
+          - cloud
+          - performance
+
+env:
+  GO_VERSION: '1.25.4'
+  TEST_TIMEOUT: '30m'
+
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # REGISTRY INTEGRATION - Local registries
+  # ============================================
+  local-registry-tests:
+    name: Local Registry Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      github.event.inputs.test-suite == 'all' ||
+      github.event.inputs.test-suite == 'registry' ||
+      github.event.inputs.test-suite == ''
+
+    services:
+      registry-source:
+        image: registry:2
+        ports:
+          - 5000:5000
+        env:
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      registry-dest:
+        image: registry:2
+        ports:
+          - 5001:5000
+        env:
+          REGISTRY_STORAGE_DELETE_ENABLED: "true"
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Setup test images
+        run: |
+          echo "📦 Setting up test images in source registry..."
+
+          # Pull test images
+          docker pull alpine:3.18
+          docker pull alpine:3.19
+          docker pull busybox:1.36
+          docker pull nginx:alpine
+
+          # Tag for source registry
+          docker tag alpine:3.18 localhost:5000/test/alpine:3.18
+          docker tag alpine:3.19 localhost:5000/test/alpine:3.19
+          docker tag busybox:1.36 localhost:5000/test/busybox:1.36
+          docker tag nginx:alpine localhost:5000/test/nginx:latest
+
+          # Push to source registry
+          docker push localhost:5000/test/alpine:3.18
+          docker push localhost:5000/test/alpine:3.19
+          docker push localhost:5000/test/busybox:1.36
+          docker push localhost:5000/test/nginx:latest
+
+          # Verify images
+          echo "✅ Verifying images in source registry..."
+          curl -s http://localhost:5000/v2/_catalog | jq .
+          curl -s http://localhost:5000/v2/test/alpine/tags/list | jq .
+
+      - name: Build freightliner
+        run: make build
+
+      - name: Run local registry integration tests
+        env:
+          SOURCE_REGISTRY: localhost:5000
+          DEST_REGISTRY: localhost:5001
+          INSECURE_REGISTRIES: "true"
+        run: |
+          echo "🧪 Running local registry integration tests..."
+          go test -v -timeout ${{ env.TEST_TIMEOUT }} \
+            -tags=integration \
+            -run TestRegistry \
+            ./tests/integration/...
+
+      - name: Verify replication results
+        run: |
+          echo "🔍 Verifying replicated images..."
+          curl -s http://localhost:5001/v2/_catalog | jq .
+
+          # Check specific images were replicated
+          for repo in test/alpine test/busybox test/nginx; do
+            echo "Checking $repo..."
+            curl -s http://localhost:5001/v2/${repo}/tags/list | jq .
+          done
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-registry-test-results-${{ github.sha }}
+          path: |
+            tests/integration/*.log
+            coverage.out
+          retention-days: 30
+
+  # ============================================
+  # HARBOR INTEGRATION - Harbor registry
+  # ============================================
+  harbor-tests:
+    name: Harbor Registry Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: |
+      github.event.inputs.test-suite == 'all' ||
+      github.event.inputs.test-suite == 'registry' ||
+      github.event.inputs.test-suite == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Harbor
+        run: |
+          echo "🐳 Setting up Harbor registry..."
+
+          # Install Harbor using Docker Compose
+          curl -L https://github.com/goharbor/harbor/releases/download/v2.10.0/harbor-offline-installer-v2.10.0.tgz -o harbor.tgz
+          tar xvf harbor.tgz
+          cd harbor
+
+          # Configure Harbor
+          cp harbor.yml.tmpl harbor.yml
+          sed -i 's/hostname: reg.mydomain.com/hostname: localhost/g' harbor.yml
+          sed -i 's/https:/# https:/g' harbor.yml
+          sed -i '/certificate:/,+1 s/^/# /' harbor.yml
+
+          # Install and start Harbor
+          sudo ./install.sh --with-chartmuseum
+
+          # Wait for Harbor to be ready
+          echo "⏳ Waiting for Harbor to be ready..."
+          timeout 120 bash -c 'until curl -f http://localhost/api/v2.0/systeminfo; do sleep 5; done'
+
+      - name: Configure Harbor for tests
+        run: |
+          echo "🔧 Configuring Harbor..."
+
+          # Login to Harbor
+          docker login -u admin -p Harbor12345 localhost
+
+          # Create test project
+          curl -u admin:Harbor12345 -X POST \
+            "http://localhost/api/v2.0/projects" \
+            -H "Content-Type: application/json" \
+            -d '{"project_name":"test","public":true}'
+
+      - name: Build freightliner
+        run: make build
+
+      - name: Run Harbor integration tests
+        env:
+          HARBOR_URL: localhost
+          HARBOR_USERNAME: admin
+          HARBOR_PASSWORD: Harbor12345
+          HARBOR_PROJECT: test
+        run: |
+          echo "🧪 Running Harbor integration tests..."
+          go test -v -timeout ${{ env.TEST_TIMEOUT }} \
+            -tags=integration,harbor \
+            -run TestHarbor \
+            ./tests/integration/...
+
+      - name: Cleanup Harbor
+        if: always()
+        run: |
+          cd harbor
+          docker-compose down -v
+
+      - name: Upload Harbor test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-test-results-${{ github.sha }}
+          path: |
+            tests/integration/*.log
+            harbor/logs/
+          retention-days: 30
+
+  # ============================================
+  # CLOUD REGISTRY TESTS - AWS ECR, GCR
+  # ============================================
+  cloud-registry-tests:
+    name: Cloud Registry Integration (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.inputs.test-suite == 'all' ||
+       github.event.inputs.test-suite == 'cloud' ||
+       github.event.inputs.test-suite == '') &&
+      github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [ecr, gcr]
+        exclude:
+          # Skip if credentials not available
+          - provider: ecr
+          - provider: gcr
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # AWS ECR Setup
+      - name: Configure AWS credentials
+        if: matrix.provider == 'ecr' && secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        if: matrix.provider == 'ecr' && secrets.AWS_ACCESS_KEY_ID != ''
+        run: |
+          aws ecr get-login-password --region us-east-1 | \
+            docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+
+      # GCP GCR Setup
+      - name: Authenticate to Google Cloud
+        if: matrix.provider == 'gcr' && secrets.GCP_SERVICE_ACCOUNT_KEY != ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Setup Cloud SDK
+        if: matrix.provider == 'gcr' && secrets.GCP_SERVICE_ACCOUNT_KEY != ''
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        if: matrix.provider == 'gcr' && secrets.GCP_SERVICE_ACCOUNT_KEY != ''
+        run: gcloud auth configure-docker
+
+      - name: Build freightliner
+        run: make build
+
+      - name: Run ECR integration tests
+        if: matrix.provider == 'ecr' && secrets.AWS_ACCESS_KEY_ID != ''
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          AWS_REGION: us-east-1
+        run: |
+          echo "🧪 Running AWS ECR integration tests..."
+          go test -v -timeout ${{ env.TEST_TIMEOUT }} \
+            -tags=integration,ecr \
+            -run TestECR \
+            ./tests/integration/...
+
+      - name: Run GCR integration tests
+        if: matrix.provider == 'gcr' && secrets.GCP_SERVICE_ACCOUNT_KEY != ''
+        env:
+          GCR_REGISTRY: ${{ secrets.GCR_REGISTRY }}
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+        run: |
+          echo "🧪 Running Google GCR integration tests..."
+          go test -v -timeout ${{ env.TEST_TIMEOUT }} \
+            -tags=integration,gcr \
+            -run TestGCR \
+            ./tests/integration/...
+
+      - name: Upload cloud test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-${{ matrix.provider }}-test-results-${{ github.sha }}
+          path: |
+            tests/integration/*.log
+            coverage.out
+          retention-days: 30
+
+  # ============================================
+  # E2E TESTS - End-to-end workflows
+  # ============================================
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: |
+      github.event.inputs.test-suite == 'all' ||
+      github.event.inputs.test-suite == ''
+
+    services:
+      registry-source:
+        image: registry:2
+        ports:
+          - 5000:5000
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      registry-dest:
+        image: registry:2
+        ports:
+          - 5001:5000
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build freightliner
+        run: make build
+
+      - name: Setup test scenario
+        run: |
+          echo "📦 Setting up E2E test scenario..."
+          docker pull alpine:3.18
+          docker tag alpine:3.18 localhost:5000/e2e/alpine:3.18
+          docker push localhost:5000/e2e/alpine:3.18
+
+      - name: Run E2E tests
+        env:
+          SOURCE_REGISTRY: localhost:5000
+          DEST_REGISTRY: localhost:5001
+        run: |
+          echo "🧪 Running end-to-end tests..."
+          go test -v -timeout 15m \
+            -tags=e2e \
+            ./tests/e2e/...
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results-${{ github.sha }}
+          path: |
+            tests/e2e/*.log
+            test-results/
+          retention-days: 30
+
+  # ============================================
+  # INTEGRATION STATUS - Summary
+  # ============================================
+  integration-status:
+    name: Integration Status
+    runs-on: ubuntu-latest
+    needs: [local-registry-tests, harbor-tests, cloud-registry-tests, e2e-tests]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Check integration status
+        run: |
+          echo "📊 Integration Test Status Report"
+          echo "=================================="
+          echo "Local Registry: ${{ needs.local-registry-tests.result }}"
+          echo "Harbor: ${{ needs.harbor-tests.result }}"
+          echo "Cloud Registries: ${{ needs.cloud-registry-tests.result }}"
+          echo "E2E Tests: ${{ needs.e2e-tests.result }}"
+          echo ""
+
+          # Allow cloud tests to be skipped
+          if [[ "${{ needs.local-registry-tests.result }}" == "success" ]] && \
+             [[ "${{ needs.harbor-tests.result }}" == "success" ]] && \
+             [[ "${{ needs.e2e-tests.result }}" == "success" ]]; then
+            echo "✅ Integration Tests Passed"
+            exit 0
+          else
+            echo "❌ Integration Tests Failed"
+            exit 1
+          fi
+
+      - name: Generate summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🔗 Integration Test Results
+
+          | Test Suite | Status |
+          |------------|--------|
+          | Local Registry | ${{ needs.local-registry-tests.result == 'success' && '✅' || '❌' }} ${{ needs.local-registry-tests.result }} |
+          | Harbor | ${{ needs.harbor-tests.result == 'success' && '✅' || '❌' }} ${{ needs.harbor-tests.result }} |
+          | Cloud Registries | ${{ needs.cloud-registry-tests.result == 'success' && '✅' || needs.cloud-registry-tests.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.cloud-registry-tests.result }} |
+          | E2E Tests | ${{ needs.e2e-tests.result == 'success' && '✅' || '❌' }} ${{ needs.e2e-tests.result }} |
+
+          **Test Suite**: ${{ github.event.inputs.test-suite || 'all' }}
+          **Commit**: `${{ github.sha }}`
+          EOF

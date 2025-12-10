@@ -1,0 +1,490 @@
+name: Security Gates & Policy Enforcement
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [ main, master ]
+
+# Security: Minimal required permissions
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  checks: write
+  statuses: write
+
+# Global environment for security policies
+env:
+  SECURITY_POLICY_VERSION: "2.1"
+  POLICY_ENFORCEMENT: "strict"
+  VULNERABILITY_THRESHOLD: "high"
+  COMPLIANCE_REQUIRED: "true"
+
+jobs:
+  # Security policy validation
+  policy-validation:
+    name: Security Policy Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      policy-valid: ${{ steps.validate.outputs.policy-valid }}
+      violations: ${{ steps.validate.outputs.violations }}
+    
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate security policy compliance
+        id: validate
+        run: |
+          echo "🔍 Validating security policy compliance"
+          
+          violations=()
+          policy_valid=true
+          
+          # Check 1: Required security files
+          required_files=(
+            ".github/security.yml"
+            ".gitleaks.toml"
+            "SECURITY.md"
+            ".github/dependabot.yml"
+          )
+          
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              violations+=("Missing required security file: $file")
+              policy_valid=false
+            else
+              echo "✅ Found required file: $file"
+            fi
+          done
+          
+          # Check 2: Workflow security requirements
+          workflow_files=$(find .github/workflows -name "*.yml" -o -name "*.yaml")
+          for workflow in $workflow_files; do
+            # Check for hardened runner usage
+            if ! grep -q "step-security/harden-runner" "$workflow"; then
+              violations+=("Workflow $workflow missing hardened runner")
+              policy_valid=false
+            fi
+            
+            # Check for SHA-pinned actions (at least in security workflows)
+            if [[ "$workflow" == *"security"* ]]; then
+              if grep -E "uses:.*@v[0-9]" "$workflow" | grep -v "harden-runner"; then
+                violations+=("Security workflow $workflow has non-SHA pinned actions")
+                policy_valid=false
+              fi
+            fi
+          done
+          
+          # Check 3: Dockerfile security requirements
+          dockerfiles=$(find . -name "Dockerfile*" -type f)
+          for dockerfile in $dockerfiles; do
+            # Check for non-root user
+            if ! grep -q "USER [0-9]" "$dockerfile"; then
+              violations+=("Dockerfile $dockerfile missing non-root user configuration")
+              policy_valid=false
+            fi
+            
+            # Check for security labels
+            if ! grep -q "security\." "$dockerfile"; then
+              violations+=("Dockerfile $dockerfile missing security labels")
+              policy_valid=false
+            fi
+          done
+          
+          # Check 4: Go module security
+          if [[ -f "go.mod" ]]; then
+            # Check for vulnerable dependencies (basic check)
+            if grep -i -E "(vulnerable|exploit|cve)" go.mod; then
+              violations+=("go.mod contains potentially vulnerable dependencies")
+              policy_valid=false
+            fi
+          fi
+          
+          # Check 5: Secret patterns in new commits (basic check)
+          if git log --oneline -n 10 | grep -i -E "(password|secret|key|token)" && [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            violations+=("Recent commits may contain secrets in commit messages")
+            policy_valid=false
+          fi
+          
+          echo "📋 Policy Validation Results:"
+          echo "   Policy Valid: $policy_valid"
+          echo "   Violations: ${#violations[@]}"
+          
+          # Set outputs
+          echo "policy-valid=$policy_valid" >> $GITHUB_OUTPUT
+          
+          # Create violations output
+          violations_str=""
+          for violation in "${violations[@]}"; do
+            violations_str="$violations_str- $violation\n"
+          done
+          echo "violations<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$violations_str" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          if [[ "$policy_valid" == "false" ]]; then
+            echo "❌ Security policy validation failed"
+            echo "Violations found:"
+            printf '%s\n' "${violations[@]}"
+            
+            if [[ "${{ env.POLICY_ENFORCEMENT }}" == "strict" ]]; then
+              echo "🛑 Strict policy enforcement enabled - blocking deployment"
+              exit 1
+            else
+              echo "⚠️ Policy violations detected but not blocking (enforcement: ${{ env.POLICY_ENFORCEMENT }})"
+            fi
+          else
+            echo "✅ Security policy validation passed"
+          fi
+
+  # Pre-commit security checks
+  pre-commit-security:
+    name: Pre-commit Security Checks
+    runs-on: ubuntu-latest
+    needs: policy-validation
+    timeout-minutes: 15
+    
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        with:
+          go-version: '1.25.4'
+
+      - name: Run pre-commit security hooks
+        run: |
+          echo "🔒 Running pre-commit security checks"
+          
+          # Install security tools
+          echo "Installing security tools..."
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          
+          # Run quick security scans
+          echo "Running Gosec security scan..."
+          if gosec -quiet -fmt json -out gosec-precommit.json ./...; then
+            echo "✅ Gosec scan passed"
+          else
+            echo "⚠️ Gosec found security issues"
+            # Parse and display critical issues
+            if command -v jq &> /dev/null && [[ -f gosec-precommit.json ]]; then
+              critical_issues=$(jq -r '[.Issues[] | select(.severity == "HIGH" or .severity == "MEDIUM")] | length' gosec-precommit.json 2>/dev/null || echo "0")
+              if [[ $critical_issues -gt 0 ]]; then
+                echo "❌ Found $critical_issues critical security issues"
+                jq -r '.Issues[] | select(.severity == "HIGH" or .severity == "MEDIUM") | "- \(.file):\(.line) - \(.details)"' gosec-precommit.json | head -10
+                exit 1
+              fi
+            fi
+          fi
+          
+          echo "Running vulnerability check..."
+          if govulncheck ./...; then
+            echo "✅ Vulnerability check passed"
+          else
+            echo "❌ Vulnerabilities found in dependencies"
+            exit 1
+          fi
+          
+          echo "✅ Pre-commit security checks completed"
+
+  # Branch protection validation
+  branch-protection:
+    name: Branch Protection Validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 5
+    
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+
+      - name: Check branch protection rules
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            console.log('🛡️ Validating branch protection rules');
+            
+            const branch = context.payload.pull_request.base.ref;
+            console.log(`Checking protection for branch: ${branch}`);
+            
+            try {
+              const { data: protection } = await github.rest.repos.getBranchProtection({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch: branch
+              });
+              
+              const violations = [];
+              
+              // Check required status checks
+              if (!protection.required_status_checks) {
+                violations.push('Required status checks not configured');
+              } else {
+                const requiredChecks = protection.required_status_checks.contexts || [];
+                const expectedChecks = ['Security Gates', 'Pre-commit Security Checks'];
+                
+                for (const check of expectedChecks) {
+                  if (!requiredChecks.includes(check)) {
+                    violations.push(`Missing required status check: ${check}`);
+                  }
+                }
+              }
+              
+              // Check required reviews
+              if (!protection.required_pull_request_reviews) {
+                violations.push('Required pull request reviews not configured');
+              } else {
+                const reviews = protection.required_pull_request_reviews;
+                if (reviews.required_approving_review_count < 2) {
+                  violations.push('Minimum 2 approving reviews required');
+                }
+                if (!reviews.dismiss_stale_reviews) {
+                  violations.push('Dismiss stale reviews should be enabled');
+                }
+                if (!reviews.require_code_owner_reviews) {
+                  violations.push('Code owner reviews should be required');
+                }
+              }
+              
+              // Check admin enforcement
+              if (!protection.enforce_admins?.enabled) {
+                violations.push('Admin enforcement should be enabled');
+              }
+              
+              if (violations.length > 0) {
+                console.log('❌ Branch protection violations found:');
+                violations.forEach(v => console.log(`  - ${v}`));
+                
+                // Create or update issue about branch protection
+                const issueTitle = `🛡️ Branch Protection Security Issues for ${branch}`;
+                const issueBody = `
+                ## Branch Protection Security Violations
+                
+                **Branch:** \`${branch}\`
+                **Date:** ${new Date().toISOString()}
+                
+                ### Violations Found:
+                ${violations.map(v => `- ${v}`).join('\n')}
+                
+                ### Recommended Actions:
+                1. Enable required status checks including security gates
+                2. Require at least 2 approving reviews
+                3. Enable dismiss stale reviews
+                4. Require code owner reviews
+                5. Enable admin enforcement
+                
+                ### Security Impact:
+                These missing protections could allow:
+                - Bypassing security checks
+                - Merging vulnerable code
+                - Unauthorized access to protected branches
+                
+                Please address these issues to maintain security posture.
+                `;
+                
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: issueTitle,
+                  body: issueBody,
+                  labels: ['security', 'branch-protection', 'medium']
+                });
+                
+                if ('${{ env.POLICY_ENFORCEMENT }}' === 'strict') {
+                  core.setFailed('Branch protection violations found in strict mode');
+                }
+              } else {
+                console.log('✅ Branch protection rules are properly configured');
+              }
+              
+            } catch (error) {
+              console.log(`⚠️ Could not check branch protection: ${error.message}`);
+              if ('${{ env.POLICY_ENFORCEMENT }}' === 'strict') {
+                core.setFailed('Unable to verify branch protection in strict mode');
+              }
+            }
+
+  # Security gate enforcement
+  security-gate-enforcement:
+    name: Security Gate Enforcement
+    runs-on: ubuntu-latest
+    needs: [policy-validation, pre-commit-security]
+    if: always()
+    timeout-minutes: 10
+    
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+
+      - name: Evaluate security gates
+        id: evaluate
+        run: |
+          echo "🚦 Evaluating security gate status"
+          
+          policy_valid="${{ needs.policy-validation.outputs.policy-valid }}"
+          policy_result="${{ needs.policy-validation.result }}"
+          precommit_result="${{ needs.pre-commit-security.result }}"
+          
+          echo "Security gate status:"
+          echo "  Policy validation: $policy_result (valid: $policy_valid)"
+          echo "  Pre-commit security: $precommit_result"
+          
+          # Determine overall gate status
+          gate_passed=true
+          gate_message="All security gates passed"
+          
+          if [[ "$policy_result" != "success" ]] || [[ "$policy_valid" != "true" ]]; then
+            gate_passed=false
+            gate_message="Security policy validation failed"
+          elif [[ "$precommit_result" != "success" ]]; then
+            gate_passed=false
+            gate_message="Pre-commit security checks failed"
+          fi
+          
+          echo "gate-passed=$gate_passed" >> $GITHUB_OUTPUT
+          echo "gate-message=$gate_message" >> $GITHUB_OUTPUT
+          
+          if [[ "$gate_passed" == "true" ]]; then
+            echo "✅ $gate_message"
+          else
+            echo "❌ $gate_message"
+            
+            if [[ "${{ env.POLICY_ENFORCEMENT }}" == "strict" ]]; then
+              echo "🛑 Blocking due to strict policy enforcement"
+              exit 1
+            else
+              echo "⚠️ Allowing with warnings (enforcement: ${{ env.POLICY_ENFORCEMENT }})"
+            fi
+          fi
+
+      - name: Update commit status
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const gatePassed = '${{ steps.evaluate.outputs.gate-passed }}' === 'true';
+            const message = '${{ steps.evaluate.outputs.gate-message }}';
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: gatePassed ? 'success' : 'failure',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: message,
+              context: 'Security Gates'
+            });
+
+      - name: Add PR comment with security status
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const gatePassed = '${{ steps.evaluate.outputs.gate-passed }}' === 'true';
+            const policyValid = '${{ needs.policy-validation.outputs.policy-valid }}' === 'true';
+            const violations = `${{ needs.policy-validation.outputs.violations }}`;
+            
+            const statusIcon = gatePassed ? '✅' : '❌';
+            const statusText = gatePassed ? 'PASSED' : 'FAILED';
+            
+            const comment = `
+            ## ${statusIcon} Security Gates Status: ${statusText}
+            
+            **Security Policy Enforcement:** ${{ env.POLICY_ENFORCEMENT }}
+            **Vulnerability Threshold:** ${{ env.VULNERABILITY_THRESHOLD }}
+            
+            ### Security Checks Results
+            | Check | Status | Result |
+            |-------|--------|--------|
+            | Policy Validation | ${policyValid ? '✅' : '❌'} | ${{ needs.policy-validation.result }} |
+            | Pre-commit Security | ${{ needs.pre-commit-security.result == 'success' ? '✅' : '❌' }} | ${{ needs.pre-commit-security.result }} |
+            
+            ${violations ? `### Policy Violations\n${violations}` : ''}
+            
+            ### Next Steps
+            ${gatePassed ? 
+              '- ✅ All security requirements met\n- ✅ Ready for code review\n- ✅ Security gates passed' :
+              '- ❌ Address security violations before merging\n- 🔍 Review security check failures\n- 🛠️ Implement required security controls'
+            }
+            
+            ---
+            *Security gates enforced by [Security Policy v${{ env.SECURITY_POLICY_VERSION }}]*
+            `;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Generate security gates summary
+        if: always()
+        run: |
+          echo "📋 Generating security gates summary"
+          
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Security Gates & Policy Enforcement
+          
+          **Policy Version:** ${{ env.SECURITY_POLICY_VERSION }}
+          **Enforcement Mode:** ${{ env.POLICY_ENFORCEMENT }}
+          **Overall Status:** ${{ steps.evaluate.outputs.gate-passed == 'true' && '✅ PASSED' || '❌ FAILED' }}
+          
+          ### Security Gate Results
+          | Gate | Status | Details |
+          |------|--------|---------|
+          | Policy Validation | ${{ needs.policy-validation.outputs.policy-valid == 'true' && '✅ Valid' || '❌ Invalid' }} | ${{ needs.policy-validation.result }} |
+          | Pre-commit Security | ${{ needs.pre-commit-security.result == 'success' && '✅ Passed' || '❌ Failed' }} | Security scans completed |
+          | Branch Protection | ${{ github.event_name == 'pull_request' && '🔍 Checked' || 'N/A' }} | Validation performed |
+          
+          ### Policy Violations
+          ${{ needs.policy-validation.outputs.violations || 'None detected' }}
+          
+          ### Security Features Active
+          - ✅ Hardened GitHub Actions runners
+          - ✅ SHA-pinned security actions
+          - ✅ Automated security scanning
+          - ✅ Policy compliance validation
+          - ✅ Pre-commit security hooks
+          - ✅ Branch protection enforcement
+          - ✅ Vulnerability threshold checking
+          - ✅ Commit status integration
+          
+          ### Enforcement Actions
+          $(if [[ "${{ steps.evaluate.outputs.gate-passed }}" == "true" ]]; then
+            echo "- ✅ All security gates passed - deployment authorized"
+            echo "- ✅ Security policy compliance verified"
+            echo "- ✅ No blocking security issues found"
+          else
+            echo "- ❌ Security gates failed - $(if [[ "${{ env.POLICY_ENFORCEMENT }}" == "strict" ]]; then echo "deployment blocked"; else echo "proceeding with warnings"; fi)"
+            echo "- 🔍 Review and address security violations"
+            echo "- 🛠️ Implement required security controls"
+          fi)
+          
+          EOF

@@ -1,0 +1,709 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "CI/CD Pipeline Health Dashboard",
+    "tags": ["ci-cd", "pipeline", "freightliner"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "api_host",
+          "type": "custom",
+          "label": "API Host",
+          "query": "localhost,127.0.0.1,0.0.0.0",
+          "current": {
+            "text": "localhost",
+            "value": "localhost"
+          },
+          "options": [
+            {"text": "localhost", "value": "localhost", "selected": true},
+            {"text": "127.0.0.1", "value": "127.0.0.1"},
+            {"text": "0.0.0.0", "value": "0.0.0.0"}
+          ],
+          "includeAll": false,
+          "multi": false,
+          "skipUrlSync": false,
+          "hide": 0
+        },
+        {
+          "name": "api_port",
+          "type": "custom",
+          "label": "API Port",
+          "query": "8080,9090,3000,8888",
+          "current": {
+            "text": "8080",
+            "value": "8080"
+          },
+          "options": [
+            {"text": "8080", "value": "8080", "selected": true},
+            {"text": "9090", "value": "9090"},
+            {"text": "3000", "value": "3000"},
+            {"text": "8888", "value": "8888"}
+          ],
+          "includeAll": false,
+          "multi": false,
+          "skipUrlSync": false,
+          "hide": 0
+        },
+        {
+          "name": "deployment_mode",
+          "type": "custom",
+          "label": "Deployment Mode",
+          "query": "local,remote,cloud",
+          "current": {
+            "text": "local",
+            "value": "local"
+          },
+          "options": [
+            {"text": "local", "value": "local", "selected": true},
+            {"text": "remote", "value": "remote"},
+            {"text": "cloud", "value": "cloud"}
+          ],
+          "includeAll": false,
+          "multi": false,
+          "skipUrlSync": false,
+          "hide": 0
+        },
+        {
+          "name": "workflow",
+          "type": "query",
+          "label": "Workflow",
+          "query": "label_values(github_actions_workflow_runs_total, workflow_name)",
+          "refresh": "on_time_range_change",
+          "includeAll": true,
+          "allValue": ".*",
+          "datasource": "prometheus"
+        },
+        {
+          "name": "scenario",
+          "type": "query",
+          "label": "Load Test Scenario",
+          "query": "label_values(load_test_throughput_mbps, scenario)",
+          "refresh": "on_time_range_change",
+          "includeAll": true,
+          "allValue": ".*",
+          "datasource": "prometheus"
+        },
+        {
+          "name": "instance",
+          "type": "query",
+          "label": "Instance",
+          "query": "label_values(node_cpu_seconds_total, instance)",
+          "refresh": "on_time_range_change",
+          "includeAll": true,
+          "allValue": ".*",
+          "datasource": "prometheus"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "API Connection Status",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "up{job=\"api_metrics\"}",
+            "legendFormat": "API Status",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "UP", "color": "green"}}}
+            ],
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "text": {
+            "titleSize": 16,
+            "valueSize": 40
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 2,
+        "title": "API Endpoint Configuration",
+        "type": "text",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+        "options": {
+          "mode": "markdown",
+          "content": "**API Endpoint Configuration**\n\n📍 **Endpoint URL**: `http://$api_host:$api_port/metrics`\n\n🌐 **Deployment Mode**: `$deployment_mode`\n\n⚙️ **Status**: Connected\n\n---\n\n**Quick Actions:**\n- Change host/port using dropdowns above\n- Switch deployment mode for different configs\n- All panels update automatically"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Deployment Mode Info",
+        "type": "text",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+        "options": {
+          "mode": "markdown",
+          "content": "**Deployment Modes**\n\n🏠 **Local**: Development environment (localhost)\n- Default: localhost:8080\n- No authentication required\n\n☁️ **Remote**: Staging/Testing servers\n- Custom hostname/IP\n- Basic authentication\n\n🌍 **Cloud**: Production environment\n- Cloud provider endpoints\n- Full authentication + TLS"
+        }
+      },
+      {
+        "id": 10,
+        "title": "Pipeline Success Rate",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 6},
+        "targets": [
+          {
+            "expr": "rate(github_actions_workflow_runs_total{conclusion=\"success\"}[1h]) / rate(github_actions_workflow_runs_total[1h]) * 100",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 90},
+                {"color": "green", "value": 95}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center",
+          "orientation": "horizontal"
+        }
+      },
+      {
+        "id": 11,
+        "title": "Average Build Duration",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 6},
+        "targets": [
+          {
+            "expr": "avg(github_actions_workflow_duration_seconds) / 60",
+            "legendFormat": "Avg Duration"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "minutes",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center"
+        }
+      },
+      {
+        "id": 12,
+        "title": "Load Test Throughput",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 6},
+        "targets": [
+          {
+            "expr": "avg(load_test_throughput_mbps)",
+            "legendFormat": "Throughput"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MBs",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 25},
+                {"color": "green", "value": 50}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center"
+        }
+      },
+      {
+        "id": 13,
+        "title": "Security Vulnerabilities",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 6},
+        "targets": [
+          {
+            "expr": "sum(security_vulnerabilities_total{severity=\"critical\"})",
+            "legendFormat": "Critical"
+          },
+          {
+            "expr": "sum(security_vulnerabilities_total{severity=\"high\"})",
+            "legendFormat": "High"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Pipeline Build Success Rate Over Time",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 14},
+        "targets": [
+          {
+            "expr": "rate(github_actions_workflow_runs_total{conclusion=\"success\"}[5m]) / rate(github_actions_workflow_runs_total[5m]) * 100",
+            "legendFormat": "Success Rate"
+          },
+          {
+            "expr": "rate(github_actions_workflow_runs_total{conclusion=\"failure\"}[5m]) / rate(github_actions_workflow_runs_total[5m]) * 100",
+            "legendFormat": "Failure Rate"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "min": 0,
+            "max": 100,
+            "unit": "percent"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        },
+        "thresholds": [
+          {
+            "value": 95,
+            "colorMode": "critical",
+            "op": "lt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "Build Duration Distribution",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 14},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, github_actions_workflow_duration_seconds_bucket) / 60",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, github_actions_workflow_duration_seconds_bucket) / 60",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, github_actions_workflow_duration_seconds_bucket) / 60",
+            "legendFormat": "P99"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration",
+            "unit": "minutes"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true
+        },
+        "thresholds": [
+          {
+            "value": 10,
+            "colorMode": "critical",
+            "op": "gt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "title": "Load Test Performance Metrics",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 23},
+        "targets": [
+          {
+            "expr": "load_test_throughput_mbps",
+            "legendFormat": "Throughput (MB/s) - {{scenario}}"
+          },
+          {
+            "expr": "load_test_p99_latency_ms / 1000",
+            "legendFormat": "P99 Latency (s) - {{scenario}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Throughput (MB/s) / Latency (s)",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        }
+      },
+      {
+        "id": 17,
+        "title": "Memory Usage During Load Tests",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 23},
+        "targets": [
+          {
+            "expr": "load_test_memory_usage_mb",
+            "legendFormat": "Memory Usage (MB) - {{scenario}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Memory (MB)",
+            "min": 0,
+            "max": 4096
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "max": true
+        },
+        "thresholds": [
+          {
+            "value": 2048,
+            "colorMode": "critical",
+            "op": "gt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 18,
+        "title": "Docker Build Performance",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "docker_build_duration_seconds{stage=\"builder\"} / 60",
+            "legendFormat": "Builder Stage"
+          },
+          {
+            "expr": "docker_build_duration_seconds{stage=\"test\"} / 60",
+            "legendFormat": "Test Stage"
+          },
+          {
+            "expr": "docker_build_duration_seconds{stage=\"build\"} / 60",
+            "legendFormat": "Build Stage"
+          },
+          {
+            "expr": "docker_build_duration_seconds{stage=\"final\"} / 60",
+            "legendFormat": "Final Stage"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration (minutes)",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        }
+      },
+      {
+        "id": 19,
+        "title": "Security Scan Results",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "security_vulnerabilities_total{severity=\"critical\"}",
+            "legendFormat": "Critical"
+          },
+          {
+            "expr": "security_vulnerabilities_total{severity=\"high\"}",
+            "legendFormat": "High"
+          },
+          {
+            "expr": "security_vulnerabilities_total{severity=\"medium\"}",
+            "legendFormat": "Medium"
+          },
+          {
+            "expr": "security_vulnerabilities_total{severity=\"low\"}",
+            "legendFormat": "Low"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Count",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true
+        }
+      },
+      {
+        "id": 20,
+        "title": "Test Execution Metrics",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 41},
+        "targets": [
+          {
+            "expr": "test_execution_duration_seconds / 60",
+            "legendFormat": "Test Duration (min) - {{suite_name}}"
+          },
+          {
+            "expr": "test_coverage_percent",
+            "legendFormat": "Coverage % - {{package}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration (min) / Coverage (%)",
+            "min": 0
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        }
+      },
+      {
+        "id": 21,
+        "title": "Resource Utilization",
+        "type": "graph",
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 41},
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU Usage % - {{instance}}"
+          },
+          {
+            "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
+            "legendFormat": "Memory Usage % - {{instance}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "min": 0,
+            "max": 100,
+            "unit": "percent"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "values": true,
+          "current": true,
+          "avg": true
+        },
+        "thresholds": [
+          {
+            "value": 80,
+            "colorMode": "critical",
+            "op": "gt",
+            "fill": true,
+            "line": true
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "title": "Pipeline SLA Compliance",
+        "type": "table",
+        "gridPos": {"h": 9, "w": 24, "x": 0, "y": 50},
+        "targets": [
+          {
+            "expr": "avg_over_time(github_actions_workflow_duration_seconds[24h]) / 60",
+            "legendFormat": "Avg Build Time (24h)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "(rate(github_actions_workflow_runs_total{conclusion=\"success\"}[24h]) / rate(github_actions_workflow_runs_total[24h])) * 100",
+            "legendFormat": "Success Rate (24h)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "avg_over_time(load_test_throughput_mbps[24h])",
+            "legendFormat": "Avg Throughput (24h)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "sum(security_vulnerabilities_total{severity=\"critical\"})",
+            "legendFormat": "Critical Vulns",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true},
+              "renameByName": {
+                "Value #A": "Build Time (min)",
+                "Value #B": "Success Rate (%)",
+                "Value #C": "Throughput (MB/s)",
+                "Value #D": "Critical Vulns"
+              }
+            }
+          }
+        ],
+        "fieldConfig": {
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Build Time (min)"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "green", "value": 0},
+                      {"color": "yellow", "value": 5},
+                      {"color": "red", "value": 10}
+                    ]
+                  }
+                },
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Success Rate (%)"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "red", "value": 0},
+                      {"color": "yellow", "value": 90},
+                      {"color": "green", "value": 95}
+                    ]
+                  }
+                },
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Critical Vulns"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "green", "value": 0},
+                      {"color": "red", "value": 1}
+                    ]
+                  }
+                },
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "prometheus",
+          "expr": "increase(github_actions_workflow_runs_total{conclusion=\"success\", workflow_name=\"release\"}[1m])",
+          "textFormat": "Deployment completed (Mode: $deployment_mode)",
+          "tags": ["deployment"],
+          "iconColor": "green"
+        },
+        {
+          "name": "Critical Alerts",
+          "datasource": "prometheus",
+          "expr": "ALERTS{alertstate=\"firing\", severity=\"critical\"}",
+          "textFormat": "{{alertname}}: {{summary}} (API: $api_host:$api_port)",
+          "tags": ["alert", "critical"],
+          "iconColor": "red"
+        },
+        {
+          "name": "API Connection Events",
+          "datasource": "prometheus",
+          "expr": "changes(up{job=\"api_metrics\"}[1m]) > 0",
+          "textFormat": "API connection status changed (http://$api_host:$api_port/metrics)",
+          "tags": ["api", "connection"],
+          "iconColor": "blue"
+        }
+      ]
+    }
+  }
+}

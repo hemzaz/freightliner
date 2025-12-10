@@ -1,0 +1,199 @@
+# Recording Rules for Freightliner Metrics
+# Pre-compute frequently used queries for better performance
+
+groups:
+  - name: replication_aggregations
+    interval: 30s
+    rules:
+      # Replication success rate (per registry pair)
+      - record: freightliner:replication:success_rate:5m
+        expr: |
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replications_total{status="success"}[5m])
+          )
+          /
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replications_total[5m])
+          )
+
+      # Replication error rate
+      - record: freightliner:replication:error_rate:5m
+        expr: |
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replication_errors_total[5m])
+          )
+
+      # Average replication duration
+      - record: freightliner:replication:duration:avg:5m
+        expr: |
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replication_duration_seconds_sum[5m])
+          )
+          /
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replication_duration_seconds_count[5m])
+          )
+
+      # P95 replication duration
+      - record: freightliner:replication:duration:p95:5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (source_registry, dest_registry, le) (
+              rate(freightliner_replication_duration_seconds_bucket[5m])
+            )
+          )
+
+      # P99 replication duration
+      - record: freightliner:replication:duration:p99:5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (source_registry, dest_registry, le) (
+              rate(freightliner_replication_duration_seconds_bucket[5m])
+            )
+          )
+
+      # Total bytes replicated per second
+      - record: freightliner:replication:bytes_per_second:5m
+        expr: |
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replication_bytes_total[5m])
+          )
+
+      # Total layers replicated per second
+      - record: freightliner:replication:layers_per_second:5m
+        expr: |
+          sum by (source_registry, dest_registry) (
+            rate(freightliner_replication_layers_total[5m])
+          )
+
+  - name: http_aggregations
+    interval: 30s
+    rules:
+      # HTTP request rate by status
+      - record: freightliner:http:request_rate:5m
+        expr: |
+          sum by (method, path, status) (
+            rate(freightliner_http_requests_total[5m])
+          )
+
+      # HTTP error rate (4xx + 5xx)
+      - record: freightliner:http:error_rate:5m
+        expr: |
+          sum by (method, path) (
+            rate(freightliner_http_requests_total{status=~"[45].."}[5m])
+          )
+
+      # HTTP 5xx error rate
+      - record: freightliner:http:server_error_rate:5m
+        expr: |
+          sum by (method, path) (
+            rate(freightliner_http_requests_total{status=~"5.."}[5m])
+          )
+
+      # Average HTTP request duration
+      - record: freightliner:http:duration:avg:5m
+        expr: |
+          sum by (method, path) (
+            rate(freightliner_http_request_duration_seconds_sum[5m])
+          )
+          /
+          sum by (method, path) (
+            rate(freightliner_http_request_duration_seconds_count[5m])
+          )
+
+      # P95 HTTP request duration
+      - record: freightliner:http:duration:p95:5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (method, path, le) (
+              rate(freightliner_http_request_duration_seconds_bucket[5m])
+            )
+          )
+
+      # P99 HTTP request duration
+      - record: freightliner:http:duration:p99:5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (method, path, le) (
+              rate(freightliner_http_request_duration_seconds_bucket[5m])
+            )
+          )
+
+  - name: tag_copy_aggregations
+    interval: 30s
+    rules:
+      # Tag copy success rate
+      - record: freightliner:tag_copy:success_rate:5m
+        expr: |
+          sum by (source_repo, dest_repo) (
+            rate(freightliner_tag_copy_total{status="success"}[5m])
+          )
+          /
+          sum by (source_repo, dest_repo) (
+            rate(freightliner_tag_copy_total[5m])
+          )
+
+      # Average tag copy duration
+      - record: freightliner:tag_copy:duration:avg:5m
+        expr: |
+          sum by (source_repo, dest_repo) (
+            rate(freightliner_tag_copy_duration_seconds_sum[5m])
+          )
+          /
+          sum by (source_repo, dest_repo) (
+            rate(freightliner_tag_copy_duration_seconds_count[5m])
+          )
+
+      # Tag copy bytes per second
+      - record: freightliner:tag_copy:bytes_per_second:5m
+        expr: |
+          sum by (source_repo, dest_repo) (
+            rate(freightliner_tag_copy_bytes_total[5m])
+          )
+
+  - name: worker_pool_aggregations
+    interval: 30s
+    rules:
+      # Worker pool utilization
+      - record: freightliner:worker_pool:utilization
+        expr: |
+          freightliner_worker_pool_active
+          /
+          freightliner_worker_pool_size
+
+      # Worker pool queue depth
+      - record: freightliner:worker_pool:queue_depth
+        expr: freightliner_worker_pool_queued
+
+  - name: system_aggregations
+    interval: 30s
+    rules:
+      # Memory usage in MB
+      - record: freightliner:system:memory_mb
+        expr: freightliner_memory_usage_bytes / 1024 / 1024
+
+      # Goroutine count
+      - record: freightliner:system:goroutines
+        expr: freightliner_goroutines_count
+
+  - name: business_metrics
+    interval: 60s
+    rules:
+      # Total replications per hour
+      - record: freightliner:business:replications_per_hour
+        expr: |
+          sum(
+            increase(freightliner_replications_total[1h])
+          )
+
+      # Total data replicated per hour (GB)
+      - record: freightliner:business:data_replicated_gb_per_hour
+        expr: |
+          sum(
+            increase(freightliner_replication_bytes_total[1h])
+          ) / 1024 / 1024 / 1024
+
+      # Cost per GB (assuming $0.01 per GB transfer)
+      - record: freightliner:business:transfer_cost_per_hour
+        expr: |
+          freightliner:business:data_replicated_gb_per_hour * 0.01

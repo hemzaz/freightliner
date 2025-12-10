@@ -1,0 +1,573 @@
+name: Performance Benchmarking
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  schedule:
+    # Run weekly performance benchmarks on Sunday at 3 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      benchmark-suite:
+        description: 'Benchmark suite to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - copy
+          - registry
+          - compression
+          - network
+
+env:
+  GO_VERSION: '1.25.4'
+  BENCHMARK_COUNT: '5'
+  BENCHMARK_TIME: '10s'
+
+concurrency:
+  group: benchmark-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # MICRO BENCHMARKS - Unit-level performance
+  # ============================================
+  micro-benchmarks:
+    name: Micro Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run micro benchmarks
+        run: |
+          echo "⚡ Running micro benchmarks..."
+          go test -bench=. -benchmem -benchtime=${{ env.BENCHMARK_TIME }} \
+            -count=${{ env.BENCHMARK_COUNT }} \
+            -run=^$ \
+            ./... | tee micro-benchmarks.txt
+
+      - name: Parse benchmark results
+        run: |
+          echo "📊 Parsing benchmark results..."
+
+          # Extract key metrics
+          grep "Benchmark" micro-benchmarks.txt | \
+            awk '{print $1, $3, $4, $5, $6}' | \
+            column -t > micro-benchmarks-summary.txt
+
+          cat micro-benchmarks-summary.txt
+
+      - name: Generate benchmark report
+        run: |
+          cat > benchmark-report.md << 'EOF'
+          # Micro Benchmark Results
+
+          ## Performance Metrics
+
+          \`\`\`
+          EOF
+          cat micro-benchmarks-summary.txt >> benchmark-report.md
+          cat >> benchmark-report.md << 'EOF'
+          \`\`\`
+
+          ## Configuration
+          - **Count**: ${{ env.BENCHMARK_COUNT }} iterations
+          - **Time**: ${{ env.BENCHMARK_TIME }} per benchmark
+          - **Go Version**: ${{ env.GO_VERSION }}
+          - **Platform**: ubuntu-latest
+          - **CPU**: $(nproc) cores
+
+          ## Commit
+          - **SHA**: ${{ github.sha }}
+          - **Branch**: ${{ github.ref_name }}
+          EOF
+
+          cat benchmark-report.md
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: micro-benchmarks-${{ github.sha }}
+          path: |
+            micro-benchmarks.txt
+            micro-benchmarks-summary.txt
+            benchmark-report.md
+          retention-days: 90
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('benchmark-report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ⚡ Performance Benchmark Results\n\n${report}`
+            });
+        continue-on-error: true
+
+  # ============================================
+  # COPY PERFORMANCE - Image copy benchmarks
+  # ============================================
+  copy-benchmarks:
+    name: Copy Operation Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: |
+      github.event.inputs.benchmark-suite == 'all' ||
+      github.event.inputs.benchmark-suite == 'copy' ||
+      github.event.inputs.benchmark-suite == ''
+
+    services:
+      registry-source:
+        image: registry:2
+        ports:
+          - 5000:5000
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      registry-dest:
+        image: registry:2
+        ports:
+          - 5001:5000
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup test images
+        run: |
+          echo "📦 Preparing test images for copy benchmarks..."
+
+          # Various image sizes for benchmarking
+          docker pull alpine:3.18        # ~7MB
+          docker pull nginx:alpine       # ~40MB
+          docker pull postgres:alpine    # ~230MB
+
+          # Tag for source registry
+          docker tag alpine:3.18 localhost:5000/bench/alpine:3.18
+          docker tag nginx:alpine localhost:5000/bench/nginx:alpine
+          docker tag postgres:alpine localhost:5000/bench/postgres:alpine
+
+          # Push to source
+          docker push localhost:5000/bench/alpine:3.18
+          docker push localhost:5000/bench/nginx:alpine
+          docker push localhost:5000/bench/postgres:alpine
+
+      - name: Build freightliner
+        run: make build
+
+      - name: Run copy performance benchmarks
+        env:
+          SOURCE_REGISTRY: localhost:5000
+          DEST_REGISTRY: localhost:5001
+        run: |
+          echo "⚡ Running copy performance benchmarks..."
+          go test -bench=BenchmarkCopy.* -benchmem -benchtime=5s \
+            -count=3 \
+            -timeout 30m \
+            ./tests/performance/... | tee copy-benchmarks.txt
+
+      - name: Analyze copy performance
+        run: |
+          echo "📊 Copy performance analysis:"
+
+          cat > copy-analysis.md << 'EOF'
+          # Copy Operation Performance
+
+          ## Benchmark Results
+          \`\`\`
+          EOF
+          grep "Benchmark" copy-benchmarks.txt | awk '{print $1, $3, $4}' | column -t >> copy-analysis.md
+          cat >> copy-analysis.md << 'EOF'
+          \`\`\`
+
+          ## Image Sizes Tested
+          - **Small**: alpine (~7MB)
+          - **Medium**: nginx (~40MB)
+          - **Large**: postgres (~230MB)
+
+          ## Key Metrics
+          - Throughput (MB/s)
+          - Latency per operation
+          - Memory usage
+          - CPU utilization
+          EOF
+
+          cat copy-analysis.md
+
+      - name: Upload copy benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: copy-benchmarks-${{ github.sha }}
+          path: |
+            copy-benchmarks.txt
+            copy-analysis.md
+          retention-days: 90
+
+  # ============================================
+  # COMPRESSION BENCHMARKS - Compression perf
+  # ============================================
+  compression-benchmarks:
+    name: Compression Performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      github.event.inputs.benchmark-suite == 'all' ||
+      github.event.inputs.benchmark-suite == 'compression' ||
+      github.event.inputs.benchmark-suite == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run compression benchmarks
+        run: |
+          echo "⚡ Running compression benchmarks..."
+          go test -bench=BenchmarkCompression.* -benchmem -benchtime=10s \
+            -count=5 \
+            ./tests/performance/... | tee compression-benchmarks.txt
+
+      - name: Generate compression report
+        run: |
+          cat > compression-report.md << 'EOF'
+          # Compression Performance Analysis
+
+          ## Benchmark Results
+          \`\`\`
+          EOF
+          grep "Benchmark" compression-benchmarks.txt | \
+            awk '{print $1, $3, $4, $6, $7}' | column -t >> compression-report.md
+          cat >> compression-report.md << 'EOF'
+          \`\`\`
+
+          ## Compression Algorithms Tested
+          - gzip (standard)
+          - zstd (optimized)
+          - snappy (fast)
+
+          ## Metrics
+          - Compression ratio
+          - Compression speed
+          - Decompression speed
+          - Memory overhead
+          EOF
+
+          cat compression-report.md
+
+      - name: Upload compression results
+        uses: actions/upload-artifact@v4
+        with:
+          name: compression-benchmarks-${{ github.sha }}
+          path: |
+            compression-benchmarks.txt
+            compression-report.md
+          retention-days: 90
+
+  # ============================================
+  # MEMORY PROFILING - Memory usage analysis
+  # ============================================
+  memory-profiling:
+    name: Memory Profiling
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run memory profiling
+        run: |
+          echo "📊 Running memory profiling..."
+          go test -bench=. -benchmem -memprofile=mem.prof \
+            -cpuprofile=cpu.prof \
+            -benchtime=5s \
+            -run=^$ \
+            ./tests/performance/... | tee memory-profile.txt
+
+      - name: Analyze memory profile
+        run: |
+          echo "🔍 Analyzing memory usage..."
+          go tool pprof -text -alloc_space mem.prof > memory-analysis.txt || true
+          go tool pprof -text -alloc_objects mem.prof > memory-objects.txt || true
+
+          echo "Memory allocation summary:"
+          head -20 memory-analysis.txt
+
+      - name: Analyze CPU profile
+        run: |
+          echo "🔍 Analyzing CPU usage..."
+          go tool pprof -text cpu.prof > cpu-analysis.txt || true
+
+          echo "CPU usage summary:"
+          head -20 cpu-analysis.txt
+
+      - name: Upload profiling results
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-${{ github.sha }}
+          path: |
+            mem.prof
+            cpu.prof
+            memory-profile.txt
+            memory-analysis.txt
+            memory-objects.txt
+            cpu-analysis.txt
+          retention-days: 90
+
+  # ============================================
+  # NETWORK BENCHMARKS - Network performance
+  # ============================================
+  network-benchmarks:
+    name: Network Performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      github.event.inputs.benchmark-suite == 'all' ||
+      github.event.inputs.benchmark-suite == 'network' ||
+      github.event.inputs.benchmark-suite == ''
+
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup network test environment
+        run: |
+          echo "🌐 Setting up network test environment..."
+          docker pull alpine:3.18
+          docker tag alpine:3.18 localhost:5000/net/alpine:3.18
+          docker push localhost:5000/net/alpine:3.18
+
+      - name: Run network benchmarks
+        env:
+          REGISTRY_URL: localhost:5000
+        run: |
+          echo "⚡ Running network benchmarks..."
+          go test -bench=BenchmarkNetwork.* -benchmem -benchtime=5s \
+            -count=3 \
+            ./tests/performance/... | tee network-benchmarks.txt
+
+      - name: Generate network report
+        run: |
+          cat > network-report.md << 'EOF'
+          # Network Performance Analysis
+
+          ## Benchmark Results
+          \`\`\`
+          EOF
+          grep "Benchmark" network-benchmarks.txt | column -t >> network-report.md
+          cat >> network-report.md << 'EOF'
+          \`\`\`
+
+          ## Network Operations Tested
+          - HTTP request latency
+          - Concurrent connections
+          - Throughput (requests/sec)
+          - Connection pooling efficiency
+
+          ## Configuration
+          - Registry: localhost:5000
+          - Protocol: HTTP/2
+          - Concurrency: varied
+          EOF
+
+          cat network-report.md
+
+      - name: Upload network results
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-benchmarks-${{ github.sha }}
+          path: |
+            network-benchmarks.txt
+            network-report.md
+          retention-days: 90
+
+  # ============================================
+  # COMPARE BENCHMARKS - Historical comparison
+  # ============================================
+  compare-benchmarks:
+    name: Compare with Baseline
+    runs-on: ubuntu-latest
+    needs: [micro-benchmarks, copy-benchmarks]
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download current benchmarks
+        uses: actions/download-artifact@v4
+        with:
+          name: micro-benchmarks-${{ github.sha }}
+          path: current
+
+      - name: Get baseline benchmarks
+        run: |
+          echo "📊 Fetching baseline benchmarks from main branch..."
+          # In a real scenario, you'd fetch from a stored baseline
+          echo "Baseline comparison not yet implemented"
+          # TODO: Implement benchmark comparison logic
+
+      - name: Generate comparison report
+        run: |
+          cat > comparison-report.md << 'EOF'
+          # Performance Comparison Report
+
+          ## Summary
+          Comparing PR performance against main branch baseline.
+
+          ## Key Changes
+          - [ ] Significant performance improvement (>10%)
+          - [ ] Performance regression detected (>10%)
+          - [ ] Performance stable (within 10%)
+
+          ## Detailed Results
+          (Comparison data to be implemented)
+
+          ---
+          **Note**: Automated benchmark comparison is in development.
+          Review the detailed benchmark artifacts for manual comparison.
+          EOF
+
+          cat comparison-report.md
+
+      - name: Comment PR with comparison
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('comparison-report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+        continue-on-error: true
+
+  # ============================================
+  # BENCHMARK SUMMARY - Aggregate results
+  # ============================================
+  benchmark-summary:
+    name: Benchmark Summary
+    runs-on: ubuntu-latest
+    needs:
+      - micro-benchmarks
+      - copy-benchmarks
+      - compression-benchmarks
+      - memory-profiling
+      - network-benchmarks
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          path: benchmarks
+
+      - name: Generate summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## ⚡ Performance Benchmark Summary
+
+          | Benchmark Suite | Status | Details |
+          |----------------|--------|---------|
+          | Micro Benchmarks | ${{ needs.micro-benchmarks.result == 'success' && '✅' || '❌' }} | Unit-level performance |
+          | Copy Operations | ${{ needs.copy-benchmarks.result == 'success' && '✅' || needs.copy-benchmarks.result == 'skipped' && '⏭️' || '❌' }} | Image copy performance |
+          | Compression | ${{ needs.compression-benchmarks.result == 'success' && '✅' || needs.compression-benchmarks.result == 'skipped' && '⏭️' || '❌' }} | Compression algorithms |
+          | Memory Profiling | ${{ needs.memory-profiling.result == 'success' && '✅' || '❌' }} | Memory usage analysis |
+          | Network | ${{ needs.network-benchmarks.result == 'success' && '✅' || needs.network-benchmarks.result == 'skipped' && '⏭️' || '❌' }} | Network operations |
+
+          ### Configuration
+          - **Go Version**: ${{ env.GO_VERSION }}
+          - **Benchmark Count**: ${{ env.BENCHMARK_COUNT }}
+          - **Benchmark Time**: ${{ env.BENCHMARK_TIME }}
+          - **Platform**: ubuntu-latest
+
+          ### Results
+          All benchmark artifacts are available for download and analysis.
+
+          **Commit**: `${{ github.sha }}`
+          **Run Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          EOF
+
+      - name: Check benchmark status
+        run: |
+          echo "📊 Benchmark execution summary:"
+          echo "Micro: ${{ needs.micro-benchmarks.result }}"
+          echo "Copy: ${{ needs.copy-benchmarks.result }}"
+          echo "Compression: ${{ needs.compression-benchmarks.result }}"
+          echo "Memory: ${{ needs.memory-profiling.result }}"
+          echo "Network: ${{ needs.network-benchmarks.result }}"
+
+          # Don't fail if optional benchmarks were skipped
+          if [ "${{ needs.micro-benchmarks.result }}" = "success" ] && \
+             [ "${{ needs.memory-profiling.result }}" = "success" ]; then
+            echo "✅ Core benchmarks completed successfully"
+          else
+            echo "❌ Core benchmarks failed"
+            exit 1
+          fi

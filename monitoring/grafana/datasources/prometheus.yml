@@ -1,0 +1,27 @@
+# Grafana Datasource Configuration - Prometheus
+# Auto-provisioning configuration for Freightliner monitoring stack
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      queryTimeout: 60s
+      defaultTimeRange: 1h
+      # Custom query optimization
+      customQueryParameters: ''
+      # Scrape interval
+      scrapeInterval: 15s
+      # Keep exemplars
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: jaeger
+    version: 1
+    uid: prometheus-freightliner

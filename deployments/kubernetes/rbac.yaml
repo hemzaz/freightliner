@@ -1,0 +1,182 @@
+# ServiceAccount for Freightliner
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: freightliner
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+    app.kubernetes.io/component: rbac
+  annotations:
+    # AWS IAM role association (if using IRSA)
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT-ID:role/freightliner-service-role
+automountServiceAccountToken: false  # Disabled by default for security
+
+---
+# Role for Freightliner application - minimal required permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: freightliner
+  name: freightliner-role
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: rbac
+rules:
+# Allow reading own pod information for health checks
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+  resourceNames: []
+# Allow reading configmaps for configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Allow reading secrets that are explicitly needed
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+  resourceNames: 
+  - "freightliner-api-keys"
+  - "freightliner-registry-credentials"
+  - "freightliner-encryption-keys"
+  - "freightliner-tls"
+# Allow creating/updating endpoints for service discovery
+- apiGroups: [""]
+  resources: ["endpoints"]
+  verbs: ["get", "list", "create", "update", "patch"]
+# Allow reading services for service discovery
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for Freightliner
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: freightliner-binding
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: rbac
+subjects:
+- kind: ServiceAccount
+  name: freightliner
+  namespace: freightliner
+roleRef:
+  kind: Role
+  name: freightliner-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for cross-namespace operations (if needed)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: freightliner-cluster-role
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: rbac
+rules:
+# Allow reading nodes for scheduling decisions (read-only)
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+# Allow reading persistent volumes (read-only)
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "list", "watch"]
+# Allow reading storage classes (read-only)
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for cross-namespace operations (optional)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: freightliner-cluster-binding
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: rbac
+subjects:
+- kind: ServiceAccount
+  name: freightliner
+  namespace: freightliner
+roleRef:
+  kind: ClusterRole
+  name: freightliner-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# NetworkPolicy for RBAC-based access control
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: freightliner-rbac-network-policy
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: rbac-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: freightliner
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  ingress:
+  # Allow ingress from ingress controller with proper labeling
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow ingress from monitoring with proper RBAC
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow HTTPS to external registries and APIs
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+      
+  # Allow Kubernetes API server access for RBAC operations
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    - podSelector:
+        matchLabels:
+          component: kube-apiserver
+    ports:
+    - protocol: TCP
+      port: 6443

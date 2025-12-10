@@ -1,0 +1,310 @@
+# Docker Compose Monitoring Stack for Freightliner
+# Complete local development monitoring setup with Prometheus, Grafana, and Freightliner API
+# Usage: docker-compose -f docker-compose.monitoring.yml up -d
+
+version: '3.8'
+
+services:
+  # Prometheus - Metrics collection and storage
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: freightliner-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      # Mount Prometheus configuration
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Mount alert and recording rules
+      - ./monitoring/prometheus/alert-rules.yml:/etc/prometheus/rules/alert-rules.yml:ro
+      - ./monitoring/prometheus/recording-rules.yml:/etc/prometheus/rules/recording-rules.yml:ro
+      # Persistent storage for metrics data
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}'
+      - '--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-10GB}'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--log.level=${PROMETHEUS_LOG_LEVEL:-info}'
+    environment:
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      com.freightliner.monitoring: "prometheus"
+      com.freightliner.component: "metrics"
+
+  # Grafana - Metrics visualization and dashboards
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: freightliner-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      # Persistent storage for Grafana data
+      - grafana-data:/var/lib/grafana
+      # Mount pre-configured datasources
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      # Mount dashboard definitions
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      # Mount the main dashboard JSON
+      - ./monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/freightliner-dashboard.json:ro
+    environment:
+      # Security settings
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SECURITY_COOKIE_SECURE=false
+      # Server settings
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_SERVER_DOMAIN=${GRAFANA_DOMAIN:-localhost}
+      - GF_SERVER_HTTP_PORT=3000
+      # User management
+      - GF_USERS_ALLOW_SIGN_UP=${GRAFANA_ALLOW_SIGNUP:-false}
+      - GF_USERS_DEFAULT_THEME=${GRAFANA_DEFAULT_THEME:-dark}
+      # Anonymous access (for development)
+      - GF_AUTH_ANONYMOUS_ENABLED=${GRAFANA_ANONYMOUS_ENABLED:-false}
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=${GRAFANA_ANONYMOUS_ROLE:-Viewer}
+      # Plugin installation
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-clock-panel,grafana-simple-json-datasource
+      # Datasource proxy
+      - GF_DATASOURCE_PROXY_TIMEOUT=300
+      - GF_DATASOURCE_PROXY_KEEP_ALIVE_SECONDS=300
+      # Logging
+      - GF_LOG_MODE=console
+      - GF_LOG_LEVEL=${GRAFANA_LOG_LEVEL:-info}
+      # Timezone
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      com.freightliner.monitoring: "grafana"
+      com.freightliner.component: "visualization"
+
+  # Freightliner API - Container replication service with metrics
+  freightliner-api:
+    image: freightliner:${FREIGHTLINER_VERSION:-latest}
+    container_name: freightliner-api
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        - GO_VERSION=1.21
+    ports:
+      - "${API_PORT:-8080}:8080"     # API endpoint
+      - "${METRICS_PORT:-2112}:2112" # Prometheus metrics endpoint
+    volumes:
+      # Mount source code for hot-reload (development only)
+      - .:/app:ro
+      # Mount configuration
+      - ./config:/app/config:ro
+      # Mount credentials (if needed)
+      - ${HOME}/.aws:/home/appuser/.aws:ro
+    environment:
+      # Application settings
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - API_HOST=${API_HOST:-0.0.0.0}
+      - API_PORT=8080
+      # Metrics configuration
+      - METRICS_ENABLED=true
+      - METRICS_PORT=2112
+      - METRICS_PATH=/metrics
+      # Performance tuning
+      - WORKER_POOL_SIZE=${WORKER_POOL_SIZE:-10}
+      - MAX_CONCURRENT_REPLICATIONS=${MAX_CONCURRENT_REPLICATIONS:-5}
+      - HTTP_TIMEOUT=${HTTP_TIMEOUT:-300s}
+      - RETRY_ATTEMPTS=${RETRY_ATTEMPTS:-3}
+      - RETRY_BACKOFF=${RETRY_BACKOFF:-exponential}
+      # Cloud provider settings
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - GCP_REGION=${GCP_REGION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/config/gcp-sa-key.json
+      # Observability
+      - JAEGER_AGENT_HOST=${JAEGER_AGENT_HOST:-}
+      - JAEGER_AGENT_PORT=${JAEGER_AGENT_PORT:-6831}
+      - JAEGER_SAMPLER_TYPE=${JAEGER_SAMPLER_TYPE:-probabilistic}
+      - JAEGER_SAMPLER_PARAM=${JAEGER_SAMPLER_PARAM:-0.1}
+      # Timezone
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      com.freightliner.monitoring: "api"
+      com.freightliner.component: "application"
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "2112"
+      prometheus.io/path: "/metrics"
+
+  # AlertManager - Alert management and routing (optional)
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: freightliner-alertmanager
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./monitoring/alertmanager/config.yml:/etc/alertmanager/config.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=${ALERTMANAGER_URL:-http://localhost:9093}'
+      - '--log.level=${ALERTMANAGER_LOG_LEVEL:-info}'
+    environment:
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      com.freightliner.monitoring: "alertmanager"
+      com.freightliner.component: "alerting"
+    profiles:
+      - full # Only start with: docker-compose --profile full up
+
+  # Node Exporter - System metrics (optional)
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: freightliner-node-exporter
+    restart: unless-stopped
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--no-collector.ipvs'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    environment:
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    labels:
+      com.freightliner.monitoring: "node-exporter"
+      com.freightliner.component: "system-metrics"
+    profiles:
+      - full # Only start with: docker-compose --profile full up
+
+  # cAdvisor - Container metrics (optional)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: freightliner-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    environment:
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    labels:
+      com.freightliner.monitoring: "cadvisor"
+      com.freightliner.component: "container-metrics"
+    profiles:
+      - full # Only start with: docker-compose --profile full up
+
+  # Redis - Caching and coordination (optional dependency)
+  redis:
+    image: redis:7-alpine
+    container_name: freightliner-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command:
+      - redis-server
+      - --appendonly yes
+      - --maxmemory ${REDIS_MAX_MEMORY:-512mb}
+      - --maxmemory-policy allkeys-lru
+      - --save 60 1000
+      - --save 300 100
+      - --save 900 10
+    environment:
+      - TZ=UTC
+    networks:
+      - freightliner-monitoring
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      com.freightliner.monitoring: "redis"
+      com.freightliner.component: "cache"
+    profiles:
+      - full # Only start with: docker-compose --profile full up
+
+# Named volumes for persistent data
+volumes:
+  prometheus-data:
+    driver: local
+    name: freightliner-prometheus-data
+  grafana-data:
+    driver: local
+    name: freightliner-grafana-data
+  alertmanager-data:
+    driver: local
+    name: freightliner-alertmanager-data
+  redis-data:
+    driver: local
+    name: freightliner-redis-data
+
+# Custom network for service discovery
+networks:
+  freightliner-monitoring:
+    name: freightliner-monitoring
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+    labels:
+      com.freightliner.network: "monitoring"
+      com.freightliner.environment: "${ENVIRONMENT:-development}"

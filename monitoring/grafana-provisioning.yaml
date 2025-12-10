@@ -1,0 +1,326 @@
+# Grafana Provisioning Configuration for Dynamic API Endpoint Management
+# This configuration auto-detects deployment environment and configures dashboard variables accordingly
+
+apiVersion: 1
+
+# Datasource configuration with environment-based URL detection
+datasources:
+  - name: prometheus
+    type: prometheus
+    access: proxy
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 30s
+      queryTimeout: 60s
+    # URL will be set dynamically based on deployment mode
+    # Local: http://localhost:9090
+    # Remote: http://${PROMETHEUS_HOST}:${PROMETHEUS_PORT}
+    # Cloud: ${PROMETHEUS_CLOUD_URL}
+    url: ${PROMETHEUS_URL:-http://localhost:9090}
+    editable: true
+    version: 1
+
+  - name: loki
+    type: loki
+    access: proxy
+    url: ${LOKI_URL:-http://localhost:3100}
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceName: prometheus
+          matcherRegex: "traceID=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"
+    editable: true
+    version: 1
+
+# Dashboard provisioning with dynamic variable injection
+dashboards:
+  - name: 'CI/CD Pipeline Dashboard'
+    orgId: 1
+    folder: 'Freightliner Monitoring'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true
+
+# Environment detection and variable configuration
+# These settings are applied when Grafana starts
+provisioning:
+  # Deployment mode detection (local/remote/cloud)
+  environment_detection:
+    enabled: true
+    detection_order:
+      - kubernetes
+      - docker
+      - cloud_metadata
+      - hostname
+      - default
+
+    # Local development detection
+    local:
+      conditions:
+        - hostname_matches: ["localhost", "127.0.0.1", "*.local"]
+        - env_var: DEPLOYMENT_MODE=local
+      dashboard_variables:
+        api_host: localhost
+        api_port: 8080
+        deployment_mode: local
+      datasource_urls:
+        prometheus: http://localhost:9090
+        loki: http://localhost:3100
+
+    # Remote/staging detection
+    remote:
+      conditions:
+        - env_var: DEPLOYMENT_MODE=remote
+        - kubernetes_namespace: staging
+        - hostname_matches: ["staging-*", "test-*"]
+      dashboard_variables:
+        api_host: ${API_HOST:-staging-api.freightliner.local}
+        api_port: ${API_PORT:-8080}
+        deployment_mode: remote
+      datasource_urls:
+        prometheus: http://${PROMETHEUS_HOST:-prometheus.staging}:9090
+        loki: http://${LOKI_HOST:-loki.staging}:3100
+
+    # Cloud/production detection
+    cloud:
+      conditions:
+        - env_var: DEPLOYMENT_MODE=cloud
+        - kubernetes_namespace: production
+        - cloud_provider_detected: true
+        - hostname_matches: ["prod-*", "*.cloud"]
+      dashboard_variables:
+        api_host: ${API_HOST:-api.freightliner.cloud}
+        api_port: ${API_PORT:-443}
+        deployment_mode: cloud
+      datasource_urls:
+        prometheus: ${PROMETHEUS_URL:-https://prometheus.freightliner.cloud}
+        loki: ${LOKI_URL:-https://loki.freightliner.cloud}
+
+      # Cloud-specific security settings
+      security:
+        tls_enabled: true
+        auth_required: true
+        auth_type: ${AUTH_TYPE:-oauth2}
+
+# Alert notification channels (optional, environment-aware)
+notifiers:
+  - name: 'Pipeline Alerts - ${DEPLOYMENT_MODE}'
+    type: slack
+    uid: pipeline_alerts
+    org_id: 1
+    is_default: true
+    send_reminder: true
+    disable_resolve_message: false
+    frequency: 5m
+    settings:
+      url: ${SLACK_WEBHOOK_URL}
+      recipient: ${SLACK_CHANNEL:-#ci-cd-alerts}
+      uploadImage: true
+      mentionChannel: channel
+    secure_settings:
+      url: ${SLACK_WEBHOOK_URL}
+
+  - name: 'Critical Alerts - ${DEPLOYMENT_MODE}'
+    type: email
+    uid: critical_alerts
+    org_id: 1
+    send_reminder: true
+    frequency: 15m
+    settings:
+      addresses: ${ALERT_EMAIL:-ops@freightliner.local}
+      singleEmail: true
+
+# Auto-configuration script for environment setup
+# This section defines initialization tasks
+initialization:
+  scripts:
+    # Detect environment and set variables
+    - name: environment_setup
+      type: shell
+      command: |
+        #!/bin/bash
+        # Auto-detect deployment environment
+
+        if [ -n "$KUBERNETES_SERVICE_HOST" ]; then
+          # Running in Kubernetes
+          NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+
+          if [[ "$NAMESPACE" == "production" ]]; then
+            export DEPLOYMENT_MODE="cloud"
+            export API_HOST="${API_HOST:-api.freightliner.cloud}"
+            export API_PORT="${API_PORT:-443}"
+          elif [[ "$NAMESPACE" == "staging" ]]; then
+            export DEPLOYMENT_MODE="remote"
+            export API_HOST="${API_HOST:-staging-api.freightliner.local}"
+            export API_PORT="${API_PORT:-8080}"
+          else
+            export DEPLOYMENT_MODE="local"
+            export API_HOST="localhost"
+            export API_PORT="8080"
+          fi
+
+        elif [ -f /.dockerenv ]; then
+          # Running in Docker
+          export DEPLOYMENT_MODE="${DEPLOYMENT_MODE:-local}"
+          export API_HOST="${API_HOST:-localhost}"
+          export API_PORT="${API_PORT:-8080}"
+
+        else
+          # Running on bare metal or VM
+          if [[ $(hostname) == prod-* ]] || [[ $(hostname) == *.cloud ]]; then
+            export DEPLOYMENT_MODE="cloud"
+            export API_HOST="${API_HOST:-api.freightliner.cloud}"
+            export API_PORT="${API_PORT:-443}"
+          elif [[ $(hostname) == staging-* ]]; then
+            export DEPLOYMENT_MODE="remote"
+            export API_HOST="${API_HOST:-staging-api.freightliner.local}"
+            export API_PORT="${API_PORT:-8080}"
+          else
+            export DEPLOYMENT_MODE="local"
+            export API_HOST="localhost"
+            export API_PORT="8080"
+          fi
+        fi
+
+        # Export for Grafana
+        echo "DEPLOYMENT_MODE=$DEPLOYMENT_MODE" >> /etc/grafana/grafana.env
+        echo "API_HOST=$API_HOST" >> /etc/grafana/grafana.env
+        echo "API_PORT=$API_PORT" >> /etc/grafana/grafana.env
+
+        # Set datasource URLs
+        if [ "$DEPLOYMENT_MODE" == "cloud" ]; then
+          echo "PROMETHEUS_URL=${PROMETHEUS_URL:-https://prometheus.freightliner.cloud}" >> /etc/grafana/grafana.env
+          echo "LOKI_URL=${LOKI_URL:-https://loki.freightliner.cloud}" >> /etc/grafana/grafana.env
+        elif [ "$DEPLOYMENT_MODE" == "remote" ]; then
+          echo "PROMETHEUS_URL=http://${PROMETHEUS_HOST:-prometheus.staging}:9090" >> /etc/grafana/grafana.env
+          echo "LOKI_URL=http://${LOKI_HOST:-loki.staging}:3100" >> /etc/grafana/grafana.env
+        else
+          echo "PROMETHEUS_URL=http://localhost:9090" >> /etc/grafana/grafana.env
+          echo "LOKI_URL=http://localhost:3100" >> /etc/grafana/grafana.env
+        fi
+
+        echo "Environment configured: $DEPLOYMENT_MODE (API: http://$API_HOST:$API_PORT)"
+
+    # Validate API connectivity
+    - name: api_health_check
+      type: shell
+      command: |
+        #!/bin/bash
+        source /etc/grafana/grafana.env
+
+        echo "Checking API connectivity: http://$API_HOST:$API_PORT/health"
+
+        if curl -sf "http://$API_HOST:$API_PORT/health" > /dev/null; then
+          echo "API is reachable"
+          exit 0
+        else
+          echo "WARNING: API is not reachable. Dashboard may show no data."
+          exit 0  # Don't fail startup
+        fi
+
+# Configuration presets for common deployment scenarios
+presets:
+  local_development:
+    description: "Local development environment with default ports"
+    variables:
+      api_host: localhost
+      api_port: 8080
+      deployment_mode: local
+    datasources:
+      prometheus_url: http://localhost:9090
+      loki_url: http://localhost:3100
+
+  docker_compose:
+    description: "Docker Compose deployment with service names"
+    variables:
+      api_host: api
+      api_port: 8080
+      deployment_mode: local
+    datasources:
+      prometheus_url: http://prometheus:9090
+      loki_url: http://loki:3100
+
+  kubernetes_staging:
+    description: "Kubernetes staging environment"
+    variables:
+      api_host: api.staging.svc.cluster.local
+      api_port: 8080
+      deployment_mode: remote
+    datasources:
+      prometheus_url: http://prometheus.monitoring.svc.cluster.local:9090
+      loki_url: http://loki.monitoring.svc.cluster.local:3100
+
+  kubernetes_production:
+    description: "Kubernetes production environment"
+    variables:
+      api_host: api.production.svc.cluster.local
+      api_port: 443
+      deployment_mode: cloud
+    datasources:
+      prometheus_url: http://prometheus.monitoring.svc.cluster.local:9090
+      loki_url: http://loki.monitoring.svc.cluster.local:3100
+
+# Usage instructions
+usage_instructions: |
+  # Grafana Dynamic API Configuration
+
+  ## Quick Start
+
+  ### Method 1: Environment Variables (Recommended)
+  ```bash
+  export DEPLOYMENT_MODE=local
+  export API_HOST=localhost
+  export API_PORT=8080
+  export PROMETHEUS_URL=http://localhost:9090
+  docker-compose up -d grafana
+  ```
+
+  ### Method 2: Use Preset Configuration
+  ```bash
+  export GRAFANA_PRESET=local_development
+  docker-compose up -d grafana
+  ```
+
+  ### Method 3: Auto-Detection (Default)
+  ```bash
+  # Grafana will auto-detect environment based on hostname and container runtime
+  docker-compose up -d grafana
+  ```
+
+  ## Environment Variables
+
+  - `DEPLOYMENT_MODE`: local, remote, or cloud
+  - `API_HOST`: API hostname or IP address
+  - `API_PORT`: API port number
+  - `PROMETHEUS_URL`: Prometheus datasource URL
+  - `LOKI_URL`: Loki datasource URL
+  - `GRAFANA_PRESET`: Use predefined configuration preset
+
+  ## Dashboard Variables
+
+  Once Grafana starts, you can change these variables in the dashboard UI:
+  - API Host (dropdown)
+  - API Port (dropdown)
+  - Deployment Mode (dropdown)
+
+  All panels and annotations will automatically update to use the new endpoints.
+
+  ## Testing Different Environments
+
+  ```bash
+  # Test local
+  export DEPLOYMENT_MODE=local API_HOST=localhost API_PORT=8080
+
+  # Test staging
+  export DEPLOYMENT_MODE=remote API_HOST=staging.example.com API_PORT=8080
+
+  # Test production
+  export DEPLOYMENT_MODE=cloud API_HOST=api.example.com API_PORT=443
+  ```

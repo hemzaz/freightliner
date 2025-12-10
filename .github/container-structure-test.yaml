@@ -1,0 +1,53 @@
+schemaVersion: '2.0.0'
+
+# Container structure tests for Freightliner
+# Used by CI pipeline to validate Docker images
+
+commandTests:
+  - name: "version command"
+    command: "/app/freightliner"
+    args: ["version"]
+    exitCode: 0
+
+  - name: "help command"
+    command: "/app/freightliner"
+    args: ["--help"]
+    exitCode: 0
+
+fileExistenceTests:
+  - name: "Binary exists"
+    path: "/app/freightliner"
+    shouldExist: true
+    permissions: "-rwxr-xr-x"
+
+  - name: "No shell binaries"
+    path: "/bin/sh"
+    shouldExist: false
+
+  - name: "No bash"
+    path: "/bin/bash"
+    shouldExist: false
+
+fileContentTests:
+  - name: "OS Release"
+    path: "/etc/os-release"
+    expectedContents: ["Alpine Linux"]
+
+metadataTest:
+  env:
+    - key: "PATH"
+      value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  exposedPorts: []  # No ports exposed by default
+
+  volumes: []  # No volumes defined
+
+  workdir: "/app"
+
+  user: "65534"  # nobody user
+
+  labels:
+    - key: "org.opencontainers.image.title"
+      value: "Freightliner"
+    - key: "org.opencontainers.image.description"
+      value: "Container registry replication tool"

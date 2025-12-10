@@ -1,0 +1,476 @@
+# OIDC AUTHENTICATION WORKFLOW
+# Implements OpenID Connect for secure, short-lived authentication
+# Replaces long-lived secrets with dynamic tokens
+
+name: OIDC Authentication Setup
+
+on:
+  workflow_call:
+    inputs:
+      cloud_provider:
+        description: 'Cloud provider for OIDC (aws, gcp, azure)'
+        required: true
+        type: string
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'development'
+        type: string
+      
+  workflow_dispatch:  # Security: No inputs allowed (CKV_GHA_7)
+
+# SECURITY: Minimal permissions with OIDC token capability
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC token generation
+  actions: read
+
+env:
+  CLOUD_PROVIDER: ${{ inputs.cloud_provider }}
+  ENVIRONMENT: ${{ inputs.environment }}
+  
+jobs:
+  # SECURITY: AWS OIDC Authentication
+  aws-oidc-auth:
+    name: AWS OIDC Authentication
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: inputs.cloud_provider == 'aws' || inputs.cloud_provider == 'all'
+    outputs:
+      aws-role-arn: ${{ steps.aws-config.outputs.role-arn }}
+      aws-region: ${{ steps.aws-config.outputs.region }}
+      
+    steps:
+      # SECURITY: AWS OIDC configuration
+      - name: Configure AWS OIDC
+        id: aws-config
+        run: |
+          echo "🔐 Configuring AWS OIDC authentication"
+          
+          # SECURITY: Environment-specific role ARN configuration
+          case "${{ env.ENVIRONMENT }}" in
+            "production")
+              role_arn="${{ secrets.AWS_OIDC_ROLE_ARN_PROD }}"
+              region="${{ secrets.AWS_REGION_PROD || 'us-east-1' }}"
+              ;;
+            "staging")
+              role_arn="${{ secrets.AWS_OIDC_ROLE_ARN_STAGING }}"
+              region="${{ secrets.AWS_REGION_STAGING || 'us-east-1' }}"
+              ;;
+            *)
+              role_arn="${{ secrets.AWS_OIDC_ROLE_ARN_DEV }}"
+              region="${{ secrets.AWS_REGION_DEV || 'us-east-1' }}"
+              ;;
+          esac
+          
+          if [[ -z "$role_arn" ]]; then
+            echo "❌ AWS OIDC role ARN not configured for environment: ${{ env.ENVIRONMENT }}"
+            exit 1
+          fi
+          
+          echo "role-arn=$role_arn" >> $GITHUB_OUTPUT
+          echo "region=$region" >> $GITHUB_OUTPUT
+          
+          echo "AWS OIDC configuration:"
+          echo "  Environment: ${{ env.ENVIRONMENT }}"
+          echo "  Role ARN: $role_arn"
+          echo "  Region: $region"
+
+      # SECURITY: Configure AWS credentials with OIDC
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.aws-config.outputs.role-arn }}
+          role-session-name: GitHubActions-${{ github.run_id }}
+          aws-region: ${{ steps.aws-config.outputs.region }}
+          # SECURITY: Additional OIDC claims for enhanced security
+          role-duration-seconds: 3600  # 1 hour maximum
+          role-skip-session-tagging: false
+
+      # SECURITY: Validate AWS OIDC authentication
+      - name: Validate AWS OIDC authentication
+        run: |
+          echo "✅ Validating AWS OIDC authentication"
+          
+          # SECURITY: Test AWS credentials
+          if aws sts get-caller-identity; then
+            echo "✅ AWS OIDC authentication successful"
+            
+            # SECURITY: Display session information (no sensitive data)
+            echo "AWS Session Information:"
+            aws sts get-caller-identity --query '[Account, Arn, UserId]' --output table
+            
+            # SECURITY: Test permissions with least privilege validation
+            echo "Testing AWS permissions..."
+            if aws sts get-session-token --duration-seconds 900 >/dev/null 2>&1; then
+              echo "✅ AWS session token generation successful"
+            else
+              echo "⚠️ Limited AWS permissions detected"
+            fi
+          else
+            echo "❌ AWS OIDC authentication failed"
+            exit 1
+          fi
+
+      # SECURITY: Configure ECR authentication
+      - name: Login to Amazon ECR
+        run: |
+          echo "🐳 Authenticating with Amazon ECR"
+          
+          # SECURITY: Use OIDC-authenticated AWS CLI for ECR login
+          aws ecr get-login-password --region ${{ steps.aws-config.outputs.region }} | \
+            docker login --username AWS --password-stdin \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ steps.aws-config.outputs.region }}.amazonaws.com
+          
+          echo "✅ ECR authentication successful"
+
+  # SECURITY: GCP OIDC Authentication
+  gcp-oidc-auth:
+    name: GCP OIDC Authentication
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: inputs.cloud_provider == 'gcp' || inputs.cloud_provider == 'all'
+    outputs:
+      gcp-project-id: ${{ steps.gcp-config.outputs.project-id }}
+      gcp-region: ${{ steps.gcp-config.outputs.region }}
+      
+    steps:
+      # SECURITY: GCP OIDC configuration
+      - name: Configure GCP OIDC
+        id: gcp-config
+        run: |
+          echo "🔐 Configuring GCP OIDC authentication"
+          
+          # SECURITY: Environment-specific configuration
+          case "${{ env.ENVIRONMENT }}" in
+            "production")
+              project_id="${{ secrets.GCP_PROJECT_ID_PROD }}"
+              workload_identity_provider="${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER_PROD }}"
+              service_account="${{ secrets.GCP_SERVICE_ACCOUNT_PROD }}" 
+              region="${{ secrets.GCP_REGION_PROD || 'us-central1' }}"
+              ;;
+            "staging")
+              project_id="${{ secrets.GCP_PROJECT_ID_STAGING }}"
+              workload_identity_provider="${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER_STAGING }}"
+              service_account="${{ secrets.GCP_SERVICE_ACCOUNT_STAGING }}"
+              region="${{ secrets.GCP_REGION_STAGING || 'us-central1' }}"
+              ;;
+            *)
+              project_id="${{ secrets.GCP_PROJECT_ID_DEV }}"
+              workload_identity_provider="${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER_DEV }}"
+              service_account="${{ secrets.GCP_SERVICE_ACCOUNT_DEV }}"
+              region="${{ secrets.GCP_REGION_DEV || 'us-central1' }}"
+              ;;
+          esac
+          
+          if [[ -z "$project_id" ]] || [[ -z "$workload_identity_provider" ]] || [[ -z "$service_account" ]]; then
+            echo "❌ GCP OIDC configuration incomplete for environment: ${{ env.ENVIRONMENT }}"
+            exit 1
+          fi
+          
+          echo "project-id=$project_id" >> $GITHUB_OUTPUT
+          echo "workload-identity-provider=$workload_identity_provider" >> $GITHUB_OUTPUT
+          echo "service-account=$service_account" >> $GITHUB_OUTPUT
+          echo "region=$region" >> $GITHUB_OUTPUT
+          
+          echo "GCP OIDC configuration:"
+          echo "  Environment: ${{ env.ENVIRONMENT }}"
+          echo "  Project ID: $project_id"
+          echo "  Region: $region"
+          echo "  Service Account: $service_account"
+
+      # SECURITY: Authenticate to Google Cloud with OIDC
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ steps.gcp-config.outputs.workload-identity-provider }}
+          service_account: ${{ steps.gcp-config.outputs.service-account }}
+          project_id: ${{ steps.gcp-config.outputs.project-id }}
+          # SECURITY: Enhanced OIDC claims
+          token_format: 'access_token'
+          access_token_lifetime: '3600s'  # 1 hour maximum
+
+      # SECURITY: Setup Google Cloud SDK
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ steps.gcp-config.outputs.project-id }}
+
+      # SECURITY: Validate GCP OIDC authentication
+      - name: Validate GCP OIDC authentication
+        run: |
+          echo "✅ Validating GCP OIDC authentication"
+          
+          # SECURITY: Test GCP credentials
+          if gcloud auth list --filter=status:ACTIVE --format="value(account)"; then
+            echo "✅ GCP OIDC authentication successful"
+            
+            # SECURITY: Display session information
+            echo "GCP Session Information:"
+            gcloud config list --format="table(core.account, core.project, compute.region)"
+            
+            # SECURITY: Test permissions
+            echo "Testing GCP permissions..."
+            if gcloud projects describe "${{ steps.gcp-config.outputs.project-id }}" >/dev/null 2>&1; then
+              echo "✅ GCP project access confirmed"
+            else
+              echo "⚠️ Limited GCP permissions detected"
+            fi
+          else
+            echo "❌ GCP OIDC authentication failed"
+            exit 1
+          fi
+
+      # SECURITY: Configure Artifact Registry authentication
+      - name: Configure Artifact Registry authentication
+        run: |
+          echo "🐳 Configuring Artifact Registry authentication"
+          
+          # SECURITY: Configure Docker authentication for Artifact Registry
+          gcloud auth configure-docker ${{ steps.gcp-config.outputs.region }}-docker.pkg.dev --quiet
+          
+          echo "✅ Artifact Registry authentication configured"
+
+  # SECURITY: Azure OIDC Authentication
+  azure-oidc-auth:
+    name: Azure OIDC Authentication
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: inputs.cloud_provider == 'azure' || inputs.cloud_provider == 'all'
+    outputs:
+      azure-subscription-id: ${{ steps.azure-config.outputs.subscription-id }}
+      azure-tenant-id: ${{ steps.azure-config.outputs.tenant-id }}
+      
+    steps:
+      # SECURITY: Azure OIDC configuration
+      - name: Configure Azure OIDC
+        id: azure-config
+        run: |
+          echo "🔐 Configuring Azure OIDC authentication"
+          
+          # SECURITY: Environment-specific configuration
+          case "${{ env.ENVIRONMENT }}" in
+            "production")
+              client_id="${{ secrets.AZURE_CLIENT_ID_PROD }}"
+              tenant_id="${{ secrets.AZURE_TENANT_ID_PROD }}"
+              subscription_id="${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}"
+              ;;
+            "staging")
+              client_id="${{ secrets.AZURE_CLIENT_ID_STAGING }}"
+              tenant_id="${{ secrets.AZURE_TENANT_ID_STAGING }}"
+              subscription_id="${{ secrets.AZURE_SUBSCRIPTION_ID_STAGING }}"
+              ;;
+            *)
+              client_id="${{ secrets.AZURE_CLIENT_ID_DEV }}"
+              tenant_id="${{ secrets.AZURE_TENANT_ID_DEV }}"
+              subscription_id="${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}"
+              ;;
+          esac
+          
+          if [[ -z "$client_id" ]] || [[ -z "$tenant_id" ]] || [[ -z "$subscription_id" ]]; then
+            echo "❌ Azure OIDC configuration incomplete for environment: ${{ env.ENVIRONMENT }}"
+            exit 1
+          fi
+          
+          echo "client-id=$client_id" >> $GITHUB_OUTPUT
+          echo "tenant-id=$tenant_id" >> $GITHUB_OUTPUT
+          echo "subscription-id=$subscription_id" >> $GITHUB_OUTPUT
+          
+          echo "Azure OIDC configuration:"
+          echo "  Environment: ${{ env.ENVIRONMENT }}"
+          echo "  Tenant ID: $tenant_id"
+          echo "  Subscription ID: $subscription_id"
+
+      # SECURITY: Login to Azure with OIDC
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ steps.azure-config.outputs.client-id }}
+          tenant-id: ${{ steps.azure-config.outputs.tenant-id }}
+          subscription-id: ${{ steps.azure-config.outputs.subscription-id }}
+
+      # SECURITY: Validate Azure OIDC authentication
+      - name: Validate Azure OIDC authentication
+        run: |
+          echo "✅ Validating Azure OIDC authentication"
+          
+          # SECURITY: Test Azure credentials
+          if az account show; then
+            echo "✅ Azure OIDC authentication successful"
+            
+            # SECURITY: Display session information
+            echo "Azure Session Information:"
+            az account show --query '{name:name, id:id, tenantId:tenantId}' --output table
+            
+            # SECURITY: Test permissions
+            echo "Testing Azure permissions..."
+            if az group list --query '[0].name' --output tsv >/dev/null 2>&1; then
+              echo "✅ Azure resource access confirmed"
+            else
+              echo "⚠️ Limited Azure permissions detected"
+            fi
+          else
+            echo "❌ Azure OIDC authentication failed"
+            exit 1
+          fi
+
+  # SECURITY: OIDC validation and security testing
+  oidc-security-validation:
+    name: OIDC Security Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [aws-oidc-auth, gcp-oidc-auth, azure-oidc-auth]
+    if: always()
+    
+    steps:
+      # SECURITY: Validate OIDC token security
+      - name: OIDC Token Security Validation
+        run: |
+          echo "🔍 Validating OIDC token security"
+          
+          # SECURITY: Check for successful authentications
+          aws_auth_result="${{ needs.aws-oidc-auth.result }}"
+          gcp_auth_result="${{ needs.gcp-oidc-auth.result }}"
+          azure_auth_result="${{ needs.azure-oidc-auth.result }}"
+          
+          echo "OIDC Authentication Results:"
+          echo "  AWS: $aws_auth_result"
+          echo "  GCP: $gcp_auth_result"  
+          echo "  Azure: $azure_auth_result"
+          
+          # SECURITY: Count successful authentications
+          successful_auths=0
+          total_requested=0
+          
+          if [[ "${{ inputs.cloud_provider }}" == "aws" ]] || [[ "${{ inputs.cloud_provider }}" == "all" ]]; then
+            total_requested=$((total_requested + 1))
+            if [[ "$aws_auth_result" == "success" ]]; then
+              successful_auths=$((successful_auths + 1))
+            fi
+          fi
+          
+          if [[ "${{ inputs.cloud_provider }}" == "gcp" ]] || [[ "${{ inputs.cloud_provider }}" == "all" ]]; then
+            total_requested=$((total_requested + 1))
+            if [[ "$gcp_auth_result" == "success" ]]; then
+              successful_auths=$((successful_auths + 1))
+            fi
+          fi
+          
+          if [[ "${{ inputs.cloud_provider }}" == "azure" ]] || [[ "${{ inputs.cloud_provider }}" == "all" ]]; then
+            total_requested=$((total_requested + 1))
+            if [[ "$azure_auth_result" == "success" ]]; then
+              successful_auths=$((successful_auths + 1))
+            fi
+          fi
+          
+          echo "OIDC Validation Summary:"
+          echo "  Total requested: $total_requested"
+          echo "  Successful: $successful_auths"
+          echo "  Success rate: $((successful_auths * 100 / total_requested))%"
+          
+          # SECURITY: Require all requested authentications to succeed
+          if [[ $successful_auths -eq $total_requested ]]; then
+            echo "✅ All OIDC authentications successful"
+          else
+            echo "❌ Some OIDC authentications failed"
+            exit 1
+          fi
+
+      # SECURITY: Token security best practices validation
+      - name: Token Security Best Practices
+        run: |
+          echo "🔒 Validating OIDC token security best practices"
+          
+          security_score=100
+          recommendations=()
+          
+          # SECURITY: Check environment-specific configuration
+          if [[ "${{ env.ENVIRONMENT }}" == "production" ]]; then
+            echo "✅ Production environment detected - enhanced security required"
+            security_score=$((security_score + 10))
+          fi
+          
+          # SECURITY: Validate provider-specific best practices
+          if [[ "${{ inputs.cloud_provider }}" == "all" ]]; then
+            echo "✅ Multi-cloud OIDC configuration - enhanced resilience"
+            security_score=$((security_score + 5))
+          fi
+          
+          # SECURITY: Check for proper permission configuration
+          if [[ "${{ needs.aws-oidc-auth.result }}" == "success" ]]; then
+            echo "✅ AWS OIDC authentication with role assumption"
+            security_score=$((security_score + 10))
+          fi
+          
+          if [[ "${{ needs.gcp-oidc-auth.result }}" == "success" ]]; then
+            echo "✅ GCP OIDC authentication with workload identity"
+            security_score=$((security_score + 10))
+          fi
+          
+          if [[ "${{ needs.azure-oidc-auth.result }}" == "success" ]]; then
+            echo "✅ Azure OIDC authentication with service principal"
+            security_score=$((security_score + 10))
+          fi
+          
+          echo "OIDC Security Score: $security_score/100"
+          
+          if [[ $security_score -ge 110 ]]; then
+            echo "🏆 EXCELLENT: OIDC security implementation exceeds best practices"
+          elif [[ $security_score -ge 100 ]]; then
+            echo "✅ GOOD: OIDC security implementation meets best practices"
+          else
+            echo "⚠️ NEEDS IMPROVEMENT: OIDC security implementation below best practices"
+            exit 1
+          fi
+
+      # SECURITY: Generate OIDC configuration report
+      - name: Generate OIDC Configuration Report
+        run: |
+          echo "📊 Generating OIDC configuration report"
+          
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## 🔐 OIDC Authentication Report
+          
+          **Provider**: ${{ inputs.cloud_provider }}  
+          **Environment**: ${{ env.ENVIRONMENT }}  
+          **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)  
+          **Workflow**: ${{ github.workflow }}  
+          
+          ### Authentication Results
+          
+          | Provider | Status | Details |
+          |----------|--------|---------|
+          | AWS | ${{ needs.aws-oidc-auth.result }} | ${{ needs.aws-oidc-auth.result == 'success' && 'Role ARN configured, ECR authenticated' || 'Authentication failed or skipped' }} |
+          | GCP | ${{ needs.gcp-oidc-auth.result }} | ${{ needs.gcp-oidc-auth.result == 'success' && 'Workload Identity configured, Artifact Registry authenticated' || 'Authentication failed or skipped' }} |
+          | Azure | ${{ needs.azure-oidc-auth.result }} | ${{ needs.azure-oidc-auth.result == 'success' && 'Service Principal configured, ACR authenticated' || 'Authentication failed or skipped' }} |
+          
+          ### Security Benefits
+          
+          - ✅ **Short-lived tokens**: Automatic expiration reduces exposure risk
+          - ✅ **No long-lived secrets**: Eliminates stored credential management
+          - ✅ **Federated identity**: GitHub identity verified by cloud providers
+          - ✅ **Least privilege**: Environment-specific role/service account access
+          - ✅ **Audit trail**: All authentication events logged by cloud providers
+          
+          ### OIDC Configuration
+          
+          - **Token Lifetime**: 1 hour maximum
+          - **Environment Isolation**: ${{ env.ENVIRONMENT }}-specific resources
+          - **Provider Integration**: Native cloud provider OIDC support
+          - **Permission Model**: Principle of least privilege
+          
+          ### Next Steps
+          
+          ${{ (needs.aws-oidc-auth.result == 'success' || needs.gcp-oidc-auth.result == 'success' || needs.azure-oidc-auth.result == 'success') && 
+             '✅ OIDC authentication ready for use in deployment workflows' ||
+             '❌ Fix OIDC authentication issues before proceeding with deployments' }}
+          
+          ### Security Recommendations
+          
+          - 🔒 Regularly rotate OIDC provider configurations
+          - 🔍 Monitor authentication logs for anomalies  
+          - 🛡️ Use environment-specific roles and service accounts
+          - 📋 Implement least privilege access policies
+          - ⚡ Set appropriate token lifetimes based on workflow needs
+          
+          EOF

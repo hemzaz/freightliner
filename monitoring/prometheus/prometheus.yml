@@ -1,0 +1,176 @@
+# Prometheus Configuration for Freightliner
+# Container image replication monitoring
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'freightliner-prod'
+    environment: 'production'
+    service: 'container-replication'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      timeout: 10s
+      api_version: v2
+
+# Load alert rules
+rule_files:
+  - '/etc/prometheus/rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Freightliner application metrics
+  - job_name: 'freightliner'
+    honor_labels: true
+    static_configs:
+      - targets:
+          - 'localhost:2112'
+        labels:
+          app: 'freightliner'
+          tier: 'application'
+    metric_relabel_configs:
+      # Keep only freightliner metrics
+      - source_labels: [__name__]
+        regex: 'freightliner_.*'
+        action: keep
+
+  # Kubernetes service discovery for dynamic pod scraping
+  - job_name: 'kubernetes-pods'
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - freightliner
+    relabel_configs:
+      # Only scrape pods with prometheus scrape annotation
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      # Use custom port if specified
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      # Use custom path if specified
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      # Add pod metadata as labels
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: replace
+        target_label: app
+      - source_labels: [__meta_kubernetes_pod_label_version]
+        action: replace
+        target_label: version
+
+  # Kubernetes service endpoints
+  - job_name: 'kubernetes-services'
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: service
+        namespaces:
+          names:
+            - freightliner
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_port]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_service_name]
+        action: replace
+        target_label: kubernetes_service_name
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+        labels:
+          app: 'prometheus'
+          tier: 'monitoring'
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):10250'
+        replacement: '${1}:9100'
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+
+  # kube-state-metrics for Kubernetes resource metrics
+  - job_name: 'kube-state-metrics'
+    static_configs:
+      - targets:
+          - 'kube-state-metrics.kube-system.svc.cluster.local:8080'
+        labels:
+          app: 'kube-state-metrics'
+          tier: 'monitoring'
+
+  # cAdvisor for container metrics
+  - job_name: 'cadvisor'
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+
+# Remote write configuration (optional - for long-term storage)
+# remote_write:
+#   - url: "https://prometheus-remote-storage.example.com/api/v1/write"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 50
+#       min_shards: 1
+#       max_samples_per_send: 5000
+#       batch_send_deadline: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms
+#     basic_auth:
+#       username: "user"
+#       password: "pass"
+
+# Remote read configuration (optional - for querying remote storage)
+# remote_read:
+#   - url: "https://prometheus-remote-storage.example.com/api/v1/read"
+#     read_recent: true

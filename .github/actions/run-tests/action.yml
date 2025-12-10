@@ -1,0 +1,182 @@
+name: 'Run Go Tests'
+description: 'Runs Go tests with coverage, race detection, and benchmarks'
+author: 'freightliner'
+
+inputs:
+  test-type:
+    description: 'Type of tests to run (unit, integration, all, benchmark)'
+    required: false
+    default: 'unit'
+  race-detection:
+    description: 'Enable race detection'
+    required: false
+    default: 'true'
+  coverage:
+    description: 'Generate coverage report'
+    required: false
+    default: 'true'
+  coverage-threshold:
+    description: 'Minimum coverage threshold percentage'
+    required: false
+    default: '40'
+  timeout:
+    description: 'Test timeout duration'
+    required: false
+    default: '10m'
+  working-directory:
+    description: 'Working directory for test commands'
+    required: false
+    default: '.'
+  packages:
+    description: 'Packages to test (default: ./...)'
+    required: false
+    default: './...'
+  test-flags:
+    description: 'Additional test flags'
+    required: false
+    default: ''
+
+outputs:
+  coverage-percentage:
+    description: 'Test coverage percentage'
+    value: ${{ steps.coverage.outputs.percentage }}
+  tests-passed:
+    description: 'Whether all tests passed'
+    value: ${{ steps.test.outputs.passed }}
+  benchmark-results:
+    description: 'Benchmark results file path'
+    value: ${{ steps.benchmark.outputs.file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Prepare test environment
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧪 Preparing test environment..."
+        mkdir -p coverage reports
+
+    - name: Run tests
+      id: test
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧪 Running ${{ inputs.test-type }} tests..."
+
+        # Build test flags
+        TEST_FLAGS="-v -timeout=${{ inputs.timeout }}"
+
+        # Add race detection
+        if [ "${{ inputs.race-detection }}" = "true" ]; then
+          TEST_FLAGS="$TEST_FLAGS -race"
+        fi
+
+        # Add coverage
+        if [ "${{ inputs.coverage }}" = "true" ]; then
+          TEST_FLAGS="$TEST_FLAGS -coverprofile=coverage/coverage.out -covermode=atomic"
+        fi
+
+        # Test type specific flags
+        case "${{ inputs.test-type }}" in
+          unit)
+            TEST_FLAGS="$TEST_FLAGS -short"
+            export SKIP_INTEGRATION=true
+            ;;
+          integration)
+            TEST_FLAGS="$TEST_FLAGS -run Integration"
+            ;;
+          benchmark)
+            TEST_FLAGS="$TEST_FLAGS -bench=. -benchmem -run=^$"
+            ;;
+          all)
+            # Run all tests
+            ;;
+        esac
+
+        # Add custom flags
+        if [ -n "${{ inputs.test-flags }}" ]; then
+          TEST_FLAGS="$TEST_FLAGS ${{ inputs.test-flags }}"
+        fi
+
+        # Run tests
+        echo "Test command: go test $TEST_FLAGS ${{ inputs.packages }}"
+
+        if go test $TEST_FLAGS ${{ inputs.packages }}; then
+          echo "✅ Tests passed"
+          echo "passed=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Tests failed"
+          echo "passed=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Generate coverage report
+      id: coverage
+      if: inputs.coverage == 'true' && inputs.test-type != 'benchmark'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -f "coverage/coverage.out" ]; then
+          echo "📊 Generating coverage report..."
+
+          # Generate text report
+          go tool cover -func=coverage/coverage.out > coverage/coverage.txt
+
+          # Generate HTML report
+          go tool cover -html=coverage/coverage.out -o coverage/coverage.html
+
+          # Extract coverage percentage
+          COVERAGE=$(go tool cover -func=coverage/coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage: ${COVERAGE}%"
+          echo "percentage=${COVERAGE}" >> $GITHUB_OUTPUT
+
+          # Check threshold
+          THRESHOLD=${{ inputs.coverage-threshold }}
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "❌ Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          else
+            echo "✅ Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+          fi
+        else
+          echo "⚠️ No coverage file found"
+          echo "percentage=0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run benchmarks
+      id: benchmark
+      if: inputs.test-type == 'benchmark' || inputs.test-type == 'all'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "⚡ Running benchmarks..."
+        go test -bench=. -benchmem -run=^$ ${{ inputs.packages }} | tee reports/benchmark.txt
+        echo "file=reports/benchmark.txt" >> $GITHUB_OUTPUT
+
+    - name: Generate test summary
+      if: always()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Test Type:** ${{ inputs.test-type }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Race Detection:** ${{ inputs.race-detection }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Coverage Enabled:** ${{ inputs.coverage }}" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ inputs.coverage }}" = "true" ] && [ -f "coverage/coverage.txt" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -10 coverage/coverage.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [ -f "reports/benchmark.txt" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          head -20 reports/benchmark.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi

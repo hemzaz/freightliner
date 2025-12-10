@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: freightliner
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: freightliner-metrics
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/component: metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: freightliner

@@ -1,0 +1,101 @@
+# Interface Architecture Makefile
+# Provides targets for interface generation, validation, and mock management
+
+.PHONY: generate-mocks validate-interfaces clean-mocks check-interface-segregation interface-docs
+
+# Generate all interface mocks
+generate-mocks:
+	@echo "Generating interface mocks..."
+	@cd pkg/interfaces && go generate ./...
+	@cd pkg/copy && go generate ./...
+	@cd pkg/service && go generate ./...
+	@echo "All mocks generated successfully"
+
+# Install mock generation dependencies
+install-mock-deps:
+	@echo "Installing mock generation dependencies..."
+	@go install github.com/golang/mock/mockgen@latest
+	@echo "Mock dependencies installed"
+
+# Validate interface design principles
+validate-interfaces:
+	@echo "Validating interface design principles..."
+	@echo "1. Checking interface segregation..."
+	@go run tools/interface_validator.go -check=segregation
+	@echo "2. Checking context propagation..."
+	@go run tools/interface_validator.go -check=context
+	@echo "3. Checking composition patterns..."
+	@go run tools/interface_validator.go -check=composition
+	@echo "Interface validation complete"
+
+# Check for interface segregation violations
+check-interface-segregation:
+	@echo "Checking for interface segregation violations..."
+	@grep -n "interface {" pkg/interfaces/*.go | while read line; do \
+		interface_name=$$(echo $$line | sed 's/.*type \([A-Za-z]*\) interface.*/\1/'); \
+		method_count=$$(grep -A 20 "type $$interface_name interface" pkg/interfaces/*.go | grep -c "^\s*[A-Z].*(.*).*error\|^\s*[A-Z].*(.*)"); \
+		if [ $$method_count -gt 5 ]; then \
+			echo "WARNING: $$interface_name has $$method_count methods (consider segregation)"; \
+		fi \
+	done
+	@echo "Interface segregation check complete"
+
+# Clean generated mocks
+clean-mocks:
+	@echo "Cleaning generated mocks..."
+	@rm -rf pkg/mocks/*_mock.go
+	@rm -rf pkg/mocks/*_mocks.go
+	@echo "Mocks cleaned"
+
+# Generate interface documentation
+interface-docs:
+	@echo "Generating interface documentation..."
+	@mkdir -p docs/interfaces
+	@go run tools/interface_docs_generator.go
+	@echo "Interface documentation generated in docs/interfaces/"
+
+# Lint interface files
+lint-interfaces:
+	@echo "Linting interface files..."
+	@golangci-lint run pkg/interfaces/... pkg/copy/interfaces.go pkg/service/interfaces.go
+	@echo "Interface linting complete"
+
+# Test interface compatibility
+test-interface-compatibility:
+	@echo "Testing interface compatibility..."
+	@go test -v ./pkg/interfaces/...
+	@go test -v ./pkg/copy/...
+	@go test -v ./pkg/service/...
+	@echo "Interface compatibility tests complete"
+
+# Generate interface metrics
+interface-metrics:
+	@echo "Generating interface metrics..."
+	@echo "Repository interfaces:"
+	@grep -c "type.*interface" pkg/interfaces/repository.go
+	@echo "Authentication interfaces:"  
+	@grep -c "type.*interface" pkg/interfaces/auth.go
+	@echo "Client interfaces:"
+	@grep -c "type.*interface" pkg/interfaces/client.go
+	@echo "Copy interfaces:"
+	@grep -c "type.*interface" pkg/copy/interfaces.go
+	@echo "Service interfaces:"
+	@grep -c "type.*interface" pkg/service/interfaces.go
+
+# Full interface workflow
+interface-workflow: install-mock-deps validate-interfaces generate-mocks test-interface-compatibility
+	@echo "Complete interface workflow executed successfully"
+
+# Help target
+help-interfaces:
+	@echo "Available interface targets:"
+	@echo "  generate-mocks              - Generate all interface mocks"
+	@echo "  install-mock-deps           - Install mock generation dependencies"
+	@echo "  validate-interfaces         - Validate interface design principles"
+	@echo "  check-interface-segregation - Check for segregation violations"
+	@echo "  clean-mocks                 - Clean generated mocks"
+	@echo "  interface-docs              - Generate interface documentation"
+	@echo "  lint-interfaces             - Lint interface files"
+	@echo "  test-interface-compatibility - Test interface compatibility"
+	@echo "  interface-metrics           - Generate interface metrics"
+	@echo "  interface-workflow          - Execute full interface workflow"

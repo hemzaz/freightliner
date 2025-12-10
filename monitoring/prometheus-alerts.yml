@@ -1,0 +1,386 @@
+groups:
+  - name: ci_cd_pipeline_health
+    interval: 30s
+    rules:
+      # Pipeline Build Failure Rate
+      - alert: PipelineBuildFailureRateHigh
+        expr: |
+          (
+            rate(github_actions_workflow_runs_total{conclusion!="success"}[1h])
+            /
+            rate(github_actions_workflow_runs_total[1h])
+          ) * 100 > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "High pipeline failure rate detected"
+          description: "Pipeline failure rate is {{ $value | humanizePercentage }} over the last hour (threshold: 10%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Pipeline-Failure-Runbook"
+
+      - alert: PipelineBuildFailureRateCritical
+        expr: |
+          (
+            rate(github_actions_workflow_runs_total{conclusion!="success"}[1h])
+            /
+            rate(github_actions_workflow_runs_total[1h])
+          ) * 100 > 25
+        for: 5m
+        labels:
+          severity: critical
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "Critical pipeline failure rate detected"
+          description: "Pipeline failure rate is {{ $value | humanizePercentage }} over the last hour (threshold: 25%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Pipeline-Failure-Runbook"
+
+      # Pipeline Build Duration
+      - alert: PipelineBuildDurationExceeded
+        expr: github_actions_workflow_duration_seconds > 600  # 10 minutes
+        for: 0m
+        labels:
+          severity: warning
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "Pipeline build duration exceeded SLA"
+          description: "Build for workflow {{ $labels.workflow_name }} took {{ $value | humanizeDuration }}, exceeding 10-minute SLA"
+          runbook_url: "https://github.com/company/freightliner/wiki/Performance-Optimization-Runbook"
+
+      - alert: PipelineBuildDurationCritical
+        expr: github_actions_workflow_duration_seconds > 1200  # 20 minutes
+        for: 0m
+        labels:
+          severity: critical
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "Pipeline build duration critically exceeded"
+          description: "Build for workflow {{ $labels.workflow_name }} took {{ $value | humanizeDuration }}, critically exceeding SLA"
+          runbook_url: "https://github.com/company/freightliner/wiki/Performance-Optimization-Runbook"
+
+      # Pipeline Queue Time
+      - alert: PipelineQueueTimeHigh
+        expr: github_actions_workflow_queue_duration_seconds > 300  # 5 minutes
+        for: 5m
+        labels:
+          severity: warning
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "High pipeline queue time detected"
+          description: "Workflow {{ $labels.workflow_name }} queued for {{ $value | humanizeDuration }} (threshold: 5 minutes)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Resource-Scaling-Runbook"
+
+  - name: load_test_performance
+    interval: 1m
+    rules:
+      # Load Test Throughput Degradation
+      - alert: LoadTestThroughputDegraded
+        expr: load_test_throughput_mbps < 25
+        for: 5m
+        labels:
+          severity: warning
+          component: load_testing
+          team: platform
+        annotations:
+          summary: "Load test throughput degraded"
+          description: "Load test throughput dropped to {{ $value }} MB/s for scenario {{ $labels.scenario }} (threshold: 25 MB/s)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Performance-Degradation-Runbook"
+
+      - alert: LoadTestThroughputCritical
+        expr: load_test_throughput_mbps < 10
+        for: 2m
+        labels:
+          severity: critical
+          component: load_testing
+          team: platform
+        annotations:
+          summary: "Load test throughput critically low"
+          description: "Load test throughput critically low at {{ $value }} MB/s for scenario {{ $labels.scenario }} (threshold: 10 MB/s)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Performance-Degradation-Runbook"
+
+      # Load Test Memory Usage
+      - alert: LoadTestMemoryUsageHigh
+        expr: load_test_memory_usage_mb > 2048
+        for: 10m
+        labels:
+          severity: warning
+          component: load_testing
+          team: platform
+        annotations:
+          summary: "Load test memory usage high"
+          description: "Load test memory usage at {{ $value }} MB for scenario {{ $labels.scenario }} (threshold: 2048 MB)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Memory-Optimization-Runbook"
+
+      # Load Test Failure Rate
+      - alert: LoadTestFailureRateHigh
+        expr: load_test_failure_rate > 0.05  # 5%
+        for: 5m
+        labels:
+          severity: warning
+          component: load_testing
+          team: platform
+        annotations:
+          summary: "Load test failure rate elevated"
+          description: "Load test failure rate at {{ $value | humanizePercentage }} for scenario {{ $labels.scenario }} (threshold: 5%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Load-Test-Failure-Runbook"
+
+      - alert: LoadTestFailureRateCritical
+        expr: load_test_failure_rate > 0.15  # 15%
+        for: 2m
+        labels:
+          severity: critical
+          component: load_testing
+          team: platform
+        annotations:
+          summary: "Load test failure rate critical"
+          description: "Load test failure rate critically high at {{ $value | humanizePercentage }} for scenario {{ $labels.scenario }} (threshold: 15%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Load-Test-Failure-Runbook"
+
+  - name: security_monitoring
+    interval: 5m
+    rules:
+      # Security Vulnerabilities
+      - alert: SecurityVulnerabilitiesDetected
+        expr: security_vulnerabilities_total{severity="critical"} > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: security
+          team: security
+        annotations:
+          summary: "Critical security vulnerabilities detected"
+          description: "{{ $value }} critical security vulnerabilities found in latest scan"
+          runbook_url: "https://github.com/company/freightliner/wiki/Security-Incident-Response"
+
+      - alert: SecurityVulnerabilitiesHigh
+        expr: security_vulnerabilities_total{severity="high"} > 5
+        for: 30m
+        labels:
+          severity: warning
+          component: security
+          team: security
+        annotations:
+          summary: "High severity security vulnerabilities detected"
+          description: "{{ $value }} high severity security vulnerabilities found (threshold: 5)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Security-Vulnerability-Management"
+
+      # Security Scan Failures
+      - alert: SecurityScanFailed
+        expr: increase(security_scan_failures_total[1h]) > 3
+        for: 15m
+        labels:
+          severity: warning
+          component: security
+          team: platform
+        annotations:
+          summary: "Multiple security scan failures"
+          description: "Security scans failed {{ $value }} times in the last hour"
+          runbook_url: "https://github.com/company/freightliner/wiki/Security-Scan-Troubleshooting"
+
+      # Dependency Vulnerabilities
+      - alert: DependencyVulnerabilitiesDetected
+        expr: dependency_vulnerabilities_total > 0
+        for: 24h
+        labels:
+          severity: warning
+          component: security
+          team: platform
+        annotations:
+          summary: "Dependency vulnerabilities require attention"
+          description: "{{ $value }} dependency vulnerabilities detected and not addressed for 24 hours"
+          runbook_url: "https://github.com/company/freightliner/wiki/Dependency-Management"
+
+  - name: docker_build_performance
+    interval: 2m
+    rules:
+      # Docker Build Duration
+      - alert: DockerBuildDurationHigh
+        expr: docker_build_duration_seconds > 600  # 10 minutes
+        for: 5m
+        labels:
+          severity: warning
+          component: docker
+          team: platform
+        annotations:
+          summary: "Docker build duration high"
+          description: "Docker build took {{ $value | humanizeDuration }} for stage {{ $labels.stage }} (threshold: 10 minutes)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Docker-Optimization-Runbook"
+
+      # Docker Build Failure Rate
+      - alert: DockerBuildFailureRateHigh
+        expr: |
+          (
+            rate(docker_build_failures_total[1h])
+            /
+            rate(docker_build_attempts_total[1h])
+          ) * 100 > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: docker
+          team: platform
+        annotations:
+          summary: "Docker build failure rate high"
+          description: "Docker build failure rate at {{ $value | humanizePercentage }} over the last hour (threshold: 10%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Docker-Build-Troubleshooting"
+
+      # Docker Image Size
+      - alert: DockerImageSizeLarge
+        expr: docker_image_size_bytes > 1073741824  # 1GB
+        for: 0m
+        labels:
+          severity: warning
+          component: docker
+          team: platform
+        annotations:
+          summary: "Docker image size is large"
+          description: "Docker image {{ $labels.image_name }} is {{ $value | humanizeBytes }} (threshold: 1GB)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Docker-Image-Optimization"
+
+  - name: test_reliability
+    interval: 1m
+    rules:
+      # Test Flakiness
+      - alert: TestFlakinessHigh
+        expr: test_flakiness_rate > 0.05  # 5%
+        for: 30m
+        labels:
+          severity: warning
+          component: testing
+          team: platform
+        annotations:
+          summary: "Test flakiness rate high"
+          description: "Test flakiness rate at {{ $value | humanizePercentage }} for test {{ $labels.test_name }} (threshold: 5%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Test-Reliability-Runbook"
+
+      # Test Coverage Regression
+      - alert: TestCoverageRegression
+        expr: test_coverage_percent < 80
+        for: 1h
+        labels:
+          severity: warning
+          component: testing
+          team: platform
+        annotations:
+          summary: "Test coverage below threshold"
+          description: "Test coverage dropped to {{ $value }}% (threshold: 80%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Test-Coverage-Improvement"
+
+      # Test Execution Time
+      - alert: TestExecutionTimeLong
+        expr: test_execution_duration_seconds > 1200  # 20 minutes
+        for: 5m
+        labels:
+          severity: warning
+          component: testing
+          team: platform
+        annotations:
+          summary: "Test execution time excessive"
+          description: "Test suite {{ $labels.suite_name }} took {{ $value | humanizeDuration }} to execute (threshold: 20 minutes)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Test-Performance-Optimization"
+
+  - name: resource_utilization
+    interval: 30s
+    rules:
+      # CPU Usage
+      - alert: HighCPUUsage
+        expr: (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+          team: platform
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage on {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 90%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Resource-Scaling-Runbook"
+
+      # Memory Usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+          team: platform
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 90%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Resource-Scaling-Runbook"
+
+      # Disk Usage
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes - node_filesystem_avail_bytes) / node_filesystem_size_bytes * 100 > 85
+        for: 15m
+        labels:
+          severity: warning
+          component: infrastructure
+          team: platform
+        annotations:
+          summary: "High disk usage detected"
+          description: "Disk usage on {{ $labels.instance }} mount {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} (threshold: 85%)"
+          runbook_url: "https://github.com/company/freightliner/wiki/Disk-Cleanup-Runbook"
+
+  - name: pipeline_sla_monitoring
+    interval: 1m
+    rules:
+      # Overall Pipeline SLA
+      - alert: PipelineSLAViolation
+        expr: |
+          (
+            avg_over_time(github_actions_workflow_duration_seconds[1h]) > 600 or
+            (
+              rate(github_actions_workflow_runs_total{conclusion!="success"}[1h])
+              /
+              rate(github_actions_workflow_runs_total[1h])
+            ) > 0.05
+          )
+        for: 30m
+        labels:
+          severity: warning
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "Pipeline SLA violation detected"
+          description: "Pipeline is not meeting SLA requirements - either average build time > 10min or failure rate > 5%"
+          runbook_url: "https://github.com/company/freightliner/wiki/SLA-Violation-Response"
+
+      # Performance Regression
+      - alert: PerformanceRegression
+        expr: |
+          (
+            avg_over_time(github_actions_workflow_duration_seconds[1h]) >
+            avg_over_time(github_actions_workflow_duration_seconds[1h] offset 24h) * 1.5
+          )
+        for: 1h
+        labels:
+          severity: warning
+          component: pipeline
+          team: platform
+        annotations:
+          summary: "Performance regression detected"
+          description: "Pipeline performance has degraded by more than 50% compared to 24 hours ago"
+          runbook_url: "https://github.com/company/freightliner/wiki/Performance-Regression-Analysis"
+
+      # Load Test SLA
+      - alert: LoadTestSLAViolation
+        expr: |
+          (
+            load_test_throughput_mbps < 50 or
+            load_test_p99_latency_ms > 2000 or
+            load_test_failure_rate > 0.02
+          )
+        for: 15m
+        labels:
+          severity: warning
+          component: load_testing
+          team: platform
+        annotations:
+          summary: "Load test SLA violation"
+          description: "Load test performance below SLA: throughput < 50 MB/s, P99 latency > 2s, or failure rate > 2%"
+          runbook_url: "https://github.com/company/freightliner/wiki/Load-Test-Performance-Troubleshooting"

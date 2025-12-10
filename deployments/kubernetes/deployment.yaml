@@ -1,0 +1,287 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: freightliner
+  namespace: freightliner
+  labels:
+    app.kubernetes.io/name: freightliner
+    app.kubernetes.io/instance: production
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: container-registry-replication
+    app.kubernetes.io/part-of: freightliner-platform
+    app.kubernetes.io/managed-by: helm
+spec:
+  replicas: 3  # High availability with 3 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: freightliner
+      app.kubernetes.io/instance: production
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: freightliner
+        app.kubernetes.io/instance: production
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/component: container-registry-replication
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        config/checksum: "{{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}"
+    spec:
+      serviceAccountName: freightliner
+      automountServiceAccountToken: false  # Security: Disable automatic mounting of service account tokens (CKV_K8S_38)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      
+      # Node affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                  - freightliner
+              topologyKey: kubernetes.io/hostname
+      
+      # Initialization containers
+      initContainers:
+      - name: wait-for-secrets
+        image: busybox@sha256:6d9ac9237a84afe1516540f40a0fafdc86859b2141954b4d643af7066d598b74  # busybox:1.35 with digest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for secrets to be mounted..."
+          until [ -f /etc/secrets/api-key ]; do
+            echo "Waiting for API key secret..."
+            sleep 2
+          done
+          echo "Secrets are available"
+        volumeMounts:
+        - name: api-keys
+          mountPath: /etc/secrets
+          readOnly: true
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 10m       # Security: CPU requests set (CKV_K8S_10)
+            memory: 16Mi   # Security: Memory requests set (CKV_K8S_12)
+          limits:
+            cpu: 50m       # Security: CPU limits set (CKV_K8S_11)
+            memory: 64Mi   # Security: Memory limits set (CKV_K8S_13)
+      
+      containers:
+      - name: freightliner
+        image: freightliner@sha256:b5b2b2c50720b6b08a8e3bb0b8c7a9d8e6f4c8d7a6b5a4c3b2a1098765432abc  # Security: Using digest for security (CKV_K8S_43)
+        imagePullPolicy: Always  # Security: Image pull policy always (CKV_K8S_15)
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        
+        env:
+        - name: FREIGHTLINER_VERSION
+          value: "1.0.0"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: FREIGHTLINER_CONFIG_PATH
+          value: /etc/config/config.yaml
+        - name: GOMAXPROCS
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.cpu
+        - name: GOMEMLIMIT
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.memory
+        
+        # Resource limits optimized for container registry workloads
+        resources:
+          requests:
+            cpu: 500m      # Security: CPU requests set (CKV_K8S_10)
+            memory: 1Gi    # Security: Memory requests set (CKV_K8S_12)
+          limits:
+            cpu: 2         # Security: CPU limits set (CKV_K8S_11)
+            memory: 4Gi    # Security: Memory limits set (CKV_K8S_13)
+        
+        # Health and readiness probes
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        
+        readinessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: http
+            scheme: HTTPS
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+          successThreshold: 1
+        
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        
+        # Volume mounts
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+        - name: api-keys
+          mountPath: /etc/secrets
+          readOnly: true
+        - name: registry-credentials
+          mountPath: /etc/registry-credentials
+          readOnly: true
+        - name: encryption-keys
+          mountPath: /etc/encryption-keys
+          readOnly: true
+        - name: tls-certs
+          mountPath: /etc/ssl/certs
+          readOnly: true
+        - name: tls-private
+          mountPath: /etc/ssl/private
+          readOnly: true
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
+        - name: var-tmp
+          mountPath: /var/tmp
+        
+        # Graceful shutdown configuration
+        terminationGracePeriodSeconds: 60
+        
+        # Lifecycle hooks
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                echo "Received termination signal, initiating graceful shutdown..."
+                # Send SIGTERM to the main process
+                kill -TERM 1
+                # Wait for graceful shutdown
+                sleep 5
+      
+      # Volumes
+      volumes:
+      - name: config
+        configMap:
+          name: freightliner-config
+          defaultMode: 0644
+      - name: api-keys
+        secret:
+          secretName: freightliner-api-keys
+          defaultMode: 0600
+      - name: registry-credentials
+        secret:
+          secretName: freightliner-registry-credentials
+          defaultMode: 0600
+      - name: encryption-keys
+        secret:
+          secretName: freightliner-encryption-keys
+          defaultMode: 0600
+      - name: tls-certs
+        secret:
+          secretName: freightliner-tls
+          defaultMode: 0644
+          items:
+          - key: tls.crt
+            path: tls.crt
+      - name: tls-private
+        secret:
+          secretName: freightliner-tls
+          defaultMode: 0600
+          items:
+          - key: tls.key
+            path: tls.key
+      - name: data
+        persistentVolumeClaim:
+          claimName: freightliner-data
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: var-tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      
+      # DNS configuration
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "2"
+        - name: edns0

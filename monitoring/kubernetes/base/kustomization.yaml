@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+resources:
+  - grafana-configmap.yaml
+  - grafana-deployment.yaml
+  - grafana-service.yaml
+  - grafana-pvc.yaml
+  - grafana-secret.yaml
+
+commonLabels:
+  app.kubernetes.io/name: grafana
+  app.kubernetes.io/component: monitoring
+  app.kubernetes.io/part-of: freightliner
+
+configMapGenerator:
+  - name: grafana-version
+    literals:
+      - version=10.1.5
+      - deployment-date=2025-12-01

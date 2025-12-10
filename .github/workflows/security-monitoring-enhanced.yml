@@ -1,0 +1,690 @@
+# ENHANCED SECURITY MONITORING WORKFLOW
+# Provides continuous security monitoring and automated threat detection
+# Integrates with security tools and alerting systems
+
+name: Security Monitoring Enhanced
+
+on:
+  schedule:
+    # SECURITY: Run comprehensive scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan to perform'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - quick
+          - dependencies
+          - containers
+          - secrets
+      notify_on_success:
+        description: 'Send notifications on successful scans'
+        required: false
+        default: false
+        type: boolean
+
+# SECURITY: Minimal required permissions
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  issues: write  # For creating security issues
+
+env:
+  # SECURITY: Global configuration
+  SCAN_TYPE: ${{ inputs.scan_type || 'full' }}
+  NOTIFY_SUCCESS: ${{ inputs.notify_on_success || 'false' }}
+  SECURITY_BASELINE_DAYS: 30
+  MAX_SCAN_TIME: 3600  # 1 hour timeout
+  
+  # SECURITY: Notification endpoints (configure in repository secrets)
+  SLACK_WEBHOOK: ${{ secrets.SLACK_SECURITY_WEBHOOK }}
+  TEAMS_WEBHOOK: ${{ secrets.TEAMS_SECURITY_WEBHOOK }}
+  EMAIL_ENDPOINT: ${{ secrets.SECURITY_EMAIL_ENDPOINT }}
+
+jobs:
+  # SECURITY: Monitoring initialization and configuration
+  monitoring-init:
+    name: Security Monitoring Initialization
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scan-config: ${{ steps.config.outputs.scan-config }}
+      baseline-date: ${{ steps.config.outputs.baseline-date }}
+      notification-config: ${{ steps.config.outputs.notification-config }}
+      
+    steps:
+      - name: Initialize security monitoring
+        id: config
+        run: |
+          echo "🔍 Initializing security monitoring configuration"
+          
+          # SECURITY: Configure scan parameters based on input
+          case "${{ env.SCAN_TYPE }}" in
+            "full")
+              scan_config='{"secrets":true,"sast":true,"dependencies":true,"containers":true,"iac":true,"compliance":true}'
+              echo "Full security scan configuration loaded"
+              ;;
+            "quick")
+              scan_config='{"secrets":true,"sast":true,"dependencies":false,"containers":false,"iac":false,"compliance":false}'
+              echo "Quick security scan configuration loaded"
+              ;;
+            "dependencies")
+              scan_config='{"secrets":false,"sast":false,"dependencies":true,"containers":false,"iac":false,"compliance":false}'
+              echo "Dependencies-only scan configuration loaded"
+              ;;
+            "containers")
+              scan_config='{"secrets":false,"sast":false,"dependencies":false,"containers":true,"iac":false,"compliance":false}'
+              echo "Container-only scan configuration loaded"
+              ;;
+            "secrets")
+              scan_config='{"secrets":true,"sast":false,"dependencies":false,"containers":false,"iac":false,"compliance":false}'
+              echo "Secrets-only scan configuration loaded"
+              ;;
+            *)
+              scan_config='{"secrets":true,"sast":true,"dependencies":true,"containers":true,"iac":true,"compliance":true}'
+              echo "Default full scan configuration loaded"
+              ;;
+          esac
+          
+          # SECURITY: Set baseline date for comparison
+          baseline_date=$(date -d "${{ env.SECURITY_BASELINE_DAYS }} days ago" +%Y-%m-%d)
+          
+          # SECURITY: Configure notifications
+          notification_config='{"slack":false,"teams":false,"email":false,"github":true}'
+          if [[ -n "${{ env.SLACK_WEBHOOK }}" ]]; then
+            notification_config=$(echo "$notification_config" | jq '.slack = true')
+          fi
+          if [[ -n "${{ env.TEAMS_WEBHOOK }}" ]]; then
+            notification_config=$(echo "$notification_config" | jq '.teams = true')
+          fi
+          if [[ -n "${{ env.EMAIL_ENDPOINT }}" ]]; then
+            notification_config=$(echo "$notification_config" | jq '.email = true')
+          fi
+          
+          echo "scan-config=$scan_config" >> $GITHUB_OUTPUT
+          echo "baseline-date=$baseline_date" >> $GITHUB_OUTPUT
+          echo "notification-config=$notification_config" >> $GITHUB_OUTPUT
+          
+          echo "Security monitoring initialized:"
+          echo "  Scan Type: ${{ env.SCAN_TYPE }}"
+          echo "  Baseline Date: $baseline_date"
+          echo "  Notification Channels: $(echo "$notification_config" | jq -r 'to_entries[] | select(.value == true) | .key' | tr '\n' ',' | sed 's/,$//')"
+
+  # SECURITY: Continuous secret monitoring
+  continuous-secret-monitoring:
+    name: Continuous Secret Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: monitoring-init
+    if: fromJSON(needs.monitoring-init.outputs.scan-config).secrets == true
+    
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comprehensive secret detection
+
+      # SECURITY: Enhanced TruffleHog scanning with historical analysis
+      - name: TruffleHog historical secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ needs.monitoring-init.outputs.baseline-date }}
+          head: HEAD
+          extra_args: --debug --only-verified --json --archive-max-size=50MB --archive-max-depth=3
+
+      # SECURITY: GitLeaks comprehensive scan
+      - name: GitLeaks comprehensive scan
+        run: |
+          echo "🔍 Running comprehensive GitLeaks scan"
+          
+          # SECURITY: Install GitLeaks
+          wget -O gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_$(uname -s)_$(uname -m).tar.gz
+          tar -xzf gitleaks.tar.gz
+          chmod +x gitleaks
+          
+          # SECURITY: Run scan with custom config
+          ./gitleaks detect --source . --config .gitleaks.toml --report-format json --report-path gitleaks-report.json --verbose
+          
+          echo "✅ GitLeaks scan completed"
+
+      # SECURITY: Analyze secret scan results
+      - name: Analyze secret findings
+        id: secret-analysis
+        run: |
+          echo "📊 Analyzing secret scan results"
+          
+          secrets_found="false"
+          total_secrets=0
+          high_risk_secrets=0
+          
+          # SECURITY: Parse GitLeaks results if available
+          if [[ -f "gitleaks-report.json" ]]; then
+            total_secrets=$(jq length gitleaks-report.json 2>/dev/null || echo "0")
+            high_risk_secrets=$(jq '[.[] | select(.tags[] | contains("key") or contains("token"))] | length' gitleaks-report.json 2>/dev/null || echo "0")
+            
+            if [[ $total_secrets -gt 0 ]]; then
+              secrets_found="true"
+              echo "⚠️ SECURITY ALERT: $total_secrets secrets detected"
+              echo "🚨 High-risk secrets: $high_risk_secrets"
+            fi
+          fi
+          
+          echo "secrets-found=$secrets_found" >> $GITHUB_OUTPUT
+          echo "total-secrets=$total_secrets" >> $GITHUB_OUTPUT
+          echo "high-risk-secrets=$high_risk_secrets" >> $GITHUB_OUTPUT
+          
+          # SECURITY: Generate summary
+          if [[ "$secrets_found" == "true" ]]; then
+            echo "❌ Secret monitoring detected $total_secrets potential secrets"
+          else
+            echo "✅ No secrets detected in repository"
+          fi
+
+  # SECURITY: Dependency vulnerability monitoring
+  dependency-vulnerability-monitoring:
+    name: Dependency Vulnerability Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: monitoring-init
+    if: fromJSON(needs.monitoring-init.outputs.scan-config).dependencies == true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.4'
+
+      # SECURITY: Enhanced govulncheck with detailed reporting
+      - name: Enhanced vulnerability scanning
+        id: vuln-scan
+        run: |
+          echo "🔍 Running enhanced dependency vulnerability scan"
+          
+          # SECURITY: Install vulnerability scanners
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install github.com/sonatypeoss/nancy@latest
+          
+          # SECURITY: Run govulncheck with JSON output
+          echo "Running govulncheck..."
+          govulncheck -json ./... > govulncheck-results.json 2>&1 || true
+          
+          # SECURITY: Run nancy for additional coverage
+          echo "Running nancy..."
+          go list -json -deps ./... | nancy sleuth --output-format=json > nancy-results.json 2>&1 || true
+          
+          # SECURITY: Analyze results
+          total_vulns=0
+          critical_vulns=0
+          high_vulns=0
+          
+          if [[ -f "govulncheck-results.json" ]]; then
+            # SECURITY: Parse govulncheck results
+            total_vulns=$(jq -r '.vulns // [] | length' govulncheck-results.json 2>/dev/null || echo "0")
+            critical_vulns=$(jq -r '.vulns // [] | map(select(.severity == "critical")) | length' govulncheck-results.json 2>/dev/null || echo "0")
+            high_vulns=$(jq -r '.vulns // [] | map(select(.severity == "high")) | length' govulncheck-results.json 2>/dev/null || echo "0")
+          fi
+          
+          echo "total-vulnerabilities=$total_vulns" >> $GITHUB_OUTPUT
+          echo "critical-vulnerabilities=$critical_vulns" >> $GITHUB_OUTPUT  
+          echo "high-vulnerabilities=$high_vulns" >> $GITHUB_OUTPUT
+          
+          echo "Vulnerability scan results:"
+          echo "  Total vulnerabilities: $total_vulns"
+          echo "  Critical vulnerabilities: $critical_vulns"
+          echo "  High vulnerabilities: $high_vulns"
+
+      # SECURITY: License compliance monitoring
+      - name: License compliance monitoring
+        run: |
+          echo "📋 Monitoring license compliance"
+          
+          # SECURITY: Install go-licenses
+          go install github.com/google/go-licenses@latest
+          
+          # SECURITY: Generate license report
+          go-licenses csv ./... > current-licenses.csv
+          
+          # SECURITY: Check for license changes
+          license_changes="false"
+          if [[ -f "previous-licenses.csv" ]]; then
+            if ! diff -q previous-licenses.csv current-licenses.csv >/dev/null 2>&1; then
+              license_changes="true"
+              echo "⚠️ License changes detected"
+            fi
+          fi
+          
+          # SECURITY: Check for prohibited licenses
+          prohibited_licenses=("GPL-3.0" "AGPL-3.0" "LGPL-3.0" "GPL-2.0")
+          prohibited_found="false"
+          
+          for license in "${prohibited_licenses[@]}"; do
+            if grep -qi "$license" current-licenses.csv; then
+              echo "🚨 PROHIBITED LICENSE DETECTED: $license"
+              prohibited_found="true"
+            fi
+          done
+          
+          if [[ "$prohibited_found" == "true" ]]; then
+            echo "❌ License compliance violation detected"
+            exit 1
+          fi
+          
+          echo "✅ License compliance check passed"
+
+  # SECURITY: Container security monitoring
+  container-security-monitoring:
+    name: Container Security Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: monitoring-init
+    if: fromJSON(needs.monitoring-init.outputs.scan-config).containers == true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # SECURITY: Build containers for monitoring
+      - name: Build containers for security monitoring
+        run: |
+          echo "🐳 Building containers for security monitoring"
+          
+          # SECURITY: Build all Dockerfiles for comprehensive scanning
+          dockerfiles=($(find . -name "Dockerfile*" -type f))
+          
+          for dockerfile in "${dockerfiles[@]}"; do
+            tag_name="freightliner:monitor-$(basename "$dockerfile" | tr '[:upper:]' '[:lower:]')"
+            echo "Building $dockerfile as $tag_name"
+            
+            docker build -f "$dockerfile" -t "$tag_name" . || {
+              echo "⚠️ Failed to build $dockerfile"
+              continue
+            }
+            
+            echo "✅ Built $tag_name successfully"
+          done
+          
+          # SECURITY: List built images
+          docker images | grep freightliner:monitor
+
+      # SECURITY: Comprehensive Trivy scanning
+      - name: Comprehensive Trivy security scan
+        run: |
+          echo "🔍 Running comprehensive container security scan"
+          
+          # SECURITY: Install Trivy
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          
+          # SECURITY: Scan all monitor images
+          total_critical=0
+          total_high=0
+          
+          for image in $(docker images --format "{{.Repository}}:{{.Tag}}" | grep freightliner:monitor); do
+            echo "Scanning $image..."
+            
+            # SECURITY: Run comprehensive scan
+            trivy image --format json --output "${image//[:\/ ]/_}-results.json" \
+              --severity HIGH,CRITICAL \
+              --vuln-type os,library \
+              --scanners vuln,config,secret \
+              "$image"
+            
+            # SECURITY: Parse results
+            if [[ -f "${image//[:\/ ]/_}-results.json" ]]; then
+              critical=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "${image//[:\/ ]/_}-results.json" 2>/dev/null || echo "0")
+              high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "${image//[:\/ ]/_}-results.json" 2>/dev/null || echo "0")
+              
+              total_critical=$((total_critical + critical))
+              total_high=$((total_high + high))
+              
+              echo "  $image: $critical critical, $high high vulnerabilities"
+            fi
+          done
+          
+          echo "Container security scan summary:"
+          echo "  Total critical vulnerabilities: $total_critical"
+          echo "  Total high vulnerabilities: $total_high"
+          
+          # SECURITY: Store results for reporting
+          echo "CONTAINER_CRITICAL_VULNS=$total_critical" >> $GITHUB_ENV
+          echo "CONTAINER_HIGH_VULNS=$total_high" >> $GITHUB_ENV
+
+      # SECURITY: Docker security best practices audit
+      - name: Docker security best practices audit
+        run: |
+          echo "📋 Auditing Docker security best practices"
+          
+          security_score=100
+          issues_found=()
+          
+          for dockerfile in $(find . -name "Dockerfile*" -type f); do
+            echo "Auditing $dockerfile..."
+            
+            # SECURITY: Check for security best practices
+            if grep -q "^FROM.*:latest" "$dockerfile"; then
+              issues_found+=("Using 'latest' tag in $dockerfile")
+              security_score=$((security_score - 10))
+            fi
+            
+            if ! grep -q "^USER" "$dockerfile"; then
+              issues_found+=("No USER instruction in $dockerfile")
+              security_score=$((security_score - 15))
+            fi
+            
+            if grep -q "ADD http" "$dockerfile"; then
+              issues_found+=("Using ADD with HTTP URL in $dockerfile")
+              security_score=$((security_score - 20))
+            fi
+            
+            if grep -q "chmod 777" "$dockerfile"; then
+              issues_found+=("Overly permissive permissions in $dockerfile")
+              security_score=$((security_score - 25))
+            fi
+          done
+          
+          echo "Docker security audit results:"
+          echo "  Security score: $security_score/100"
+          echo "  Issues found: ${#issues_found[@]}"
+          
+          for issue in "${issues_found[@]}"; do
+            echo "  - $issue"
+          done
+          
+          if [[ $security_score -lt 80 ]]; then
+            echo "⚠️ Docker security score below threshold: $security_score/100"
+          else
+            echo "✅ Docker security score acceptable: $security_score/100"
+          fi
+
+  # SECURITY: Security baseline monitoring
+  security-baseline-monitoring:
+    name: Security Baseline Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [monitoring-init, continuous-secret-monitoring, dependency-vulnerability-monitoring, container-security-monitoring]
+    if: always() && fromJSON(needs.monitoring-init.outputs.scan-config).compliance == true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # SECURITY: Generate comprehensive security baseline
+      - name: Generate security baseline
+        id: baseline
+        run: |
+          echo "📊 Generating comprehensive security baseline"
+          
+          # SECURITY: Collect monitoring results
+          secrets_found="${{ needs.continuous-secret-monitoring.outputs.secrets-found || 'false' }}"
+          total_secrets="${{ needs.continuous-secret-monitoring.outputs.total-secrets || '0' }}"
+          total_vulns="${{ needs.dependency-vulnerability-monitoring.outputs.total-vulnerabilities || '0' }}"
+          critical_vulns="${{ needs.dependency-vulnerability-monitoring.outputs.critical-vulnerabilities || '0' }}"
+          container_critical="${{ env.CONTAINER_CRITICAL_VULNS || '0' }}"
+          container_high="${{ env.CONTAINER_HIGH_VULNS || '0' }}"
+          
+          # SECURITY: Calculate security score
+          security_score=100
+          
+          # SECURITY: Deduct points for security issues
+          security_score=$((security_score - (total_secrets * 10)))
+          security_score=$((security_score - (critical_vulns * 15)))
+          security_score=$((security_score - (total_vulns * 2)))
+          security_score=$((security_score - (container_critical * 20)))
+          security_score=$((security_score - (container_high * 5)))
+          
+          # SECURITY: Ensure score doesn't go below 0
+          if [[ $security_score -lt 0 ]]; then
+            security_score=0
+          fi
+          
+          # SECURITY: Determine security posture
+          security_posture="EXCELLENT"
+          if [[ $security_score -lt 95 ]]; then
+            security_posture="GOOD"
+          fi
+          if [[ $security_score -lt 85 ]]; then
+            security_posture="FAIR"
+          fi
+          if [[ $security_score -lt 70 ]]; then
+            security_posture="POOR"
+          fi
+          if [[ $security_score -lt 50 ]]; then
+            security_posture="CRITICAL"
+          fi
+          
+          echo "security-score=$security_score" >> $GITHUB_OUTPUT
+          echo "security-posture=$security_posture" >> $GITHUB_OUTPUT
+          
+          echo "Security Baseline Summary:"
+          echo "  Security Score: $security_score/100"
+          echo "  Security Posture: $security_posture"
+          echo "  Secrets Found: $total_secrets"
+          echo "  Critical Vulnerabilities: $critical_vulns"
+          echo "  Total Vulnerabilities: $total_vulns"
+          echo "  Container Critical: $container_critical"
+          echo "  Container High: $container_high"
+
+      # SECURITY: Store security baseline
+      - name: Store security baseline
+        run: |
+          echo "💾 Storing security baseline for trend analysis"
+          
+          # SECURITY: Create baseline record
+          baseline_record=$(cat <<EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "security_score": ${{ steps.baseline.outputs.security-score }},
+            "security_posture": "${{ steps.baseline.outputs.security-posture }}",
+            "secrets_found": ${{ needs.continuous-secret-monitoring.outputs.total-secrets || '0' }},
+            "vulnerabilities": {
+              "total": ${{ needs.dependency-vulnerability-monitoring.outputs.total-vulnerabilities || '0' }},
+              "critical": ${{ needs.dependency-vulnerability-monitoring.outputs.critical-vulnerabilities || '0' }},
+              "high": ${{ needs.dependency-vulnerability-monitoring.outputs.high-vulnerabilities || '0' }}
+            },
+            "containers": {
+              "critical": ${{ env.CONTAINER_CRITICAL_VULNS || '0' }},
+              "high": ${{ env.CONTAINER_HIGH_VULNS || '0' }}
+            }
+          }
+          EOF
+          )
+          
+          echo "$baseline_record" > security-baseline-$(date +%Y%m%d-%H%M%S).json
+          
+          echo "✅ Security baseline stored"
+
+  # SECURITY: Security alert and notification system
+  security-alerting:
+    name: Security Alerting
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [monitoring-init, continuous-secret-monitoring, dependency-vulnerability-monitoring, container-security-monitoring, security-baseline-monitoring]
+    if: always()
+    
+    steps:
+      - name: Determine alert severity
+        id: alert-config
+        run: |
+          echo "🚨 Determining alert severity"
+          
+          # SECURITY: Collect all findings
+          secrets_found="${{ needs.continuous-secret-monitoring.outputs.secrets-found || 'false' }}"
+          high_risk_secrets="${{ needs.continuous-secret-monitoring.outputs.high-risk-secrets || '0' }}"
+          critical_vulns="${{ needs.dependency-vulnerability-monitoring.outputs.critical-vulnerabilities || '0' }}"
+          security_score="${{ needs.security-baseline-monitoring.outputs.security-score || '100' }}"
+          security_posture="${{ needs.security-baseline-monitoring.outputs.security-posture || 'EXCELLENT' }}"
+          
+          # SECURITY: Determine alert severity
+          alert_severity="INFO"
+          should_alert="false"
+          
+          if [[ "$secrets_found" == "true" ]] && [[ $high_risk_secrets -gt 0 ]]; then
+            alert_severity="CRITICAL"
+            should_alert="true"
+          elif [[ $critical_vulns -gt 0 ]]; then
+            alert_severity="HIGH"
+            should_alert="true"
+          elif [[ $security_score -lt 70 ]]; then
+            alert_severity="MEDIUM"
+            should_alert="true"
+          elif [[ "${{ env.NOTIFY_SUCCESS }}" == "true" ]] && [[ "$security_posture" == "EXCELLENT" ]]; then
+            alert_severity="INFO"
+            should_alert="true"
+          fi
+          
+          echo "alert-severity=$alert_severity" >> $GITHUB_OUTPUT
+          echo "should-alert=$should_alert" >> $GITHUB_OUTPUT
+          
+          echo "Alert configuration:"
+          echo "  Alert severity: $alert_severity"
+          echo "  Should alert: $should_alert"
+          echo "  Security score: $security_score"
+          echo "  Security posture: $security_posture"
+
+      # SECURITY: Create GitHub issue for critical findings
+      - name: Create security issue
+        if: steps.alert-config.outputs.alert-severity == 'CRITICAL' || steps.alert-config.outputs.alert-severity == 'HIGH'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const severity = "${{ steps.alert-config.outputs.alert-severity }}";
+            const secrets_found = "${{ needs.continuous-secret-monitoring.outputs.total-secrets || '0' }}";
+            const critical_vulns = "${{ needs.dependency-vulnerability-monitoring.outputs.critical-vulnerabilities || '0' }}";
+            const security_score = "${{ needs.security-baseline-monitoring.outputs.security-score || '100' }}";
+            
+            const title = `🚨 ${severity} Security Alert - Score: ${security_score}/100`;
+            const body = `## Security Monitoring Alert
+            
+            **Severity**: ${severity}  
+            **Security Score**: ${security_score}/100  
+            **Timestamp**: ${new Date().toISOString()}  
+            **Commit**: ${{ github.sha }}  
+            **Workflow**: ${{ github.workflow }}  
+            
+            ### Findings Summary
+            
+            - **Secrets Detected**: ${secrets_found}
+            - **Critical Vulnerabilities**: ${critical_vulns}
+            - **Container Issues**: ${{ env.CONTAINER_CRITICAL_VULNS || '0' }} critical, ${{ env.CONTAINER_HIGH_VULNS || '0' }} high
+            
+            ### Required Actions
+            
+            ${severity === 'CRITICAL' ? 
+              '🚨 **IMMEDIATE ACTION REQUIRED**\n- Review and remediate all critical security findings\n- Rotate any exposed secrets immediately\n- Block deployments until issues are resolved' :
+              '⚠️ **ACTION REQUIRED**\n- Review security findings\n- Plan remediation for high-severity issues\n- Monitor for escalation'}
+            
+            ### Links
+            
+            - [Security Monitoring Workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [Security Documentation](https://github.com/${{ github.repository }}/blob/main/SECURITY.md)
+            
+            ---
+            *This issue was created automatically by the Security Monitoring workflow.*`;
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['security', `severity:${severity.toLowerCase()}`]
+            });
+
+      # SECURITY: Send Slack notification
+      - name: Send Slack notification
+        if: steps.alert-config.outputs.should-alert == 'true' && env.SLACK_WEBHOOK != ''
+        run: |
+          echo "📢 Sending Slack security notification"
+          
+          severity="${{ steps.alert-config.outputs.alert-severity }}"
+          security_score="${{ needs.security-baseline-monitoring.outputs.security-score || '100' }}"
+          
+          # SECURITY: Determine emoji and color based on severity
+          case "$severity" in
+            "CRITICAL") emoji="🚨"; color="#FF0000" ;;
+            "HIGH") emoji="⚠️"; color="#FF6600" ;;
+            "MEDIUM") emoji="🔍"; color="#FFAA00" ;;
+            "INFO") emoji="✅"; color="#00AA00" ;;
+            *) emoji="🔍"; color="#0066CC" ;;
+          esac
+          
+          # SECURITY: Send webhook notification
+          curl -X POST "${{ env.SLACK_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"$color\",
+                \"title\": \"$emoji Security Monitoring Alert\",
+                \"fields\": [
+                  {\"title\": \"Severity\", \"value\": \"$severity\", \"short\": true},
+                  {\"title\": \"Security Score\", \"value\": \"$security_score/100\", \"short\": true},
+                  {\"title\": \"Repository\", \"value\": \"${{ github.repository }}\", \"short\": true},
+                  {\"title\": \"Branch\", \"value\": \"${{ github.ref_name }}\", \"short\": true}
+                ],
+                \"actions\": [{
+                  \"type\": \"button\",
+                  \"text\": \"View Details\",
+                  \"url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                }]
+              }]
+            }"
+          
+          echo "✅ Slack notification sent"
+
+      # SECURITY: Generate final monitoring report
+      - name: Generate monitoring report
+        run: |
+          echo "📊 Generating final security monitoring report"
+          
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## 🛡️ Security Monitoring Report
+          
+          **Scan Type**: ${{ env.SCAN_TYPE }}  
+          **Alert Severity**: ${{ steps.alert-config.outputs.alert-severity }}  
+          **Security Score**: ${{ needs.security-baseline-monitoring.outputs.security-score || '100' }}/100  
+          **Security Posture**: ${{ needs.security-baseline-monitoring.outputs.security-posture || 'EXCELLENT' }}  
+          **Scan Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)  
+          
+          ### Monitoring Results
+          
+          | Security Area | Status | Findings | Severity |
+          |---------------|--------|----------|----------|
+          | Secret Detection | ${{ needs.continuous-secret-monitoring.result || 'skipped' }} | ${{ needs.continuous-secret-monitoring.outputs.total-secrets || '0' }} secrets | ${{ needs.continuous-secret-monitoring.outputs.high-risk-secrets != '0' && 'HIGH' || 'LOW' }} |
+          | Vulnerability Scanning | ${{ needs.dependency-vulnerability-monitoring.result || 'skipped' }} | ${{ needs.dependency-vulnerability-monitoring.outputs.critical-vulnerabilities || '0' }} critical, ${{ needs.dependency-vulnerability-monitoring.outputs.total-vulnerabilities || '0' }} total | ${{ needs.dependency-vulnerability-monitoring.outputs.critical-vulnerabilities != '0' && 'CRITICAL' || 'LOW' }} |
+          | Container Security | ${{ needs.container-security-monitoring.result || 'skipped' }} | ${{ env.CONTAINER_CRITICAL_VULNS || '0' }} critical, ${{ env.CONTAINER_HIGH_VULNS || '0' }} high | ${{ env.CONTAINER_CRITICAL_VULNS != '0' && 'CRITICAL' || 'LOW' }} |
+          
+          ### Security Trend Analysis
+          
+          - **Baseline Date**: ${{ needs.monitoring-init.outputs.baseline-date }}
+          - **Monitoring Frequency**: Daily (2 AM UTC)
+          - **Coverage**: ${{ env.SCAN_TYPE == 'full' && 'Full Security Stack' || 'Targeted Scanning' }}
+          
+          ### Notifications Sent
+          
+          ${{ steps.alert-config.outputs.should-alert == 'true' && '✅ Security team notified via configured channels' || 'ℹ️ No notifications required - security posture acceptable' }}
+          
+          ### Recommended Actions
+          
+          ${{ steps.alert-config.outputs.alert-severity == 'CRITICAL' && '🚨 **IMMEDIATE**: Address critical security findings immediately' || 
+             steps.alert-config.outputs.alert-severity == 'HIGH' && '⚠️ **URGENT**: Review and remediate high-severity issues within 24 hours' ||
+             steps.alert-config.outputs.alert-severity == 'MEDIUM' && '🔍 **REVIEW**: Plan remediation for medium-severity findings' ||
+             '✅ **MAINTAIN**: Continue current security practices' }}
+          
+          ---
+          *Next scheduled scan: $(date -d 'tomorrow 2:00' '+%Y-%m-%d %H:%M UTC')*
+          EOF

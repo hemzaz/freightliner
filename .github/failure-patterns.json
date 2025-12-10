@@ -1,0 +1,72 @@
+{
+  "patterns": {
+    "golangci_lint_schema": {
+      "pattern": "unknown configuration key.*colored-line-number",
+      "category": "configuration",
+      "severity": "high",
+      "description": "golangci-lint deprecated configuration option",
+      "auto_fix": true,
+      "recovery_action": "fix_golangci_config"
+    },
+    "docker_build_failure": {
+      "pattern": "(docker: command not found|Cannot connect to the Docker daemon)",
+      "category": "infrastructure",
+      "severity": "high",
+      "description": "Docker daemon or installation issues",
+      "auto_fix": false,
+      "recovery_action": "setup_docker"
+    },
+    "go_mod_tidy_required": {
+      "pattern": "go.mod file indicates go .* but maximum supported version is",
+      "category": "dependency",
+      "severity": "medium",
+      "description": "Go module version mismatch",
+      "auto_fix": true,
+      "recovery_action": "fix_go_mod"
+    },
+    "test_timeout": {
+      "pattern": "test timed out after .*",
+      "category": "performance",
+      "severity": "medium",
+      "description": "Test execution timeout",
+      "auto_fix": true,
+      "recovery_action": "optimize_test_timeouts"
+    },
+    "registry_connection_failure": {
+      "pattern": "connection refused.*registry",
+      "category": "network",
+      "severity": "high",
+      "description": "Container registry connection failure",
+      "auto_fix": true,
+      "recovery_action": "fix_registry_connection"
+    },
+    "memory_exhaustion": {
+      "pattern": "(out of memory|cannot allocate memory)",
+      "category": "resource",
+      "severity": "high",
+      "description": "Memory exhaustion during build/test",
+      "auto_fix": true,
+      "recovery_action": "optimize_memory_usage"
+    },
+    "disk_space_full": {
+      "pattern": "no space left on device",
+      "category": "resource",
+      "severity": "critical",
+      "description": "Disk space exhaustion",
+      "auto_fix": true,
+      "recovery_action": "cleanup_disk_space"
+    }
+  },
+  "recovery_strategies": {
+    "retry_with_backoff": {
+      "max_attempts": 3,
+      "backoff_multiplier": 2,
+      "initial_delay": 5
+    },
+    "resource_optimization": {
+      "memory_limit": "4Gi",
+      "cpu_limit": "2",
+      "timeout_multiplier": 1.5
+    }
+  }
+}

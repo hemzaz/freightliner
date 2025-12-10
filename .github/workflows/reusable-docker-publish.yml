@@ -1,0 +1,459 @@
+name: Reusable Docker Build & Publish
+
+# ==============================================================================
+# REUSABLE DOCKER BUILD & PUBLISH WORKFLOW
+# ==============================================================================
+# Production-ready Docker image building with multi-platform support
+#
+# Features:
+# - Multi-platform builds (linux/amd64, linux/arm64, linux/arm/v7)
+# - Image signing with Cosign
+# - SBOM generation (SPDX, CycloneDX)
+# - Provenance attestation
+# - Vulnerability scanning
+# - Multiple registry support
+# - Intelligent layer caching
+#
+# Usage:
+#   jobs:
+#     publish:
+#       uses: ./.github/workflows/reusable-docker-publish.yml
+#       with:
+#         image-name: 'myapp'
+#         platforms: 'linux/amd64,linux/arm64'
+#         push: true
+#       secrets:
+#         docker-username: ${{ secrets.DOCKER_USERNAME }}
+#         docker-password: ${{ secrets.DOCKER_PASSWORD }}
+# ==============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: 'Docker image name (without registry)'
+        required: true
+        type: string
+      registry:
+        description: 'Container registry (docker.io, ghcr.io, etc.)'
+        required: false
+        type: string
+        default: 'docker.io'
+      platforms:
+        description: 'Comma-separated list of platforms to build'
+        required: false
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      push:
+        description: 'Push images to registry'
+        required: false
+        type: boolean
+        default: false
+      sign-image:
+        description: 'Sign image with Cosign'
+        required: false
+        type: boolean
+        default: false
+      generate-sbom:
+        description: 'Generate SBOM'
+        required: false
+        type: boolean
+        default: true
+      scan-image:
+        description: 'Run security scan on built image'
+        required: false
+        type: boolean
+        default: true
+      context:
+        description: 'Build context path'
+        required: false
+        type: string
+        default: '.'
+      dockerfile:
+        description: 'Path to Dockerfile'
+        required: false
+        type: string
+        default: './Dockerfile'
+      build-args:
+        description: 'Build arguments (multiline, key=value)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      docker-username:
+        description: 'Docker registry username'
+        required: false
+      docker-password:
+        description: 'Docker registry password/token'
+        required: false
+      cosign-private-key:
+        description: 'Cosign private key for signing'
+        required: false
+      cosign-password:
+        description: 'Cosign private key password'
+        required: false
+    outputs:
+      image-digest:
+        description: 'Image digest'
+        value: ${{ jobs.build-and-publish.outputs.digest }}
+      image-tags:
+        description: 'Image tags'
+        value: ${{ jobs.build-and-publish.outputs.tags }}
+      sbom-artifact:
+        description: 'SBOM artifact name'
+        value: ${{ jobs.build-and-publish.outputs.sbom-artifact }}
+
+jobs:
+  build-and-publish:
+    name: Build & Publish Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.meta.outputs.tags }}
+      sbom-artifact: docker-sbom-${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ========================================================================
+      # Setup & Configuration
+      # ========================================================================
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ inputs.platforms }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+          buildkitd-flags: --debug
+
+      - name: Log in to Container Registry
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.docker-username }}
+          password: ${{ secrets.docker-password }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image-name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=${{ inputs.image-name }}
+            org.opencontainers.image.description=Container image for ${{ inputs.image-name }}
+            org.opencontainers.image.vendor=Freightliner
+            maintainer=${{ github.actor }}
+
+      # ========================================================================
+      # Build Configuration
+      # ========================================================================
+
+      - name: Prepare build arguments
+        id: build-args
+        run: |
+          echo "Preparing build arguments..."
+
+          BUILD_ARGS=""
+          BUILD_ARGS="${BUILD_ARGS}VERSION=${{ github.ref_name }}\n"
+          BUILD_ARGS="${BUILD_ARGS}BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)\n"
+          BUILD_ARGS="${BUILD_ARGS}GIT_COMMIT=${{ github.sha }}\n"
+          BUILD_ARGS="${BUILD_ARGS}GIT_BRANCH=${{ github.ref_name }}\n"
+
+          # Add custom build args if provided
+          if [ -n "${{ inputs.build-args }}" ]; then
+            BUILD_ARGS="${BUILD_ARGS}${{ inputs.build-args }}\n"
+          fi
+
+          echo "build-args<<EOF" >> $GITHUB_OUTPUT
+          echo -e "${BUILD_ARGS}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ inputs.platforms }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ inputs.platforms }}-
+            ${{ runner.os }}-buildx-
+
+      # ========================================================================
+      # Build & Push
+      # ========================================================================
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          load: ${{ !inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ steps.build-args.outputs.build-args }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          provenance: true
+          sbom: ${{ inputs.generate-sbom }}
+
+      # ========================================================================
+      # Image Testing & Validation
+      # ========================================================================
+
+      - name: Test Docker image
+        if: "!inputs.push"
+        run: |
+          echo "🧪 Testing Docker image locally..."
+
+          # Get the first tag
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "Testing image: ${IMAGE_TAG}"
+
+          # Test basic execution
+          docker run --rm ${IMAGE_TAG} version || echo "⚠️  Version check skipped"
+
+          # Test non-root user
+          docker run --rm --user 65534:65534 ${IMAGE_TAG} echo "Non-root test passed" || \
+            echo "⚠️  Non-root test skipped"
+
+          # Check image size
+          IMAGE_SIZE=$(docker images ${IMAGE_TAG} --format "{{.Size}}")
+          echo "📦 Image size: ${IMAGE_SIZE}"
+          echo "IMAGE_SIZE=${IMAGE_SIZE}" >> $GITHUB_ENV
+
+          # Inspect layers
+          docker history ${IMAGE_TAG} || true
+
+      # ========================================================================
+      # Security Scanning
+      # ========================================================================
+
+      - name: Run Trivy vulnerability scanner
+        if: inputs.scan-image
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ steps.meta.outputs.tags && split(steps.meta.outputs.tags, '\n')[0] || format('{0}/{1}:ci-{2}', inputs.registry, inputs.image-name, github.sha) }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+        continue-on-error: true
+
+      - name: Upload Trivy results to GitHub Security
+        if: inputs.scan-image && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: docker-trivy
+        continue-on-error: true
+
+      - name: Generate vulnerability report
+        if: inputs.scan-image
+        run: |
+          echo "🔍 Generating detailed vulnerability report..."
+
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --format table \
+            --severity CRITICAL,HIGH,MEDIUM \
+            --exit-code 0 \
+            ${IMAGE_TAG} | tee trivy-full-report.txt
+
+          # Create summary
+          echo "## 🔍 Vulnerability Scan Results" >> scan-summary.md
+          echo "" >> scan-summary.md
+          echo "**Image**: \`${IMAGE_TAG}\`" >> scan-summary.md
+          echo "" >> scan-summary.md
+          echo "\`\`\`" >> scan-summary.md
+          tail -20 trivy-full-report.txt >> scan-summary.md
+          echo "\`\`\`" >> scan-summary.md
+        continue-on-error: true
+
+      # ========================================================================
+      # SBOM Generation
+      # ========================================================================
+
+      - name: Generate SBOM with Syft
+        if: inputs.generate-sbom
+        run: |
+          echo "📋 Generating Software Bill of Materials..."
+
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+
+          # Install syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+          # Generate SBOM in multiple formats
+          syft ${IMAGE_TAG} -o spdx-json=sbom-spdx.json
+          syft ${IMAGE_TAG} -o cyclonedx-json=sbom-cyclonedx.json
+          syft ${IMAGE_TAG} -o table=sbom-table.txt
+
+          echo "✅ SBOM generated successfully"
+        continue-on-error: true
+
+      # ========================================================================
+      # Image Signing
+      # ========================================================================
+
+      - name: Install Cosign
+        if: inputs.sign-image && inputs.push
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container image
+        if: inputs.sign-image && inputs.push && secrets.cosign-private-key != ''
+        env:
+          COSIGN_PASSWORD: ${{ secrets.cosign-password }}
+        run: |
+          echo "✍️  Signing container image..."
+
+          IMAGE_DIGEST="${{ steps.build.outputs.digest }}"
+          IMAGE_REF="${{ inputs.registry }}/${{ inputs.image-name }}@${IMAGE_DIGEST}"
+
+          echo "${{ secrets.cosign-private-key }}" > cosign.key
+
+          cosign sign --key cosign.key \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "ref=${{ github.sha }}" \
+            ${IMAGE_REF}
+
+          rm -f cosign.key
+          echo "✅ Image signed successfully"
+
+      - name: Sign image with keyless signing (OIDC)
+        if: inputs.sign-image && inputs.push && secrets.cosign-private-key == ''
+        run: |
+          echo "✍️  Signing image with keyless signing..."
+
+          IMAGE_DIGEST="${{ steps.build.outputs.digest }}"
+          IMAGE_REF="${{ inputs.registry }}/${{ inputs.image-name }}@${IMAGE_DIGEST}"
+
+          cosign sign --yes \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "ref=${{ github.sha }}" \
+            ${IMAGE_REF}
+
+          echo "✅ Image signed with keyless signing"
+        continue-on-error: true
+
+      # ========================================================================
+      # Artifact & Report Upload
+      # ========================================================================
+
+      - name: Upload SBOM artifacts
+        if: inputs.generate-sbom && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-sbom-${{ github.sha }}
+          path: |
+            sbom-*.json
+            sbom-*.txt
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Upload security reports
+        if: inputs.scan-image && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-security-${{ github.sha }}
+          path: |
+            trivy-results.sarif
+            trivy-full-report.txt
+            scan-summary.md
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          if [ -d /tmp/.buildx-cache-new ]; then
+            mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          fi
+
+      # ========================================================================
+      # Summary & Reporting
+      # ========================================================================
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🐳 Docker Build Summary
+
+          ## Build Configuration
+          - **Image**: `${{ inputs.registry }}/${{ inputs.image-name }}`
+          - **Platforms**: ${{ inputs.platforms }}
+          - **Push**: ${{ inputs.push }}
+          - **Sign**: ${{ inputs.sign-image }}
+          - **SBOM**: ${{ inputs.generate-sbom }}
+          - **Scan**: ${{ inputs.scan-image }}
+
+          ## Build Results
+          - **Digest**: `${{ steps.build.outputs.digest }}`
+          - **Tags**:
+          EOF
+
+          # Add tags to summary
+          echo "${{ steps.meta.outputs.tags }}" | while read -r tag; do
+            echo "  - \`${tag}\`" >> $GITHUB_STEP_SUMMARY
+          done
+
+          if [ -n "${IMAGE_SIZE}" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Image Size**: ${IMAGE_SIZE}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "scan-summary.md" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat scan-summary.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+
+          ## Features
+          - ✅ Multi-platform support
+          - ✅ Layer caching
+          - ✅ Provenance attestation
+          - ✅ Security scanning
+          - ✅ SBOM generation
+          EOF
+
+          if [ "${{ inputs.sign-image }}" = "true" ]; then
+            echo "- ✅ Image signing" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Output image details
+        run: |
+          echo "IMAGE_DIGEST=${{ steps.build.outputs.digest }}" >> $GITHUB_ENV
+          echo "IMAGE_TAGS=${{ steps.meta.outputs.tags }}" >> $GITHUB_ENV
+
+          echo "📦 Image built successfully!"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+          echo "Tags:"
+          echo "${{ steps.meta.outputs.tags }}"

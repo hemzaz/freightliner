@@ -1,0 +1,75 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: freightliner-production
+
+namespace: freightliner-prod
+
+# Base configuration
+resources:
+  - ../../base
+  - ingress.yaml
+  - servicemonitor.yaml
+  - vpa.yaml
+
+# Namespace suffix for production
+nameSuffix: -prod
+
+# Common labels for production environment
+commonLabels:
+  environment: production
+  app.kubernetes.io/instance: production
+
+# Common annotations
+commonAnnotations:
+  managed-by: kustomize
+  environment: production
+
+# Patches for production environment
+patches:
+  - path: deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: freightliner
+  - path: service-patch.yaml
+    target:
+      kind: Service
+      name: freightliner
+  - path: hpa-patch.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: freightliner
+  - path: pdb-patch.yaml
+    target:
+      kind: PodDisruptionBudget
+      name: freightliner
+  - path: networkpolicy-patch.yaml
+    target:
+      kind: NetworkPolicy
+      name: freightliner
+
+# Configuration patches
+configMapGenerator:
+  - name: freightliner-config
+    behavior: merge
+    files:
+      - config.yaml
+
+# Secret patches (use external secret management in production)
+secretGenerator:
+  - name: freightliner-secrets
+    behavior: merge
+    envs:
+      - secrets.env
+
+# Image configuration for production
+images:
+  - name: freightliner
+    newName: gcr.io/company-prod/freightliner
+    newTag: v1.0.0
+
+# Replicas for production
+replicas:
+  - name: freightliner
+    count: 5

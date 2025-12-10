@@ -1,0 +1,302 @@
+name: Reusable Security Scan Workflow
+
+# ==============================================================================
+# REUSABLE SECURITY SCANNING WORKFLOW
+# ==============================================================================
+# Comprehensive security scanning that can be called from any workflow
+#
+# Features:
+# - Gosec static analysis
+# - govulncheck for known vulnerabilities
+# - Trivy for container scanning
+# - SARIF reports for GitHub Security
+# - Configurable severity thresholds
+#
+# Usage:
+#   jobs:
+#     security:
+#       uses: ./.github/workflows/reusable-security-scan.yml
+#       with:
+#         go-version: '1.25.4'
+#         scan-type: 'code'
+# ==============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: true
+        type: string
+      scan-type:
+        description: 'Type of scan: code, container, or both'
+        required: false
+        type: string
+        default: 'code'
+      container-image:
+        description: 'Container image to scan (required if scan-type includes container)'
+        required: false
+        type: string
+        default: ''
+      severity-threshold:
+        description: 'Minimum severity to report: LOW, MEDIUM, HIGH, CRITICAL'
+        required: false
+        type: string
+        default: 'MEDIUM'
+      fail-on-severity:
+        description: 'Fail build on findings at or above this severity'
+        required: false
+        type: string
+        default: 'CRITICAL'
+    outputs:
+      vulnerabilities-found:
+        description: 'Whether vulnerabilities were found'
+        value: ${{ jobs.scan.outputs.vulnerabilities-found }}
+      scan-results-artifact:
+        description: 'Name of the artifact containing scan results'
+        value: ${{ jobs.scan.outputs.artifact-name }}
+
+jobs:
+  scan:
+    name: Security Scan (${{ inputs.scan-type }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      vulnerabilities-found: ${{ steps.check.outputs.vulnerabilities-found }}
+      artifact-name: security-scan-${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        if: inputs.scan-type == 'code' || inputs.scan-type == 'both'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      # ========================================================================
+      # Code Security Scanning
+      # ========================================================================
+
+      - name: Run Gosec Security Scanner
+        if: inputs.scan-type == 'code' || inputs.scan-type == 'both'
+        id: gosec
+        run: |
+          echo "🔍 Running Gosec security scanner..."
+
+          # Install gosec
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+          # Run gosec with SARIF output
+          gosec -fmt=sarif -out=gosec-results.sarif -severity=${{ inputs.severity-threshold }} ./... || {
+            EXIT_CODE=$?
+            echo "gosec-exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+            if [ "${EXIT_CODE}" -eq 1 ]; then
+              echo "⚠️  Gosec found security issues"
+            fi
+          }
+
+          # Also generate human-readable report
+          gosec -fmt=text -out=gosec-report.txt ./... || true
+        continue-on-error: true
+
+      - name: Upload Gosec SARIF to GitHub Security
+        if: (inputs.scan-type == 'code' || inputs.scan-type == 'both') && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+        continue-on-error: true
+
+      - name: Run govulncheck
+        if: inputs.scan-type == 'code' || inputs.scan-type == 'both'
+        id: govulncheck
+        run: |
+          echo "🔍 Running govulncheck for known vulnerabilities..."
+
+          # Install govulncheck
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+          # Run govulncheck
+          govulncheck -json ./... > govulncheck-results.json || {
+            EXIT_CODE=$?
+            echo "govulncheck-exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+            if [ "${EXIT_CODE}" -ne 0 ]; then
+              echo "⚠️  govulncheck found vulnerabilities"
+            fi
+          }
+
+          # Generate human-readable report
+          govulncheck ./... | tee govulncheck-report.txt || true
+        continue-on-error: true
+
+      - name: Run Nancy dependency scanner
+        if: inputs.scan-type == 'code' || inputs.scan-type == 'both'
+        run: |
+          echo "🔍 Checking dependencies for known vulnerabilities..."
+
+          # Generate dependency list
+          go list -json -deps ./... > deps.json || true
+
+          # Install and run nancy
+          curl -L https://github.com/sonatype-nexus-community/nancy/releases/latest/download/nancy-linux-amd64 -o nancy
+          chmod +x nancy
+
+          ./nancy sleuth -o nancy-report.txt < deps.json || {
+            echo "⚠️  Nancy found vulnerable dependencies"
+          }
+        continue-on-error: true
+
+      # ========================================================================
+      # Container Security Scanning
+      # ========================================================================
+
+      - name: Run Trivy container scanner
+        if: (inputs.scan-type == 'container' || inputs.scan-type == 'both') && inputs.container-image != ''
+        id: trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ inputs.container-image }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: ${{ inputs.severity-threshold }},HIGH,CRITICAL
+          exit-code: '0'
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: (inputs.scan-type == 'container' || inputs.scan-type == 'both') && inputs.container-image != '' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+        continue-on-error: true
+
+      - name: Generate Trivy detailed report
+        if: (inputs.scan-type == 'container' || inputs.scan-type == 'both') && inputs.container-image != ''
+        run: |
+          echo "🔍 Generating detailed Trivy report..."
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $(pwd):/workspace \
+            aquasec/trivy:latest image \
+            --format table \
+            --severity ${{ inputs.severity-threshold }},HIGH,CRITICAL \
+            ${{ inputs.container-image }} | tee trivy-report.txt
+        continue-on-error: true
+
+      # ========================================================================
+      # Results Analysis & Reporting
+      # ========================================================================
+
+      - name: Analyze scan results
+        id: check
+        run: |
+          echo "📊 Analyzing security scan results..."
+
+          VULNERABILITIES_FOUND="false"
+          CRITICAL_FOUND="false"
+
+          # Check gosec results
+          if [ -f "gosec-report.txt" ]; then
+            if grep -q "Issues : \[" gosec-report.txt; then
+              VULNERABILITIES_FOUND="true"
+              if grep -qi "Severity: HIGH" gosec-report.txt || grep -qi "Severity: CRITICAL" gosec-report.txt; then
+                CRITICAL_FOUND="true"
+              fi
+            fi
+          fi
+
+          # Check govulncheck results
+          if [ -f "govulncheck-results.json" ]; then
+            VULN_COUNT=$(jq '[.Vulns // []] | length' govulncheck-results.json 2>/dev/null || echo "0")
+            if [ "${VULN_COUNT}" -gt 0 ]; then
+              VULNERABILITIES_FOUND="true"
+              echo "⚠️  Found ${VULN_COUNT} vulnerabilities in dependencies"
+            fi
+          fi
+
+          # Check trivy results
+          if [ -f "trivy-report.txt" ]; then
+            if grep -q "Total:" trivy-report.txt; then
+              TOTAL_VULNS=$(grep "Total:" trivy-report.txt | tail -1)
+              echo "Docker scan: ${TOTAL_VULNS}"
+              if echo "${TOTAL_VULNS}" | grep -qv "Total: 0"; then
+                VULNERABILITIES_FOUND="true"
+              fi
+            fi
+          fi
+
+          echo "vulnerabilities-found=${VULNERABILITIES_FOUND}" >> $GITHUB_OUTPUT
+          echo "critical-found=${CRITICAL_FOUND}" >> $GITHUB_OUTPUT
+
+          # Create summary
+          cat > scan-summary.md << 'EOF'
+          # 🔒 Security Scan Results
+
+          ## Scan Configuration
+          - **Scan Type**: ${{ inputs.scan-type }}
+          - **Severity Threshold**: ${{ inputs.severity-threshold }}
+          - **Fail on Severity**: ${{ inputs.fail-on-severity }}
+
+          ## Tools Used
+          EOF
+
+          if [ "${{ inputs.scan-type }}" = "code" ] || [ "${{ inputs.scan-type }}" = "both" ]; then
+            cat >> scan-summary.md << 'EOF'
+          - ✅ Gosec (static analysis)
+          - ✅ govulncheck (known vulnerabilities)
+          - ✅ Nancy (dependency check)
+          EOF
+          fi
+
+          if [ "${{ inputs.scan-type }}" = "container" ] || [ "${{ inputs.scan-type }}" = "both" ]; then
+            cat >> scan-summary.md << 'EOF'
+          - ✅ Trivy (container scanning)
+          EOF
+          fi
+
+          cat >> scan-summary.md << EOF
+
+          ## Results
+          - **Vulnerabilities Found**: ${VULNERABILITIES_FOUND}
+          - **Critical Issues**: ${CRITICAL_FOUND}
+
+          ## Details
+          See attached artifacts for detailed reports.
+          EOF
+
+          cat scan-summary.md
+
+      - name: Generate workflow summary
+        if: always()
+        run: |
+          if [ -f "scan-summary.md" ]; then
+            cat scan-summary.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload security scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-${{ github.sha }}
+          path: |
+            gosec-results.sarif
+            gosec-report.txt
+            govulncheck-results.json
+            govulncheck-report.txt
+            nancy-report.txt
+            trivy-results.sarif
+            trivy-report.txt
+            scan-summary.md
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Check if build should fail
+        if: steps.check.outputs.critical-found == 'true' && inputs.fail-on-severity != 'NONE'
+        run: |
+          echo "❌ Critical security issues found!"
+          echo "Failing build as per fail-on-severity: ${{ inputs.fail-on-severity }}"
+          exit 1

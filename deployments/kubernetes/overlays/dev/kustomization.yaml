@@ -1,0 +1,59 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: freightliner-dev
+
+namespace: freightliner-dev
+
+# Base configuration
+resources:
+  - ../../base
+
+# Namespace suffix for dev
+nameSuffix: -dev
+
+# Common labels for dev environment
+commonLabels:
+  environment: dev
+  app.kubernetes.io/instance: dev
+
+# Patches for dev environment
+patches:
+  - path: deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: freightliner
+  - path: service-patch.yaml
+    target:
+      kind: Service
+      name: freightliner
+  - path: hpa-patch.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: freightliner
+
+# Configuration patches
+configMapGenerator:
+  - name: freightliner-config
+    behavior: merge
+    files:
+      - config.yaml
+
+# Secret patches (still use external secret management)
+secretGenerator:
+  - name: freightliner-secrets
+    behavior: merge
+    envs:
+      - secrets.env
+
+# Image tag override
+images:
+  - name: freightliner
+    newName: freightliner
+    newTag: dev-latest
+
+# Replicas for dev
+replicas:
+  - name: freightliner
+    count: 1

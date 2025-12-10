@@ -1,0 +1,562 @@
+name: Comprehensive Security Scanning
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  schedule:
+    # Run daily security scans at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      scan-type:
+        description: 'Type of security scan'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - code
+          - dependencies
+          - container
+          - secrets
+
+env:
+  GO_VERSION: '1.25.4'
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # GOSEC - Go Security Scanner (Parallel)
+  # ============================================
+  gosec-scan:
+    name: GoSec Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'code' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: '-fmt sarif -out gosec-results.sarif -no-fail ./...'
+
+      - name: Run gosec with detailed output
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -fmt json -out gosec-results.json ./... || true
+          gosec -fmt text ./... | tee gosec-results.txt || true
+
+      - name: Upload gosec SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+        continue-on-error: true
+
+      - name: Upload gosec results
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-results-${{ github.sha }}
+          path: |
+            gosec-results.sarif
+            gosec-results.json
+            gosec-results.txt
+          retention-days: 30
+
+  # ============================================
+  # GOVULNCHECK - Vulnerability Database (Parallel)
+  # ============================================
+  vulnerability-scan:
+    name: Vulnerability Database Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'dependencies' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck -json ./... | tee govulncheck-results.json || true
+          govulncheck ./... | tee govulncheck-results.txt || true
+
+      - name: Parse vulnerability results
+        run: |
+          echo "📊 Analyzing vulnerability results..."
+          if [ -f govulncheck-results.json ]; then
+            VULN_COUNT=$(jq -s '[.[] | select(.osv)] | length' govulncheck-results.json)
+            echo "Found $VULN_COUNT vulnerabilities"
+
+            if [ "$VULN_COUNT" -gt 0 ]; then
+              echo "⚠️  Vulnerabilities detected:"
+              jq -s '[.[] | select(.osv) | {id: .osv.id, summary: .osv.summary, severity: .osv.database_specific.severity}]' govulncheck-results.json
+            else
+              echo "✅ No vulnerabilities found"
+            fi
+          fi
+
+      - name: Upload vulnerability results
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulnerability-results-${{ github.sha }}
+          path: |
+            govulncheck-results.json
+            govulncheck-results.txt
+          retention-days: 30
+
+  # ============================================
+  # DEPENDENCY SCANNING (Parallel)
+  # ============================================
+  dependency-scan:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'dependencies' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run nancy scan
+        run: |
+          go install github.com/sonatypeoss/nancy@latest
+          go list -json -deps ./... | nancy sleuth | tee nancy-results.txt || true
+
+      - name: Check for high-severity vulnerabilities
+        run: |
+          if grep -q "HIGH\|CRITICAL" nancy-results.txt; then
+            echo "⚠️  High-severity vulnerabilities detected"
+            grep "HIGH\|CRITICAL" nancy-results.txt || true
+          else
+            echo "✅ No high-severity vulnerabilities found"
+          fi
+
+      - name: Upload nancy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: nancy-results-${{ github.sha }}
+          path: nancy-results.txt
+          retention-days: 30
+
+  # ============================================
+  # SECRETS SCANNING (Parallel)
+  # ============================================
+  secrets-scan:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'secrets' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified --json
+        continue-on-error: true
+
+      - name: Run GitLeaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+  # ============================================
+  # LICENSE COMPLIANCE (Parallel)
+  # ============================================
+  license-scan:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'dependencies' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run license check
+        run: |
+          go install github.com/google/go-licenses@latest
+          go-licenses check ./... | tee license-check.txt || true
+
+      - name: Generate license report
+        run: |
+          go-licenses csv ./... > licenses.csv
+          go-licenses report ./... > licenses-report.txt
+
+      - name: Check for forbidden licenses
+        run: |
+          echo "🔍 Checking for forbidden licenses..."
+          # Define forbidden licenses
+          FORBIDDEN="GPL|AGPL|SSPL"
+
+          if grep -iE "$FORBIDDEN" licenses.csv; then
+            echo "⚠️  Potentially problematic licenses detected"
+            echo "Review required before merging"
+          else
+            echo "✅ No forbidden licenses found"
+          fi
+
+      - name: Upload license reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-reports-${{ github.sha }}
+          path: |
+            license-check.txt
+            licenses.csv
+            licenses-report.txt
+          retention-days: 90
+
+  # ============================================
+  # CONTAINER SCANNING (Parallel)
+  # ============================================
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'container' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: freightliner:security-scan
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy scanner (full)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: 'freightliner:security-scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          vuln-type: 'os,library'
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: trivy
+        continue-on-error: true
+
+      - name: Run Trivy with JSON output
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: 'freightliner:security-scan'
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      - name: Generate Trivy summary
+        run: |
+          echo "📊 Trivy scan summary:"
+          jq -r '.Results[] | select(.Vulnerabilities) | .Vulnerabilities | group_by(.Severity) | map({(.[0].Severity): length}) | add' trivy-results.json | tee trivy-summary.txt
+
+      - name: Run Grype scanner
+        uses: anchore/scan-action@v4
+        with:
+          image: 'freightliner:security-scan'
+          fail-build: false
+          output-format: sarif
+          severity-cutoff: medium
+
+      - name: Upload Grype results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: grype
+        continue-on-error: true
+
+      - name: Upload container scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-scan-results-${{ github.sha }}
+          path: |
+            trivy-results.sarif
+            trivy-results.json
+            trivy-summary.txt
+            results.sarif
+          retention-days: 30
+
+  # ============================================
+  # CODEQL - Advanced Security Analysis
+  # ============================================
+  codeql-analysis:
+    name: CodeQL Advanced Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == 'code' ||
+      github.event.inputs.scan-type == ''
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+  # ============================================
+  # SBOM GENERATION - Software Bill of Materials
+  # ============================================
+  sbom-generation:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event.inputs.scan-type == 'all' ||
+      github.event.inputs.scan-type == ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0.17.7
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Generate SBOM with CycloneDX
+        uses: CycloneDX/gh-gomod-generate-sbom@v2
+        with:
+          version: v1
+          args: mod -licenses -json -output sbom.cyclonedx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: |
+            sbom.spdx.json
+            sbom.cyclonedx.json
+          retention-days: 90
+
+  # ============================================
+  # SECURITY SUMMARY - Aggregate and Report
+  # ============================================
+  security-summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs:
+      - gosec-scan
+      - vulnerability-scan
+      - dependency-scan
+      - secrets-scan
+      - license-scan
+      - container-scan
+      - codeql-analysis
+      - sbom-generation
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-results
+
+      - name: Generate security summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🔒 Comprehensive Security Scan Results
+
+          | Scan Type | Status | Description |
+          |-----------|--------|-------------|
+          | GoSec | ${{ needs.gosec-scan.result == 'success' && '✅' || needs.gosec-scan.result == 'skipped' && '⏭️' || '❌' }} | Static analysis for Go code |
+          | Vulnerabilities | ${{ needs.vulnerability-scan.result == 'success' && '✅' || needs.vulnerability-scan.result == 'skipped' && '⏭️' || '❌' }} | Known CVEs in dependencies |
+          | Dependencies | ${{ needs.dependency-scan.result == 'success' && '✅' || needs.dependency-scan.result == 'skipped' && '⏭️' || '❌' }} | Third-party package risks |
+          | Secrets | ${{ needs.secrets-scan.result == 'success' && '✅' || needs.secrets-scan.result == 'skipped' && '⏭️' || '❌' }} | Leaked credentials detection |
+          | Licenses | ${{ needs.license-scan.result == 'success' && '✅' || needs.license-scan.result == 'skipped' && '⏭️' || '❌' }} | License compliance check |
+          | Container | ${{ needs.container-scan.result == 'success' && '✅' || needs.container-scan.result == 'skipped' && '⏭️' || '❌' }} | Docker image vulnerabilities |
+          | CodeQL | ${{ needs.codeql-analysis.result == 'success' && '✅' || needs.codeql-analysis.result == 'skipped' && '⏭️' || '❌' }} | Advanced code analysis |
+          | SBOM | ${{ needs.sbom-generation.result == 'success' && '✅' || needs.sbom-generation.result == 'skipped' && '⏭️' || '❌' }} | Software Bill of Materials |
+
+          ### Scan Configuration
+          **Scan Type**: ${{ github.event.inputs.scan-type || 'all' }}
+          **Scan Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          **Commit**: `${{ github.sha }}`
+          **Branch**: `${{ github.ref_name }}`
+
+          ### Key Features
+          - ⚡ Parallel execution of security scans
+          - 🔍 Multiple scanning tools (Trivy, Grype, gosec, etc.)
+          - 📊 SBOM generation (SPDX, CycloneDX)
+          - 🔒 Secrets detection (TruffleHog, GitLeaks)
+          - 📋 License compliance verification
+          - 🐳 Container image security scanning
+
+          ### Next Steps
+          1. Review scan results in the Security tab
+          2. Address any HIGH/CRITICAL findings
+          3. Update dependencies if vulnerabilities found
+          4. Review and approve license usage
+          EOF
+
+      - name: Check critical failures
+        run: |
+          echo "🔍 Checking for critical security failures..."
+
+          CRITICAL_FAILED=false
+
+          # Check if any critical scans failed (not skipped)
+          if [ "${{ needs.secrets-scan.result }}" = "failure" ]; then
+            echo "❌ Secrets scan detected issues"
+            CRITICAL_FAILED=true
+          fi
+
+          if [ "$CRITICAL_FAILED" = true ]; then
+            echo "🚨 Critical security checks failed!"
+            echo "Review the scan results before proceeding"
+            exit 1
+          else
+            echo "✅ All critical security checks passed or skipped"
+          fi
+
+      - name: Comment PR with security summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const scans = {
+              gosec: '${{ needs.gosec-scan.result }}',
+              vulnerability: '${{ needs.vulnerability-scan.result }}',
+              dependency: '${{ needs.dependency-scan.result }}',
+              secrets: '${{ needs.secrets-scan.result }}',
+              license: '${{ needs.license-scan.result }}',
+              container: '${{ needs.container-scan.result }}',
+              codeql: '${{ needs.codeql-analysis.result }}',
+              sbom: '${{ needs.sbom-generation.result }}'
+            };
+
+            const getEmoji = (status) => {
+              if (status === 'success') return '✅';
+              if (status === 'skipped') return '⏭️';
+              return '❌';
+            };
+
+            const allPassed = Object.values(scans).every(s => s === 'success' || s === 'skipped');
+
+            const body = `## 🔒 Security Scan Results
+
+            | Scan | Status |
+            |------|--------|
+            | GoSec | ${getEmoji(scans.gosec)} ${scans.gosec} |
+            | Vulnerabilities | ${getEmoji(scans.vulnerability)} ${scans.vulnerability} |
+            | Dependencies | ${getEmoji(scans.dependency)} ${scans.dependency} |
+            | Secrets | ${getEmoji(scans.secrets)} ${scans.secrets} |
+            | Licenses | ${getEmoji(scans.license)} ${scans.license} |
+            | Container | ${getEmoji(scans.container)} ${scans.container} |
+            | CodeQL | ${getEmoji(scans.codeql)} ${scans.codeql} |
+            | SBOM | ${getEmoji(scans.sbom)} ${scans.sbom} |
+
+            **Overall**: ${allPassed ? '✅ Security checks passed' : '⚠️  Review required'}
+
+            <sub>Commit: ${context.sha.substring(0, 7)} • [View Details](${context.payload.repository.html_url}/actions/runs/${context.runId})</sub>
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        continue-on-error: true

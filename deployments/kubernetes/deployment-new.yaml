@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: freightliner
+  labels:
+    app: freightliner
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: freightliner
+  template:
+    metadata:
+      labels:
+        app: freightliner
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "2112"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: freightliner
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+
+      containers:
+        - name: freightliner
+          image: ghcr.io/hemzaz/freightliner:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 2112
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["/app/freightliner", "--version"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5

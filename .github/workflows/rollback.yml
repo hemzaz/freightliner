@@ -1,0 +1,489 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      deployment-type:
+        description: 'Deployment type to rollback'
+        required: true
+        type: choice
+        options:
+          - kubernetes
+          - helm
+        default: 'helm'
+      revision:
+        description: 'Revision to rollback to (leave empty for previous)'
+        required: false
+        type: string
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  KUBECTL_VERSION: 'v1.28.0'
+  HELM_VERSION: 'v3.13.0'
+
+jobs:
+  # =============================================================================
+  # VALIDATE - Pre-rollback validation
+  # =============================================================================
+  validate:
+    name: Validate Rollback Request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      can-rollback: ${{ steps.check.outputs.can-rollback }}
+      target-revision: ${{ steps.check.outputs.target-revision }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Install Helm
+          curl -fsSL https://get.helm.sh/helm-${{ env.HELM_VERSION }}-linux-amd64.tar.gz | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/
+
+      # NOTE: Configure cloud provider authentication
+      # See kubernetes-deploy.yml for examples
+
+      - name: Check rollback eligibility
+        id: check
+        run: |
+          echo "🔍 Checking rollback eligibility for ${{ inputs.environment }}..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+          CAN_ROLLBACK="false"
+          TARGET_REVISION=""
+
+          if [ "${{ inputs.deployment-type }}" = "helm" ]; then
+            RELEASE_NAME="freightliner-${{ inputs.environment }}"
+
+            # Check if release exists
+            if helm list -n $NAMESPACE | grep -q $RELEASE_NAME; then
+              echo "✅ Helm release found: $RELEASE_NAME"
+
+              # Get release history
+              echo "📜 Release history:"
+              helm history $RELEASE_NAME -n $NAMESPACE
+
+              # Determine target revision
+              if [ -n "${{ inputs.revision }}" ]; then
+                TARGET_REVISION="${{ inputs.revision }}"
+              else
+                # Get previous revision
+                CURRENT_REV=$(helm history $RELEASE_NAME -n $NAMESPACE --max 1 -o json | jq -r '.[0].revision')
+                TARGET_REVISION=$((CURRENT_REV - 1))
+              fi
+
+              # Validate target revision exists
+              if helm history $RELEASE_NAME -n $NAMESPACE | grep -q " $TARGET_REVISION "; then
+                echo "✅ Target revision $TARGET_REVISION is valid"
+                CAN_ROLLBACK="true"
+              else
+                echo "❌ Target revision $TARGET_REVISION not found"
+                CAN_ROLLBACK="false"
+              fi
+            else
+              echo "❌ Helm release not found: $RELEASE_NAME"
+            fi
+
+          elif [ "${{ inputs.deployment-type }}" = "kubernetes" ]; then
+            DEPLOYMENT_NAME="freightliner"
+
+            # Check if deployment exists
+            if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &>/dev/null; then
+              echo "✅ Kubernetes deployment found: $DEPLOYMENT_NAME"
+
+              # Get rollout history
+              echo "📜 Rollout history:"
+              kubectl rollout history deployment/$DEPLOYMENT_NAME -n $NAMESPACE
+
+              # Check if there's a previous revision
+              REVISION_COUNT=$(kubectl rollout history deployment/$DEPLOYMENT_NAME -n $NAMESPACE | grep -c "REVISION" || echo "0")
+
+              if [ "$REVISION_COUNT" -gt 1 ]; then
+                echo "✅ Previous revisions available for rollback"
+                CAN_ROLLBACK="true"
+
+                if [ -n "${{ inputs.revision }}" ]; then
+                  TARGET_REVISION="${{ inputs.revision }}"
+                else
+                  TARGET_REVISION="previous"
+                fi
+              else
+                echo "❌ No previous revisions available"
+                CAN_ROLLBACK="false"
+              fi
+            else
+              echo "❌ Kubernetes deployment not found: $DEPLOYMENT_NAME"
+            fi
+          fi
+
+          echo "can-rollback=$CAN_ROLLBACK" >> $GITHUB_OUTPUT
+          echo "target-revision=$TARGET_REVISION" >> $GITHUB_OUTPUT
+
+          if [ "$CAN_ROLLBACK" = "false" ]; then
+            echo "❌ Rollback not possible"
+            exit 1
+          fi
+
+  # =============================================================================
+  # BACKUP - Backup current state before rollback
+  # =============================================================================
+  backup:
+    name: Backup Current State
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 10
+
+    steps:
+      - name: Install tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          curl -fsSL https://get.helm.sh/helm-${{ env.HELM_VERSION }}-linux-amd64.tar.gz | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/
+
+      # NOTE: Configure cloud provider authentication
+
+      - name: Backup current state
+        run: |
+          echo "💾 Backing up current state..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          mkdir -p backups
+
+          if [ "${{ inputs.deployment-type }}" = "helm" ]; then
+            RELEASE_NAME="freightliner-${{ inputs.environment }}"
+
+            # Backup Helm values
+            helm get values $RELEASE_NAME -n $NAMESPACE > backups/helm-values-$TIMESTAMP.yaml
+
+            # Backup Helm manifests
+            helm get manifest $RELEASE_NAME -n $NAMESPACE > backups/helm-manifest-$TIMESTAMP.yaml
+
+            # Backup Helm metadata
+            helm history $RELEASE_NAME -n $NAMESPACE > backups/helm-history-$TIMESTAMP.txt
+
+          elif [ "${{ inputs.deployment-type }}" = "kubernetes" ]; then
+            # Backup deployment
+            kubectl get deployment freightliner -n $NAMESPACE -o yaml > backups/deployment-$TIMESTAMP.yaml
+
+            # Backup services
+            kubectl get svc -n $NAMESPACE -o yaml > backups/services-$TIMESTAMP.yaml
+
+            # Backup configmaps
+            kubectl get configmaps -n $NAMESPACE -o yaml > backups/configmaps-$TIMESTAMP.yaml
+
+            # Backup rollout history
+            kubectl rollout history deployment/freightliner -n $NAMESPACE > backups/rollout-history-$TIMESTAMP.txt
+          fi
+
+          echo "✅ Backup completed"
+
+      - name: Upload backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-rollback-backup-${{ inputs.environment }}
+          path: backups/
+          retention-days: 90
+
+  # =============================================================================
+  # ROLLBACK - Execute rollback
+  # =============================================================================
+  rollback:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    needs: [validate, backup]
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+
+    steps:
+      - name: Install tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          curl -fsSL https://get.helm.sh/helm-${{ env.HELM_VERSION }}-linux-amd64.tar.gz | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/
+
+      # NOTE: Configure cloud provider authentication
+
+      - name: Execute rollback
+        run: |
+          echo "🔄 Executing rollback for ${{ inputs.environment }}..."
+          echo "Reason: ${{ inputs.reason }}"
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+
+          if [ "${{ inputs.deployment-type }}" = "helm" ]; then
+            RELEASE_NAME="freightliner-${{ inputs.environment }}"
+            TARGET_REV="${{ needs.validate.outputs.target-revision }}"
+
+            echo "Rolling back Helm release to revision $TARGET_REV..."
+
+            if [ "$TARGET_REV" = "previous" ]; then
+              helm rollback $RELEASE_NAME -n $NAMESPACE --wait --timeout 5m
+            else
+              helm rollback $RELEASE_NAME $TARGET_REV -n $NAMESPACE --wait --timeout 5m
+            fi
+
+          elif [ "${{ inputs.deployment-type }}" = "kubernetes" ]; then
+            DEPLOYMENT_NAME="freightliner"
+            TARGET_REV="${{ needs.validate.outputs.target-revision }}"
+
+            echo "Rolling back Kubernetes deployment..."
+
+            if [ "$TARGET_REV" = "previous" ]; then
+              kubectl rollout undo deployment/$DEPLOYMENT_NAME -n $NAMESPACE
+            else
+              kubectl rollout undo deployment/$DEPLOYMENT_NAME --to-revision=$TARGET_REV -n $NAMESPACE
+            fi
+
+            # Wait for rollout to complete
+            kubectl rollout status deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=5m
+          fi
+
+          echo "✅ Rollback executed"
+
+      - name: Verify rollback
+        run: |
+          echo "🔍 Verifying rollback..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+
+          if [ "${{ inputs.deployment-type }}" = "helm" ]; then
+            RELEASE_NAME="freightliner-${{ inputs.environment }}"
+
+            # Check release status
+            helm status $RELEASE_NAME -n $NAMESPACE
+
+            # Verify revision
+            CURRENT_REV=$(helm history $RELEASE_NAME -n $NAMESPACE --max 1 -o json | jq -r '.[0].revision')
+            echo "Current revision: $CURRENT_REV"
+
+          elif [ "${{ inputs.deployment-type }}" = "kubernetes" ]; then
+            # Check deployment status
+            kubectl get deployment freightliner -n $NAMESPACE
+
+            # Check pods
+            kubectl get pods -n $NAMESPACE -l app=freightliner
+          fi
+
+      - name: Run health checks
+        run: |
+          echo "🏥 Running health checks..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+
+          # Wait for pods to be ready
+          kubectl wait --for=condition=ready pod \
+            -l app=freightliner \
+            -n $NAMESPACE \
+            --timeout=5m || true
+
+          # Get pod status
+          kubectl get pods -n $NAMESPACE -l app=freightliner
+
+          # Check pod logs for errors
+          echo "Checking recent logs for errors..."
+          kubectl logs -n $NAMESPACE -l app=freightliner --tail=50 | grep -i error || echo "No errors found in recent logs"
+
+  # =============================================================================
+  # VERIFY - Post-rollback verification
+  # =============================================================================
+  verify:
+    name: Verify Rollback Success
+    runs-on: ubuntu-latest
+    needs: rollback
+    timeout-minutes: 15
+
+    steps:
+      - name: Install tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      # NOTE: Configure cloud provider authentication
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running post-rollback smoke tests..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+
+          # Port forward to test service
+          kubectl port-forward -n $NAMESPACE svc/freightliner 8080:80 &
+          PF_PID=$!
+
+          sleep 5
+
+          # Test health endpoint
+          if curl -f http://localhost:8080/healthz; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            kill $PF_PID
+            exit 1
+          fi
+
+          # Test readiness endpoint
+          if curl -f http://localhost:8080/ready; then
+            echo "✅ Readiness check passed"
+          else
+            echo "❌ Readiness check failed"
+            kill $PF_PID
+            exit 1
+          fi
+
+          kill $PF_PID
+
+          echo "✅ All smoke tests passed"
+
+      - name: Monitor for stability
+        run: |
+          echo "⏱️ Monitoring for stability (2 minutes)..."
+
+          NAMESPACE="freightliner-${{ inputs.environment }}"
+
+          for i in {1..12}; do
+            sleep 10
+            READY_PODS=$(kubectl get pods -n $NAMESPACE -l app=freightliner --field-selector=status.phase=Running --no-headers | wc -l)
+            echo "Iteration $i: $READY_PODS pods running"
+
+            if [ "$READY_PODS" -lt 1 ]; then
+              echo "❌ Pod count dropped during monitoring"
+              exit 1
+            fi
+          done
+
+          echo "✅ System stable for 2 minutes"
+
+  # =============================================================================
+  # NOTIFY - Rollback notification
+  # =============================================================================
+  notify:
+    name: Notify Rollback Status
+    runs-on: ubuntu-latest
+    needs: [validate, rollback, verify]
+    if: always()
+
+    steps:
+      - name: Generate rollback summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🔄 Rollback Execution Report
+
+          ### Rollback Details
+          - **Environment**: ${{ inputs.environment }}
+          - **Deployment Type**: ${{ inputs.deployment-type }}
+          - **Target Revision**: ${{ needs.validate.outputs.target-revision }}
+          - **Reason**: ${{ inputs.reason }}
+          - **Status**: ${{ needs.rollback.result }}
+          - **Verification**: ${{ needs.verify.result }}
+
+          ### Execution Summary
+          - **Triggered by**: ${{ github.actor }}
+          - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+          - **Workflow Run**: ${{ github.run_number }}
+
+          ### Post-Rollback Actions
+          $(if [[ "${{ needs.rollback.result }}" == "success" ]]; then
+            echo "✅ Rollback completed successfully"
+            echo ""
+            echo "**Next Steps:**"
+            echo "1. Monitor application logs and metrics"
+            echo "2. Verify business functionality"
+            echo "3. Investigate root cause of original issue"
+            echo "4. Plan fix and redeployment"
+          else
+            echo "❌ Rollback failed"
+            echo ""
+            echo "**Immediate Actions Required:**"
+            echo "1. Review rollback logs for errors"
+            echo "2. Check cluster health and resources"
+            echo "3. Consider manual intervention"
+            echo "4. Escalate to on-call team if needed"
+          fi)
+
+          ### Backup Location
+          Pre-rollback backup available in workflow artifacts: \`pre-rollback-backup-${{ inputs.environment }}\`
+
+          ### Recovery Commands
+          ```bash
+          # Check current state
+          kubectl get all -n freightliner-${{ inputs.environment }}
+
+          # View recent events
+          kubectl get events -n freightliner-${{ inputs.environment }} --sort-by='.lastTimestamp'
+
+          # Check logs
+          kubectl logs -n freightliner-${{ inputs.environment }} -l app=freightliner --tail=100
+          ```
+          EOF
+
+      - name: Create incident issue
+        if: needs.rollback.result != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Rollback Failed: ${{ inputs.environment }} - ${{ inputs.reason }}`,
+              body: `## Rollback Failure Report
+
+              **Environment:** ${{ inputs.environment }}
+              **Deployment Type:** ${{ inputs.deployment-type }}
+              **Reason:** ${{ inputs.reason }}
+              **Triggered by:** ${{ github.actor }}
+              **Workflow:** [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+              ### Status
+              - Rollback: ${{ needs.rollback.result }}
+              - Verification: ${{ needs.verify.result }}
+
+              ### Immediate Actions Required
+              1. Review workflow logs for error details
+              2. Check cluster health and pod status
+              3. Consider manual rollback procedures
+              4. Escalate to on-call team
+
+              ### Resources
+              - Backup artifacts available in workflow run
+              - Pre-rollback state preserved
+              - Full rollback logs attached
+
+              cc: @oncall-team
+              `,
+              labels: ['incident', 'rollback-failed', 'production']
+            });
+
+            console.log(`Created issue #${issue.data.number}`);
+        continue-on-error: true

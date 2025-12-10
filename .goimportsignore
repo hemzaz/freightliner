@@ -1,0 +1,11 @@
+# .goimportsignore file for Freightliner project
+# This file contains patterns for paths that should be ignored by goimports
+
+# Ignore generated files
+**/generated/
+**/gen/
+*_gen.go
+*_generated.go
+
+# Ignore vendor directory if not using modules
+/vendor/

@@ -1,0 +1,137 @@
+# Prometheus alerting rules for Freightliner
+groups:
+  - name: freightliner.rules
+    rules:
+      # High error rate
+      - alert: FreightlinerHighErrorRate
+        expr: rate(freightliner_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: freightliner
+        annotations:
+          summary: "Freightliner is experiencing high error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+      # High memory usage
+      - alert: FreightlinerHighMemoryUsage
+        expr: (freightliner_memory_usage_bytes / freightliner_memory_limit_bytes) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: freightliner
+        annotations:
+          summary: "Freightliner is using high memory"
+          description: "Memory usage is {{ $value | humanizePercentage }} of the limit"
+
+      # High CPU usage
+      - alert: FreightlinerHighCPUUsage
+        expr: rate(freightliner_cpu_usage_seconds_total[5m]) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+          service: freightliner
+        annotations:
+          summary: "Freightliner is using high CPU"
+          description: "CPU usage is {{ $value }} cores over the last 5 minutes"
+
+      # Replication failures
+      - alert: FreightlinerReplicationFailures
+        expr: increase(freightliner_replication_failures_total[10m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          service: freightliner
+        annotations:
+          summary: "Multiple replication failures detected"
+          description: "{{ $value }} replication failures in the last 10 minutes"
+
+      # Service down
+      - alert: FreightlinerDown
+        expr: up{job="freightliner"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: freightliner
+        annotations:
+          summary: "Freightliner service is down"
+          description: "Freightliner service has been down for more than 1 minute"
+
+      # Long replication duration
+      - alert: FreightlinerLongReplicationDuration
+        expr: freightliner_replication_duration_seconds > 3600
+        for: 5m
+        labels:
+          severity: warning
+          service: freightliner
+        annotations:
+          summary: "Replication taking too long"
+          description: "Replication has been running for {{ $value | humanizeDuration }}"
+
+      # Queue depth too high
+      - alert: FreightlinerHighQueueDepth
+        expr: freightliner_queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: freightliner
+        annotations:
+          summary: "Replication queue depth is high"
+          description: "Queue depth is {{ $value }} items"
+
+      # Connection pool exhausted
+      - alert: FreightlinerConnectionPoolExhausted
+        expr: freightliner_connection_pool_active / freightliner_connection_pool_max > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          service: freightliner
+        annotations:
+          summary: "Connection pool nearly exhausted"
+          description: "{{ $value | humanizePercentage }} of connection pool is in use"
+
+  - name: infrastructure.rules
+    rules:
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute"
+
+      # High Redis memory usage
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # System load high
+      - alert: HighSystemLoad
+        expr: node_load1 > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "System load is high"
+          description: "System load is {{ $value }}"
+
+      # Disk space low
+      - alert: LowDiskSpace
+        expr: (node_filesystem_free_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "Disk space is low"
+          description: "Disk space is {{ $value | humanizePercentage }} full"
