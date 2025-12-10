@@ -227,7 +227,13 @@ func TestGHCR_ManifestRetrieval(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, testTag) }()
+	manifest, err := func() (*interfaces.Manifest, error) {
+		repo, err := client.GetRepository(ctx, testRepo)
+		if err != nil {
+			return nil, err
+		}
+		return repo.GetManifest(ctx, testTag)
+	}()
 	require.NoError(t, err)
 	require.NotNil(t, manifest)
 
@@ -257,7 +263,13 @@ func TestGHCR_LayerDownload(t *testing.T) {
 	defer cancel()
 
 	// Get manifest first
-	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, testTag) }()
+	manifest, err := func() (*interfaces.Manifest, error) {
+		repo, err := client.GetRepository(ctx, testRepo)
+		if err != nil {
+			return nil, err
+		}
+		return repo.GetManifest(ctx, testTag)
+	}()
 	require.NoError(t, err)
 	require.Greater(t, len(manifest.Layers), 0)
 
@@ -300,7 +312,13 @@ func TestGHCR_PackagePublishing(t *testing.T) {
 	sourceTag := "latest"
 
 	// Get manifest from a source (would typically be another registry)
-	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, sourceRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, sourceTag) }()
+	manifest, err := func() (*interfaces.Manifest, error) {
+		repo, err := client.GetRepository(ctx, sourceRepo)
+		if err != nil {
+			return nil, err
+		}
+		return repo.GetManifest(ctx, sourceTag)
+	}()
 	if err != nil {
 		t.Skip("Cannot access source image for publishing test")
 	}
@@ -409,7 +427,13 @@ func TestGHCR_MultiArchSupport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, testTag) }()
+	manifest, err := func() (*interfaces.Manifest, error) {
+		repo, err := client.GetRepository(ctx, testRepo)
+		if err != nil {
+			return nil, err
+		}
+		return repo.GetManifest(ctx, testTag)
+	}()
 	require.NoError(t, err)
 
 	// Check if it's a manifest list
@@ -543,7 +567,13 @@ func TestGHCR_ErrorHandling(t *testing.T) {
 				if testRepo == "" {
 					return nil // Skip if not configured
 				}
-				_, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, "invalid-tag-xyz") }()
+				_, err := func() (*interfaces.Manifest, error) {
+					repo, err := client.GetRepository(ctx, testRepo)
+					if err != nil {
+						return nil, err
+					}
+					return repo.GetManifest(ctx, "invalid-tag-xyz")
+				}()
 				return err
 			},
 			wantErr: true,
