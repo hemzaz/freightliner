@@ -33,6 +33,18 @@ func createExtendedTestClient() (*Client, *MockECRServiceExt) {
 func TestRepositoryExtended_ListTagsWithPagination(t *testing.T) {
 	client, mockService := createExtendedTestClient()
 
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
+
 	// First page
 	mockService.On("ListImages", mock.Anything, mock.MatchedBy(func(input *awsecr.ListImagesInput) bool {
 		return input.NextToken == nil
@@ -71,6 +83,18 @@ func TestRepositoryExtended_ListTagsWithPagination(t *testing.T) {
 func TestRepositoryExtended_DeleteManifestSuccess(t *testing.T) {
 	client, mockService := createExtendedTestClient()
 
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
+
 	digest := "sha256:abc123"
 	mockService.On("BatchGetImage", mock.Anything, mock.Anything, mock.Anything).
 		Return(&awsecr.BatchGetImageOutput{
@@ -97,7 +121,19 @@ func TestRepositoryExtended_DeleteManifestSuccess(t *testing.T) {
 }
 
 func TestRepositoryExtended_GetImageReferenceDigest(t *testing.T) {
-	client, _ := createExtendedTestClient()
+	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	ctx := context.Background()
 	repo, err := client.GetRepository(ctx, "test-repo")
@@ -112,7 +148,19 @@ func TestRepositoryExtended_GetImageReferenceDigest(t *testing.T) {
 }
 
 func TestRepositoryExtended_GetRemoteOptions(t *testing.T) {
-	client, _ := createExtendedTestClient()
+	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	ctx := context.Background()
 	repo, err := client.GetRepository(ctx, "test-repo")
@@ -295,7 +343,19 @@ func TestBytes2Reader(t *testing.T) {
 }
 
 func TestRepositoryExtended_PutManifestValidation(t *testing.T) {
-	client, _ := createExtendedTestClient()
+	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	ctx := context.Background()
 	repo, err := client.GetRepository(ctx, "test-repo")
@@ -316,7 +376,19 @@ func TestRepositoryExtended_PutManifestValidation(t *testing.T) {
 }
 
 func TestRepositoryExtended_GetLayerReaderValidation(t *testing.T) {
-	client, _ := createExtendedTestClient()
+	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	ctx := context.Background()
 	repo, err := client.GetRepository(ctx, "test-repo")
@@ -330,6 +402,18 @@ func TestRepositoryExtended_GetLayerReaderValidation(t *testing.T) {
 
 func TestRepositoryExtended_DeleteManifestImageNotFound(t *testing.T) {
 	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	mockService.On("BatchGetImage", mock.Anything, mock.Anything, mock.Anything).
 		Return(&awsecr.BatchGetImageOutput{
@@ -347,6 +431,18 @@ func TestRepositoryExtended_DeleteManifestImageNotFound(t *testing.T) {
 
 func TestRepositoryExtended_DeleteManifestNilDigest(t *testing.T) {
 	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	mockService.On("BatchGetImage", mock.Anything, mock.Anything, mock.Anything).
 		Return(&awsecr.BatchGetImageOutput{
@@ -370,7 +466,19 @@ func TestRepositoryExtended_DeleteManifestNilDigest(t *testing.T) {
 }
 
 func TestRepositoryExtended_PutImageValidation(t *testing.T) {
-	client, _ := createExtendedTestClient()
+	client, mockService := createExtendedTestClient()
+
+	// Mock DescribeRepositories (called by GetRepository)
+	repoArn := "arn:aws:ecr:us-west-2:123456789012:repository/test-repo"
+	mockService.On("DescribeRepositories", mock.Anything, mock.Anything, mock.Anything).
+		Return(&awsecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryArn:  &repoArn,
+					RepositoryName: aws.String("test-repo"),
+				},
+			},
+		}, nil).Once()
 
 	ctx := context.Background()
 	repoInterface, err := client.GetRepository(ctx, "test-repo")

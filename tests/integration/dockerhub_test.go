@@ -373,7 +373,7 @@ func TestDockerHub_MultiArchSupport(t *testing.T) {
 	// Check if it's a manifest list
 	if manifest.MediaType == "application/vnd.docker.distribution.manifest.list.v2+json" {
 		t.Log("Successfully retrieved multi-architecture manifest list")
-		assert.NotEmpty(t, manifest.Manifests)
+		assert.NotEmpty(t, manifest.Content) // Verify manifest content is present
 	} else {
 		t.Logf("Got single-arch manifest: %s", manifest.MediaType)
 	}

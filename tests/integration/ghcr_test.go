@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package integration
 
 import (
@@ -9,6 +12,7 @@ import (
 	"freightliner/pkg/client/ghcr"
 	"freightliner/pkg/config"
 	"freightliner/pkg/helper/log"
+	"freightliner/pkg/interfaces"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,7 +100,7 @@ func TestGHCR_Authentication(t *testing.T) {
 				// May succeed in creating client but fail on operations
 				if err == nil {
 					ctx := context.Background()
-					_, err = client.ListRepositories(ctx)
+					_, err = client.ListRepositories(ctx, "")
 				}
 				assert.Error(t, err)
 				return
@@ -122,7 +126,7 @@ func TestGHCR_RepositoryListing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 	assert.NotNil(t, repos)
 
@@ -153,7 +157,7 @@ func TestGHCR_OrganizationPackages(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 
 	// Filter by organization
@@ -186,10 +190,16 @@ func TestGHCR_TagListing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	tags, err := client.ListTags(ctx, testRepo)
+	repo, err := client.GetRepository(ctx, testRepo)
 	if err != nil {
 		t.Logf("Repository %s may not be accessible, error: %v", testRepo, err)
 		t.Skip("Test repository not available")
+	}
+
+	tags, err := repo.ListTags(ctx)
+	if err != nil {
+		t.Logf("Failed to list tags for %s, error: %v", testRepo, err)
+		t.Skip("Could not list tags")
 	}
 
 	require.NoError(t, err)
@@ -217,7 +227,7 @@ func TestGHCR_ManifestRetrieval(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	manifest, err := client.GetManifest(ctx, testRepo, testTag)
+	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, testTag) }()
 	require.NoError(t, err)
 	require.NotNil(t, manifest)
 
@@ -247,7 +257,7 @@ func TestGHCR_LayerDownload(t *testing.T) {
 	defer cancel()
 
 	// Get manifest first
-	manifest, err := client.GetManifest(ctx, testRepo, testTag)
+	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, testTag) }()
 	require.NoError(t, err)
 	require.Greater(t, len(manifest.Layers), 0)
 
@@ -290,7 +300,7 @@ func TestGHCR_PackagePublishing(t *testing.T) {
 	sourceTag := "latest"
 
 	// Get manifest from a source (would typically be another registry)
-	manifest, err := client.GetManifest(ctx, sourceRepo, sourceTag)
+	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, sourceRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, sourceTag) }()
 	if err != nil {
 		t.Skip("Cannot access source image for publishing test")
 	}
@@ -399,7 +409,7 @@ func TestGHCR_MultiArchSupport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	manifest, err := client.GetManifest(ctx, testRepo, testTag)
+	manifest, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, testTag) }()
 	require.NoError(t, err)
 
 	// Check if it's a manifest list
@@ -482,7 +492,7 @@ func TestGHCR_RateLimiting(t *testing.T) {
 	errorCount := 0
 
 	for i := 0; i < 100; i++ {
-		_, err := client.ListRepositories(ctx)
+		_, err := client.ListRepositories(ctx, "")
 		if err != nil {
 			errorCount++
 		} else {
@@ -517,7 +527,11 @@ func TestGHCR_ErrorHandling(t *testing.T) {
 		{
 			name: "Non-existent package",
 			operation: func() error {
-				_, err := client.ListTags(ctx, "nonexistent/package-xyz-12345")
+				repo, err := client.GetRepository(ctx, "nonexistent/package-xyz-12345")
+				if err != nil {
+					return err
+				}
+				_, err = repo.ListTags(ctx)
 				return err
 			},
 			wantErr: true,
@@ -529,7 +543,7 @@ func TestGHCR_ErrorHandling(t *testing.T) {
 				if testRepo == "" {
 					return nil // Skip if not configured
 				}
-				_, err := client.GetManifest(ctx, testRepo, "invalid-tag-xyz")
+				_, err := func() (*interfaces.Manifest, error) { repo, err := client.GetRepository(ctx, testRepo); if err != nil { return nil, err }; return repo.GetManifest(ctx, "invalid-tag-xyz") }()
 				return err
 			},
 			wantErr: true,
@@ -584,7 +598,7 @@ func TestGHCR_RetryLogic(t *testing.T) {
 	defer cancel()
 
 	// Test that operations succeed with retries
-	_, err = client.ListRepositories(ctx)
+	_, err = client.ListRepositories(ctx, "")
 	assert.NoError(t, err)
 }
 
@@ -629,7 +643,7 @@ func BenchmarkGHCR_Operations(b *testing.B) {
 
 	b.Run("ListRepositories", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _ = client.ListRepositories(ctx)
+			_, _ = client.ListRepositories(ctx, "")
 		}
 	})
 
@@ -637,7 +651,10 @@ func BenchmarkGHCR_Operations(b *testing.B) {
 	if testRepo != "" {
 		b.Run("ListTags", func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, _ = client.ListTags(ctx, testRepo)
+				repo, _ := client.GetRepository(ctx, testRepo)
+				if repo != nil {
+					_, _ = repo.ListTags(ctx)
+				}
 			}
 		})
 	}

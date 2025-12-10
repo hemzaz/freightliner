@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package integration
 
 import (
@@ -105,7 +108,7 @@ func TestHarbor_Authentication(t *testing.T) {
 				// May succeed in creating client but fail on operations
 				if err == nil {
 					ctx := context.Background()
-					_, err = client.ListRepositories(ctx)
+					_, err = client.ListRepositories(ctx, "")
 				}
 				assert.Error(t, err)
 				return
@@ -132,7 +135,7 @@ func TestHarbor_ProjectManagement(t *testing.T) {
 	defer cancel()
 
 	// List repositories (should include project names)
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 	assert.NotNil(t, repos)
 
@@ -220,7 +223,7 @@ func TestHarbor_Webhooks(t *testing.T) {
 	defer cancel()
 
 	// Perform operations that would trigger webhooks
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 
 	if len(repos) > 0 {
@@ -296,7 +299,7 @@ func TestHarbor_QuotaManagement(t *testing.T) {
 
 	// Test that operations respect quota limits
 	// Note: Actual quota validation would require Harbor API extension
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 
 	t.Logf("Current repository count: %d", len(repos))
@@ -347,7 +350,7 @@ func TestHarbor_RateLimiting(t *testing.T) {
 	errorCount := 0
 
 	for i := 0; i < 100; i++ {
-		_, err := client.ListRepositories(ctx)
+		_, err := client.ListRepositories(ctx, "")
 		if err != nil {
 			errorCount++
 		} else {
@@ -466,7 +469,7 @@ func BenchmarkHarbor_Operations(b *testing.B) {
 
 	b.Run("ListRepositories", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _ = client.ListRepositories(ctx)
+			_, _ = client.ListRepositories(ctx, "")
 		}
 	})
 

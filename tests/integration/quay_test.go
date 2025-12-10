@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package integration
 
 import (
@@ -107,7 +110,7 @@ func TestQuay_Authentication(t *testing.T) {
 				// May succeed in creating client but fail on operations
 				if err == nil {
 					ctx := context.Background()
-					_, err = client.ListRepositories(ctx)
+					_, err = client.ListRepositories(ctx, "")
 				}
 				assert.Error(t, err)
 				return
@@ -133,7 +136,7 @@ func TestQuay_RepositoryListing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 	assert.NotNil(t, repos)
 
@@ -164,7 +167,7 @@ func TestQuay_OrganizationRepositories(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	repos, err := client.ListRepositories(ctx)
+	repos, err := client.ListRepositories(ctx, "")
 	require.NoError(t, err)
 
 	// Filter repos by organization
@@ -370,7 +373,7 @@ func TestQuay_RateLimiting(t *testing.T) {
 	rateLimited := 0
 
 	for i := 0; i < 100; i++ {
-		_, err := client.ListRepositories(ctx)
+		_, err := client.ListRepositories(ctx, "")
 		if err != nil {
 			errorCount++
 			if err.Error() == "rate limited" || err.Error() == "429" {
@@ -470,7 +473,7 @@ func TestQuay_RetryLogic(t *testing.T) {
 	defer cancel()
 
 	// Test that operations succeed with retries
-	_, err = client.ListRepositories(ctx)
+	_, err = client.ListRepositories(ctx, "")
 	assert.NoError(t, err)
 }
 
@@ -544,7 +547,7 @@ func BenchmarkQuay_Operations(b *testing.B) {
 
 	b.Run("ListRepositories", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, _ = client.ListRepositories(ctx)
+			_, _ = client.ListRepositories(ctx, "")
 		}
 	})
 

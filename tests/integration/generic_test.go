@@ -82,7 +82,7 @@ func TestGeneric_RegistryCompatibility(t *testing.T) {
 			defer cancel()
 
 			// Try to list repositories (may not work for all registries without auth)
-			_, err = client.ListRepositories(ctx)
+			_, err = client.ListRepositories(ctx, "")
 			if err != nil {
 				t.Logf("ListRepositories not available or requires auth for %s: %v", reg.name, err)
 			}
