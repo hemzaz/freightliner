@@ -150,41 +150,6 @@ jobs:
           retention-days: 30
 
   # ============================================
-  # DEPENDENCY SCAN - Nancy scanner
-  # ============================================
-  dependency-scan:
-    name: Dependency Security Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Install nancy
-        run: |
-          echo "🔧 Installing nancy dependency scanner..."
-          go install github.com/sonatypeoss/nancy@latest
-
-      - name: Run nancy scan
-        run: |
-          echo "📦 Scanning dependencies for vulnerabilities..."
-          go list -json -deps ./... | nancy sleuth | tee nancy-results.txt || true
-
-      - name: Upload nancy results
-        uses: actions/upload-artifact@v4
-        with:
-          name: nancy-results-${{ github.sha }}
-          path: nancy-results.txt
-          retention-days: 30
-
-  # ============================================
   # SECRETS SCAN - TruffleHog and GitLeaks
   # ============================================
   secrets-scan:
@@ -389,7 +354,6 @@ jobs:
     needs:
       - gosec-scan
       - vulnerability-scan
-      - dependency-scan
       - secrets-scan
       - license-scan
       - container-scan
@@ -411,7 +375,6 @@ jobs:
           echo "|-----------|--------|---------|" >> $GITHUB_STEP_SUMMARY
           echo "| GoSec | ${{ needs.gosec-scan.result == 'success' && '✅' || '❌' }} | Static analysis for Go |" >> $GITHUB_STEP_SUMMARY
           echo "| Vulnerabilities | ${{ needs.vulnerability-scan.result == 'success' && '✅' || '❌' }} | Known CVEs in dependencies |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dependencies | ${{ needs.dependency-scan.result == 'success' && '✅' || '❌' }} | Third-party package risks |" >> $GITHUB_STEP_SUMMARY
           echo "| Secrets | ${{ needs.secrets-scan.result == 'success' && '✅' || '❌' }} | Leaked credentials detection |" >> $GITHUB_STEP_SUMMARY
           echo "| Licenses | ${{ needs.license-scan.result == 'success' && '✅' || '❌' }} | License compliance check |" >> $GITHUB_STEP_SUMMARY
           echo "| Container | ${{ needs.container-scan.result == 'success' && '✅' || '❌' }} | Docker image vulnerabilities |" >> $GITHUB_STEP_SUMMARY

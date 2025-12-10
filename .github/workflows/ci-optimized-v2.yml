@@ -346,14 +346,6 @@ jobs:
             image=moby/buildkit:latest
             network=host
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
       - name: Build Docker image (amd64)
         uses: docker/build-push-action@v6
         with:
@@ -361,8 +353,8 @@ jobs:
           platforms: linux/amd64
           push: false
           tags: freightliner:ci-${{ github.sha }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           load: true
           build-args: |
             VERSION=${{ github.sha }}
@@ -400,11 +392,6 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
         continue-on-error: true
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Upload image size artifact
         uses: actions/upload-artifact@v4

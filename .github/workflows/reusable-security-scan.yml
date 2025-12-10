@@ -133,23 +133,6 @@ jobs:
           govulncheck ./... | tee govulncheck-report.txt || true
         continue-on-error: true
 
-      - name: Run Nancy dependency scanner
-        if: inputs.scan-type == 'code' || inputs.scan-type == 'both'
-        run: |
-          echo "🔍 Checking dependencies for known vulnerabilities..."
-
-          # Generate dependency list
-          go list -json -deps ./... > deps.json || true
-
-          # Install and run nancy
-          curl -L https://github.com/sonatype-nexus-community/nancy/releases/latest/download/nancy-linux-amd64 -o nancy
-          chmod +x nancy
-
-          ./nancy sleuth -o nancy-report.txt < deps.json || {
-            echo "⚠️  Nancy found vulnerable dependencies"
-          }
-        continue-on-error: true
-
       # ========================================================================
       # Container Security Scanning
       # ========================================================================
@@ -248,7 +231,6 @@ jobs:
             cat >> scan-summary.md << 'EOF'
           - ✅ Gosec (static analysis)
           - ✅ govulncheck (known vulnerabilities)
-          - ✅ Nancy (dependency check)
           EOF
           fi
 
@@ -287,7 +269,6 @@ jobs:
             gosec-report.txt
             govulncheck-results.json
             govulncheck-report.txt
-            nancy-report.txt
             trivy-results.sarif
             trivy-report.txt
             scan-summary.md

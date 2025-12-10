@@ -206,7 +206,7 @@ jobs:
           docker run --rm --user 1001:1001 freightliner:final-validation echo "Non-root user test passed"
 
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: 'freightliner:final-validation'
           format: 'sarif'

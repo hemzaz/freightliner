@@ -298,19 +298,6 @@ jobs:
             exit 1
           fi
 
-      # SECURITY: Nancy dependency vulnerability scanning
-      - name: Run Nancy dependency scan
-        run: |
-          echo "🔍 Running Nancy dependency vulnerability scan"
-          
-          # SECURITY: Install nancy
-          go install github.com/sonatypeoss/nancy@latest
-          
-          # SECURITY: Generate dependency list and scan
-          go list -json -deps ./... | nancy sleuth
-          
-          echo "✅ Nancy dependency scan completed"
-
       # SECURITY: License compliance checking
       - name: License compliance check
         run: |

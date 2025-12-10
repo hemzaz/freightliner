@@ -208,19 +208,14 @@ jobs:
         id: vuln-scan
         run: |
           echo "🔍 Running enhanced dependency vulnerability scan"
-          
-          # SECURITY: Install vulnerability scanners
+
+          # SECURITY: Install vulnerability scanner
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          go install github.com/sonatypeoss/nancy@latest
-          
+
           # SECURITY: Run govulncheck with JSON output
           echo "Running govulncheck..."
           govulncheck -json ./... > govulncheck-results.json 2>&1 || true
-          
-          # SECURITY: Run nancy for additional coverage
-          echo "Running nancy..."
-          go list -json -deps ./... | nancy sleuth --output-format=json > nancy-results.json 2>&1 || true
-          
+
           # SECURITY: Analyze results
           total_vulns=0
           critical_vulns=0

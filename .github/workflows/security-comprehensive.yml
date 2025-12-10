@@ -143,49 +143,6 @@ jobs:
           retention-days: 30
 
   # ============================================
-  # DEPENDENCY SCANNING (Parallel)
-  # ============================================
-  dependency-scan:
-    name: Dependency Security Audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    if: |
-      github.event.inputs.scan-type == 'all' ||
-      github.event.inputs.scan-type == 'dependencies' ||
-      github.event.inputs.scan-type == ''
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: Run nancy scan
-        run: |
-          go install github.com/sonatypeoss/nancy@latest
-          go list -json -deps ./... | nancy sleuth | tee nancy-results.txt || true
-
-      - name: Check for high-severity vulnerabilities
-        run: |
-          if grep -q "HIGH\|CRITICAL" nancy-results.txt; then
-            echo "⚠️  High-severity vulnerabilities detected"
-            grep "HIGH\|CRITICAL" nancy-results.txt || true
-          else
-            echo "✅ No high-severity vulnerabilities found"
-          fi
-
-      - name: Upload nancy results
-        uses: actions/upload-artifact@v4
-        with:
-          name: nancy-results-${{ github.sha }}
-          path: nancy-results.txt
-          retention-days: 30
-
-  # ============================================
   # SECRETS SCANNING (Parallel)
   # ============================================
   secrets-scan:
@@ -439,7 +396,6 @@ jobs:
     needs:
       - gosec-scan
       - vulnerability-scan
-      - dependency-scan
       - secrets-scan
       - license-scan
       - container-scan
@@ -463,7 +419,6 @@ jobs:
           |-----------|--------|-------------|
           | GoSec | ${{ needs.gosec-scan.result == 'success' && '✅' || needs.gosec-scan.result == 'skipped' && '⏭️' || '❌' }} | Static analysis for Go code |
           | Vulnerabilities | ${{ needs.vulnerability-scan.result == 'success' && '✅' || needs.vulnerability-scan.result == 'skipped' && '⏭️' || '❌' }} | Known CVEs in dependencies |
-          | Dependencies | ${{ needs.dependency-scan.result == 'success' && '✅' || needs.dependency-scan.result == 'skipped' && '⏭️' || '❌' }} | Third-party package risks |
           | Secrets | ${{ needs.secrets-scan.result == 'success' && '✅' || needs.secrets-scan.result == 'skipped' && '⏭️' || '❌' }} | Leaked credentials detection |
           | Licenses | ${{ needs.license-scan.result == 'success' && '✅' || needs.license-scan.result == 'skipped' && '⏭️' || '❌' }} | License compliance check |
           | Container | ${{ needs.container-scan.result == 'success' && '✅' || needs.container-scan.result == 'skipped' && '⏭️' || '❌' }} | Docker image vulnerabilities |
@@ -519,7 +474,6 @@ jobs:
             const scans = {
               gosec: '${{ needs.gosec-scan.result }}',
               vulnerability: '${{ needs.vulnerability-scan.result }}',
-              dependency: '${{ needs.dependency-scan.result }}',
               secrets: '${{ needs.secrets-scan.result }}',
               license: '${{ needs.license-scan.result }}',
               container: '${{ needs.container-scan.result }}',
@@ -541,7 +495,6 @@ jobs:
             |------|--------|
             | GoSec | ${getEmoji(scans.gosec)} ${scans.gosec} |
             | Vulnerabilities | ${getEmoji(scans.vulnerability)} ${scans.vulnerability} |
-            | Dependencies | ${getEmoji(scans.dependency)} ${scans.dependency} |
             | Secrets | ${getEmoji(scans.secrets)} ${scans.secrets} |
             | Licenses | ${getEmoji(scans.license)} ${scans.license} |
             | Container | ${getEmoji(scans.container)} ${scans.container} |

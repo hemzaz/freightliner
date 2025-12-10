@@ -87,7 +87,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.optimized
@@ -102,7 +102,7 @@ jobs:
             BUILD_TIME=${{ github.event.repository.updated_at }}
 
       - name: Scan Docker image for vulnerabilities
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: ${{ env.DOCKER_IMAGE }}:${{ steps.meta.outputs.version }}
           format: 'sarif'

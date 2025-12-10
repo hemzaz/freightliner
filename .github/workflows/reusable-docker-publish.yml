@@ -188,15 +188,6 @@ jobs:
           echo -e "${BUILD_ARGS}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Setup cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ inputs.platforms }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ inputs.platforms }}-
-            ${{ runner.os }}-buildx-
-
       # ========================================================================
       # Build & Push
       # ========================================================================
@@ -213,8 +204,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ steps.build-args.outputs.build-args }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           provenance: true
           sbom: ${{ inputs.generate-sbom }}
 
@@ -388,13 +379,6 @@ jobs:
             scan-summary.md
           retention-days: 90
           if-no-files-found: ignore
-
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          if [ -d /tmp/.buildx-cache-new ]; then
-            mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-          fi
 
       # ========================================================================
       # Summary & Reporting
