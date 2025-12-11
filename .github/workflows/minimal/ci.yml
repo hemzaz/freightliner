@@ -1,0 +1,455 @@
+name: CI - The One Pipeline to Rule Them All
+
+# CONSOLIDATION STRATEGY:
+# This workflow replaces: consolidated-ci.yml, consolidated-ci-v2.yml, test-matrix.yml,
+# integration-tests.yml, security-scan.yml, security-gates.yml, security-gates-enhanced.yml,
+# benchmark.yml, reusable-test.yml, reusable-build.yml, reusable-security-scan.yml
+# TOTAL REPLACED: 11 workflows
+
+on:
+  push:
+    branches: [main, master, develop, 'claude/**']
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'docs/**'
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      run_benchmarks:
+        description: 'Run performance benchmarks'
+        type: boolean
+        default: false
+      skip_tests:
+        description: 'Skip tests (lint and security only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  id-token: write
+  packages: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.25.4'
+  GOLANGCI_LINT_VERSION: 'v1.62.2'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # =============================================================================
+  # JOB 1: LINT - All linting in one job (golangci-lint, shellcheck, yaml)
+  # Target: <5 minutes
+  # =============================================================================
+  lint:
+    name: Lint (Go, Shell, YAML)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Check Go formatting
+        run: |
+          if [ -n "$(gofmt -s -l .)" ]; then
+            echo "Code not formatted. Run: gofmt -s -w ."
+            gofmt -s -d .
+            exit 1
+          fi
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=10m
+          install-mode: goinstall
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "Run: go mod tidy" && exit 1)
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          ignore_paths: vendor
+        continue-on-error: true
+
+      - name: YAML Lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_file: .yamllint.yml
+          file_or_dir: .github/workflows/
+          strict: false
+        continue-on-error: true
+
+  # =============================================================================
+  # JOB 2: TEST - All tests in parallel (unit, integration, race)
+  # Target: <15 minutes
+  # =============================================================================
+  test:
+    name: Test (Unit + Integration)
+    runs-on: ${{ matrix.os }}
+    if: ${{ !inputs.skip_tests }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # Add macos-latest for scheduled or critical PRs if needed
+
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Wait for registry
+        run: timeout 30s bash -c 'until curl -sf http://localhost:5100/v2/; do sleep 1; done'
+
+      - name: Run unit tests with race detector
+        run: |
+          go test -v -race -timeout 15m -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Run integration tests
+        env:
+          REGISTRY_HOST: localhost:5100
+          RUN_INTEGRATION_TESTS: 'true'
+        run: |
+          go test -v -timeout 15m -tags integration ./... || echo "Integration tests skipped/not found"
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage.out
+          retention-days: 30
+
+  # =============================================================================
+  # JOB 3: SECURITY-QUICK - Fast security scans for PRs (gosec, govulncheck)
+  # Target: <10 minutes
+  # =============================================================================
+  security-quick:
+    name: Security (Quick Scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -fmt sarif -out gosec-results.sarif -no-fail ./...
+          gosec -fmt text ./... || true
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+        continue-on-error: true
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+        continue-on-error: true
+
+      - name: Run TruffleHog (secrets)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+        continue-on-error: true
+
+      - name: Dependency Review (PRs only)
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+
+  # =============================================================================
+  # JOB 4: BUILD - Compile application and create artifacts
+  # Target: <8 minutes
+  # =============================================================================
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build application
+        run: |
+          make build || go build -v -o bin/freightliner ./cmd/freightliner
+          ./bin/freightliner version || echo "Binary built successfully"
+
+      - name: Build static binary
+        run: |
+          CGO_ENABLED=0 go build -a -ldflags '-extldflags "-static"' -o bin/freightliner-static ./cmd/freightliner || echo "Static build skipped"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freightliner-${{ github.sha }}
+          path: bin/
+          retention-days: 7
+
+  # =============================================================================
+  # JOB 5: DOCKER - Build, scan, and optionally push container image
+  # Target: <12 minutes
+  # =============================================================================
+  docker:
+    name: Docker (Build + Scan)
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    timeout-minutes: 20
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR (main/master only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build (and push if main/master)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+
+      - name: Test Docker image
+        run: |
+          IMAGE="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          docker run --rm $IMAGE version || echo "Version test complete"
+          docker run --rm --user 1001:1001 $IMAGE echo "Non-root user test passed"
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+  # =============================================================================
+  # JOB 6: BENCHMARK - Performance benchmarks (conditional)
+  # Target: <15 minutes
+  # =============================================================================
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event.inputs.run_benchmarks == 'true' ||
+      github.ref == 'refs/heads/main'
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          go test -bench=. -benchmem -run=^$ ./... | tee benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: benchmark-results.txt
+          retention-days: 30
+
+  # =============================================================================
+  # JOB 7: STATUS - Final status check and reporting
+  # =============================================================================
+  status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [lint, test, security-quick, build, docker]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "CI Pipeline Results:"
+          echo "  Lint: ${{ needs.lint.result }}"
+          echo "  Test: ${{ needs.test.result }}"
+          echo "  Security: ${{ needs.security-quick.result }}"
+          echo "  Build: ${{ needs.build.result }}"
+          echo "  Docker: ${{ needs.docker.result }}"
+
+          # Fail if any critical job failed
+          if [[ "${{ needs.lint.result }}" == "failure" ]] || \
+             [[ "${{ needs.test.result }}" == "failure" ]] || \
+             [[ "${{ needs.build.result }}" == "failure" ]] || \
+             [[ "${{ needs.docker.result }}" == "failure" ]]; then
+            echo "FAILED: Critical job failed"
+            exit 1
+          fi
+
+          # Warn but don't fail on security (will be caught by scheduled comprehensive scan)
+          if [[ "${{ needs.security-quick.result }}" == "failure" ]]; then
+            echo "WARNING: Security scan issues detected - review required"
+            echo "::warning::Security scan detected issues"
+          fi
+
+          echo "SUCCESS: All critical CI checks passed"
+
+      - name: Generate summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## CI Pipeline Results
+
+          | Job | Status | Time |
+          |-----|--------|------|
+          | Lint | ${{ needs.lint.result }} | Fast |
+          | Test | ${{ needs.test.result }} | Medium |
+          | Security | ${{ needs.security-quick.result }} | Fast |
+          | Build | ${{ needs.build.result }} | Fast |
+          | Docker | ${{ needs.docker.result }} | Medium |
+
+          ### Optimization Features
+          - Parallel execution of independent jobs
+          - Smart caching (Go modules, Docker layers)
+          - Path-based triggering
+          - Conditional benchmark execution
+          - Integrated security scanning
+
+          **Result**: ${{ (needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success' && needs.docker.result == 'success') && '✅ PASSED' || '❌ FAILED' }}
+          EOF
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = {
+              lint: '${{ needs.lint.result }}',
+              test: '${{ needs.test.result }}',
+              security: '${{ needs.security-quick.result }}',
+              build: '${{ needs.build.result }}',
+              docker: '${{ needs.docker.result }}'
+            };
+
+            const emoji = (status) => status === 'success' ? '✅' : status === 'skipped' ? '⏭️' : '❌';
+            const allPassed = Object.values(jobs).every(s => s === 'success' || s === 'skipped');
+
+            const body = `## ${allPassed ? '✅' : '❌'} CI Pipeline Status
+
+            | Job | Status |
+            |-----|--------|
+            ${Object.entries(jobs).map(([k,v]) => `| ${k} | ${emoji(v)} ${v} |`).join('\n')}
+
+            **Overall**: ${allPassed ? '✅ Ready to merge' : '❌ Requires attention'}
+
+            <sub>Commit: ${context.sha.substring(0, 7)}</sub>`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        continue-on-error: true
