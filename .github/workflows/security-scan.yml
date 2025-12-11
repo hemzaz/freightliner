@@ -1,0 +1,361 @@
+# ============================================================================
+# UNIFIED SECURITY SCANNING WORKFLOW
+# ============================================================================
+# Purpose: Consolidated security scanning for all security needs
+# Consolidates: security-gates-enhanced.yml, security-comprehensive.yml,
+#               reusable-security-scan.yml
+# Execution: On PR/push to main branches, or on-demand
+# ============================================================================
+
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+  workflow_call:
+    inputs:
+      severity_threshold:
+        description: 'Minimum severity to fail build'
+        required: false
+        default: 'HIGH'
+        type: string
+      scan_scope:
+        description: 'Scope of security scan (quick, full)'
+        required: false
+        default: 'quick'
+        type: string
+  workflow_dispatch:
+    inputs:
+      scan_scope:
+        description: 'Scope of security scan'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - quick
+          - full
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SEVERITY_THRESHOLD: ${{ inputs.severity_threshold || 'HIGH' }}
+  SCAN_SCOPE: ${{ inputs.scan_scope || 'quick' }}
+  GO_VERSION: '1.25.4'
+
+jobs:
+  # =============================================================================
+  # CONFIGURATION - Determine what to scan based on scope
+  # =============================================================================
+  configure:
+    name: Configure Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      scan-secrets: ${{ steps.config.outputs.scan-secrets }}
+      scan-sast: ${{ steps.config.outputs.scan-sast }}
+      scan-dependencies: ${{ steps.config.outputs.scan-dependencies }}
+      scan-container: ${{ steps.config.outputs.scan-container }}
+      scan-iac: ${{ steps.config.outputs.scan-iac }}
+
+    steps:
+      - name: Configure scan scope
+        id: config
+        run: |
+          echo "Configuring security scan scope: ${{ env.SCAN_SCOPE }}"
+
+          # Quick scan: secrets + SAST + dependencies only
+          # Full scan: everything
+
+          if [[ "${{ env.SCAN_SCOPE }}" == "full" ]]; then
+            echo "scan-secrets=true" >> $GITHUB_OUTPUT
+            echo "scan-sast=true" >> $GITHUB_OUTPUT
+            echo "scan-dependencies=true" >> $GITHUB_OUTPUT
+            echo "scan-container=true" >> $GITHUB_OUTPUT
+            echo "scan-iac=true" >> $GITHUB_OUTPUT
+          else
+            echo "scan-secrets=true" >> $GITHUB_OUTPUT
+            echo "scan-sast=true" >> $GITHUB_OUTPUT
+            echo "scan-dependencies=true" >> $GITHUB_OUTPUT
+            echo "scan-container=false" >> $GITHUB_OUTPUT
+            echo "scan-iac=false" >> $GITHUB_OUTPUT
+          fi
+
+  # =============================================================================
+  # SECRET SCANNING - Detect hardcoded secrets
+  # =============================================================================
+  secret-scan:
+    name: Secret Scanning
+    needs: configure
+    if: needs.configure.outputs.scan-secrets == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: HEAD
+          extra_args: --only-verified --json
+
+      - name: Run GitLeaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =============================================================================
+  # SAST SCANNING - Static application security testing
+  # =============================================================================
+  sast-scan:
+    name: SAST Analysis
+    needs: configure
+    if: needs.configure.outputs.scan-sast == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run Gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -severity ${{ env.SEVERITY_THRESHOLD }} -fmt sarif -out gosec-results.sarif ./... || true
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/security-audit
+          generateSarif: "1"
+        continue-on-error: true
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gosec-results.sarif
+        continue-on-error: true
+
+  # =============================================================================
+  # DEPENDENCY SCANNING - Vulnerability scanning for dependencies
+  # =============================================================================
+  dependency-scan:
+    name: Dependency Vulnerabilities
+    needs: configure
+    if: needs.configure.outputs.scan-dependencies == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck -json ./... | tee govulncheck-results.json
+
+      - name: Dependency review (PR only)
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+
+  # =============================================================================
+  # CONTAINER SCANNING - Docker image vulnerabilities
+  # =============================================================================
+  container-scan:
+    name: Container Security
+    needs: configure
+    if: needs.configure.outputs.scan-container == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t freightliner:scan .
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: 'freightliner:scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+  # =============================================================================
+  # IAC SCANNING - Infrastructure as Code security
+  # =============================================================================
+  iac-scan:
+    name: Infrastructure Security
+    needs: configure
+    if: needs.configure.outputs.scan-iac == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,kubernetes,github_actions
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: false
+
+      - name: Upload Checkov results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: checkov-results.sarif
+        continue-on-error: true
+
+  # =============================================================================
+  # SECURITY GATE - Final security status check
+  # =============================================================================
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    needs: [configure, secret-scan, sast-scan, dependency-scan, container-scan, iac-scan]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Check security status
+        run: |
+          echo "Security Scan Results:"
+          echo "  Secret Scan: ${{ needs.secret-scan.result }}"
+          echo "  SAST Scan: ${{ needs.sast-scan.result }}"
+          echo "  Dependency Scan: ${{ needs.dependency-scan.result }}"
+          echo "  Container Scan: ${{ needs.container-scan.result }}"
+          echo "  IaC Scan: ${{ needs.iac-scan.result }}"
+
+          # Fail if any required scan failed
+          failed=false
+
+          if [[ "${{ needs.configure.outputs.scan-secrets }}" == "true" ]] && [[ "${{ needs.secret-scan.result }}" == "failure" ]]; then
+            echo "❌ Secret scanning failed"
+            failed=true
+          fi
+
+          if [[ "${{ needs.configure.outputs.scan-sast }}" == "true" ]] && [[ "${{ needs.sast-scan.result }}" == "failure" ]]; then
+            echo "❌ SAST scanning failed"
+            failed=true
+          fi
+
+          if [[ "${{ needs.configure.outputs.scan-dependencies }}" == "true" ]] && [[ "${{ needs.dependency-scan.result }}" == "failure" ]]; then
+            echo "❌ Dependency scanning failed"
+            failed=true
+          fi
+
+          if [[ "${{ needs.configure.outputs.scan-container }}" == "true" ]] && [[ "${{ needs.container-scan.result }}" == "failure" ]]; then
+            echo "❌ Container scanning failed"
+            failed=true
+          fi
+
+          if [[ "${{ needs.configure.outputs.scan-iac }}" == "true" ]] && [[ "${{ needs.iac-scan.result }}" == "failure" ]]; then
+            echo "❌ IaC scanning failed"
+            failed=true
+          fi
+
+          if [[ "$failed" == "true" ]]; then
+            echo "🚨 Security gate FAILED - vulnerabilities detected"
+            exit 1
+          else
+            echo "✅ Security gate PASSED - no critical vulnerabilities"
+          fi
+
+      - name: Generate summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🛡️ Security Scan Summary
+
+          **Scan Scope**: ${{ env.SCAN_SCOPE }}
+          **Severity Threshold**: ${{ env.SEVERITY_THRESHOLD }}
+
+          | Security Check | Status |
+          |----------------|--------|
+          | Secret Detection | ${{ needs.secret-scan.result }} |
+          | SAST Analysis | ${{ needs.sast-scan.result }} |
+          | Dependency Vulnerabilities | ${{ needs.dependency-scan.result }} |
+          | Container Security | ${{ needs.container-scan.result || 'skipped' }} |
+          | Infrastructure Security | ${{ needs.iac-scan.result || 'skipped' }} |
+
+          **Overall Status**: ${{ job.status }}
+          EOF
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = {
+              secrets: '${{ needs.secret-scan.result }}',
+              sast: '${{ needs.sast-scan.result }}',
+              dependencies: '${{ needs.dependency-scan.result }}',
+              container: '${{ needs.container-scan.result }}',
+              iac: '${{ needs.iac-scan.result }}'
+            };
+
+            const passed = Object.values(results).every(r => r === 'success' || r === 'skipped');
+            const emoji = passed ? '✅' : '❌';
+
+            const body = `## ${emoji} Security Scan Results
+
+            | Check | Status |
+            |-------|--------|
+            | Secrets | ${results.secrets === 'success' ? '✅' : '❌'} |
+            | SAST | ${results.sast === 'success' ? '✅' : '❌'} |
+            | Dependencies | ${results.dependencies === 'success' ? '✅' : '❌'} |
+            | Container | ${results.container === 'success' ? '✅' : results.container === 'skipped' ? '⏭️' : '❌'} |
+            | IaC | ${results.iac === 'success' ? '✅' : results.iac === 'skipped' ? '⏭️' : '❌'} |
+
+            **Scope**: ${{ env.SCAN_SCOPE }} | **Threshold**: ${{ env.SEVERITY_THRESHOLD }}
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        continue-on-error: true

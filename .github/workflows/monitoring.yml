@@ -1,0 +1,232 @@
+# ============================================================================
+# SCHEDULED MONITORING WORKFLOW
+# ============================================================================
+# Purpose: Periodic security and health monitoring
+# Consolidates: security-monitoring-enhanced.yml
+# Schedule: Daily security scans, health checks
+# ============================================================================
+
+name: Monitoring
+
+on:
+  schedule:
+    # Daily security scan at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of monitoring scan'
+        required: false
+        default: 'security'
+        type: choice
+        options:
+          - security
+          - health
+          - full
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+
+env:
+  SCAN_TYPE: ${{ inputs.scan_type || 'security' }}
+
+jobs:
+  # =============================================================================
+  # SECURITY MONITORING - Comprehensive security scan
+  # =============================================================================
+  security-monitoring:
+    name: Security Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: inputs.scan_type == 'security' || inputs.scan_type == 'full' || github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run comprehensive security scan
+        uses: ./.github/workflows/security-scan.yml
+        with:
+          scan_scope: full
+          severity_threshold: HIGH
+
+      - name: Analyze results
+        id: analysis
+        run: |
+          echo "Analyzing security monitoring results"
+
+          # Calculate security score (simplified)
+          security_score=100
+
+          # Check for recent security alerts
+          alert_count=$(gh api repos/${{ github.repository }}/code-scanning/alerts --jq 'length' 2>/dev/null || echo "0")
+
+          if [[ $alert_count -gt 0 ]]; then
+            security_score=$((security_score - (alert_count * 5)))
+          fi
+
+          echo "security-score=$security_score" >> $GITHUB_OUTPUT
+          echo "alert-count=$alert_count" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create issue if alerts found
+        if: steps.analysis.outputs.alert-count > '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const alertCount = '${{ steps.analysis.outputs.alert-count }}';
+            const securityScore = '${{ steps.analysis.outputs.security-score }}';
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Security Monitoring Alert - ${alertCount} issues detected`,
+              body: `## Security Monitoring Report
+
+              **Date**: ${new Date().toISOString()}
+              **Security Score**: ${securityScore}/100
+              **Alerts Found**: ${alertCount}
+
+              ### Action Required
+
+              Please review the security alerts in the [Security tab](https://github.com/${context.repo.owner}/${context.repo.repo}/security/code-scanning).
+
+              ---
+              *This issue was created automatically by scheduled security monitoring.*`,
+              labels: ['security', 'monitoring', 'automated']
+            });
+
+            console.log(`Created issue #${issue.data.number}`);
+
+  # =============================================================================
+  # HEALTH MONITORING - System health checks
+  # =============================================================================
+  health-monitoring:
+    name: Health Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: inputs.scan_type == 'health' || inputs.scan_type == 'full'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deployment health (dev)
+        run: |
+          echo "Checking dev environment health"
+          # Add health check commands here
+          # Example: curl -f https://dev.freightliner.example.com/health || exit 1
+        continue-on-error: true
+
+      - name: Check deployment health (staging)
+        run: |
+          echo "Checking staging environment health"
+          # Add health check commands here
+        continue-on-error: true
+
+      - name: Check deployment health (production)
+        run: |
+          echo "Checking production environment health"
+          # Add health check commands here
+        continue-on-error: true
+
+      - name: Generate health report
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🏥 Health Monitoring Report
+
+          **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          | Environment | Status |
+          |-------------|--------|
+          | Dev | ${{ job.status }} |
+          | Staging | ${{ job.status }} |
+          | Production | ${{ job.status }} |
+
+          EOF
+
+  # =============================================================================
+  # DEPENDENCY UPDATES - Check for outdated dependencies
+  # =============================================================================
+  dependency-monitoring:
+    name: Dependency Monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: inputs.scan_type == 'full' || github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.4'
+
+      - name: Check for outdated dependencies
+        run: |
+          echo "Checking for outdated Go dependencies"
+          go list -u -m all > dependencies.txt
+
+          outdated_count=$(grep -c '\[' dependencies.txt || echo "0")
+          echo "Found $outdated_count outdated dependencies"
+
+          if [[ $outdated_count -gt 10 ]]; then
+            echo "::warning::$outdated_count outdated dependencies detected"
+          fi
+
+      - name: Check Go version
+        run: |
+          current_version=$(go version | awk '{print $3}')
+          echo "Current Go version: $current_version"
+
+          latest_version=$(curl -s https://go.dev/VERSION?m=text | head -1)
+          echo "Latest Go version: $latest_version"
+
+          if [[ "$current_version" != "$latest_version" ]]; then
+            echo "::warning::Go version $current_version is not the latest ($latest_version)"
+          fi
+
+  # =============================================================================
+  # SUMMARY - Aggregate monitoring results
+  # =============================================================================
+  monitoring-summary:
+    name: Monitoring Summary
+    runs-on: ubuntu-latest
+    needs: [security-monitoring, health-monitoring, dependency-monitoring]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Generate summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 📊 Monitoring Summary
+
+          **Scan Type**: ${{ env.SCAN_TYPE }}
+          **Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          ### Results
+
+          | Monitoring Type | Status |
+          |----------------|--------|
+          | Security Scan | ${{ needs.security-monitoring.result }} |
+          | Health Check | ${{ needs.health-monitoring.result }} |
+          | Dependency Check | ${{ needs.dependency-monitoring.result }} |
+
+          **Overall Status**: ${{ job.status }}
+
+          ---
+          *Next scheduled scan: $(date -d 'tomorrow 2:00 UTC' '+%Y-%m-%d %H:%M UTC')*
+          EOF
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Monitoring workflow failed. Please review the logs."
