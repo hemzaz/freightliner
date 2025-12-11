@@ -113,7 +113,7 @@ jobs:
   build-and-publish:
     name: Build & Publish Docker Image
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20  # Reduced from 30 (actual avg ~15 min with cache)
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       tags: ${{ steps.meta.outputs.tags }}

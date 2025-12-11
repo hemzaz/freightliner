@@ -13,6 +13,11 @@ permissions:
   contents: read
   pull-requests: write  # For PR comments with test results
 
+# Cancel in-progress runs for same ref to save resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GO_VERSION: '1.25.4'
 

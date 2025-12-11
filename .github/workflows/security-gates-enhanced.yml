@@ -1,6 +1,29 @@
-# ENHANCED SECURITY GATES WORKFLOW
-# Implements comprehensive security controls and compliance checking
-# Prevents deployment of vulnerable code
+# ============================================================================
+# SECURITY VULNERABILITY SCANNING (ENHANCED)
+# ============================================================================
+# Purpose: Comprehensive vulnerability scanning and threat detection
+# Focus: VULNERABILITY DETECTION & SECURITY ANALYSIS (not policy enforcement)
+# Execution Time: ~30-40 minutes (comprehensive scanning)
+# Runs On: PRs/pushes to main/master only (production branches)
+# Reusable: Yes (can be called from other workflows)
+#
+# What This Workflow Does:
+# - TruffleHog secret scanning (prevents credential leaks)
+# - SAST (Static Application Security Testing)
+# - Dependency vulnerability scanning (CVEs in packages)
+# - Container image security scanning
+# - Infrastructure as Code (IaC) security scanning
+# - Compliance validation (aggregates all scan results)
+# - Configurable severity thresholds
+#
+# NOTE: For POLICY ENFORCEMENT and configuration validation,
+#       see: security-gates.yml
+#
+# Related Workflows:
+# - security-gates.yml: Fast policy and compliance gates
+# - security-comprehensive.yml: Deep periodic security analysis
+# - security-monitoring-enhanced.yml: Continuous security monitoring
+# ============================================================================
 
 name: Security Gates Enhanced
 
@@ -29,6 +52,11 @@ permissions:
   actions: read
   checks: write
   pull-requests: write  # For PR comments
+
+# Cancel in-progress runs for same ref to save resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   # SECURITY: Configuration

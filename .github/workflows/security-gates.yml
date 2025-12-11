@@ -1,5 +1,30 @@
 name: Security Gates & Policy Enforcement
 
+# ============================================================================
+# SECURITY POLICY & COMPLIANCE GATES
+# ============================================================================
+# Purpose: Validates security policies, workflow configurations, and compliance
+# Focus: POLICY ENFORCEMENT & CONFIGURATION VALIDATION (not vulnerability scanning)
+# Execution Time: ~10 minutes (fast policy checks)
+# Runs On: All PRs and pushes (main/master/develop branches)
+#
+# What This Workflow Does:
+# - Validates required security files exist (.gitleaks.toml, SECURITY.md, etc.)
+# - Checks workflows use hardened runners
+# - Verifies SHA-pinned actions in security workflows
+# - Validates Dockerfile security configurations
+# - Enforces branch protection rules
+# - Blocks PRs that violate security policies
+#
+# NOTE: For vulnerability SCANNING (secrets, SAST, dependencies, containers),
+#       see: security-gates-enhanced.yml
+#
+# Related Workflows:
+# - security-gates-enhanced.yml: Comprehensive vulnerability scanning
+# - security-comprehensive.yml: Deep periodic security analysis
+# - security-monitoring-enhanced.yml: Continuous security monitoring
+# ============================================================================
+
 on:
   pull_request:
     branches: [ main, master, develop ]
@@ -14,6 +39,11 @@ permissions:
   pull-requests: write
   checks: write
   statuses: write
+
+# Cancel in-progress runs for same ref to save resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Global environment for security policies
 env:
