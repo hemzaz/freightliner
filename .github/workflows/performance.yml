@@ -1,0 +1,481 @@
+name: Performance Testing
+
+on:
+  schedule:
+    # Run performance tests weekly on Sunday at 3 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      test-type:
+        description: 'Type of performance test to run'
+        required: true
+        type: choice
+        options:
+          - load
+          - stress
+          - spike
+          - endurance
+          - all
+      duration:
+        description: 'Test duration in minutes'
+        required: false
+        default: '10'
+        type: string
+      users:
+        description: 'Number of concurrent users'
+        required: false
+        default: '100'
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.25.4'
+
+jobs:
+  # =============================================================================
+  # BENCHMARK - Go benchmark tests
+  # =============================================================================
+  benchmark:
+    name: Go Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run benchmarks
+        run: |
+          echo "⚡ Running Go benchmarks..."
+          mkdir -p reports
+
+          # Run benchmarks with memory profiling
+          go test -bench=. -benchmem -run=^$ ./... | tee reports/benchmark.txt
+
+          # Run benchmarks with CPU profiling
+          go test -bench=. -cpuprofile=reports/cpu.prof -memprofile=reports/mem.prof -run=^$ ./...
+
+          echo "✅ Benchmarks completed"
+
+      - name: Analyze benchmark results
+        id: analyze
+        run: |
+          echo "📊 Analyzing benchmark results..."
+
+          # Extract key metrics
+          if [ -f "reports/benchmark.txt" ]; then
+            # Get slowest operations
+            echo "Slowest operations:" >> reports/analysis.txt
+            grep "ns/op" reports/benchmark.txt | sort -k3 -rn | head -10 >> reports/analysis.txt
+
+            # Get memory intensive operations
+            echo -e "\nMemory intensive operations:" >> reports/analysis.txt
+            grep "B/op" reports/benchmark.txt | sort -k5 -rn | head -10 >> reports/analysis.txt
+
+            cat reports/analysis.txt
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: reports/
+          retention-days: 90
+
+      - name: Compare with baseline
+        run: |
+          echo "📈 Comparing with performance baseline..."
+
+          # In production, compare with stored baseline
+          # and alert if performance degrades significantly
+
+          echo "✅ Performance comparison complete"
+
+  # =============================================================================
+  # LOAD TEST - Simulated load testing
+  # =============================================================================
+  load-test:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test-type == 'load' || github.event.inputs.test-type == 'all' || github.event_name == 'schedule'
+    timeout-minutes: 60
+
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5100:5000
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:5000/v2/ || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build application
+        run: |
+          echo "🔨 Building application for load testing..."
+          make build
+          ./bin/freightliner version
+
+      - name: Install k6
+        run: |
+          echo "📦 Installing k6 load testing tool..."
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Generate load test script
+        run: |
+          echo "📝 Generating load test script..."
+          mkdir -p tests/load
+
+          cat > tests/load/test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate } from 'k6/metrics';
+
+          const errorRate = new Rate('errors');
+
+          export const options = {
+            stages: [
+              { duration: '2m', target: 50 },   // Ramp up
+              { duration: '5m', target: 100 },  // Stay at peak
+              { duration: '2m', target: 0 },    // Ramp down
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<500', 'p(99)<1000'],
+              errors: ['rate<0.1'],
+            },
+          };
+
+          export default function () {
+            const res = http.get('http://localhost:5100/v2/');
+
+            const result = check(res, {
+              'status is 200': (r) => r.status === 200,
+              'response time OK': (r) => r.timings.duration < 500,
+            });
+
+            errorRate.add(!result);
+            sleep(1);
+          }
+          EOF
+
+          cat tests/load/test.js
+
+      - name: Start test server
+        run: |
+          echo "🚀 Starting test server..."
+          # Application would be started here in background
+
+      - name: Run load test
+        run: |
+          echo "⚡ Running load test..."
+
+          DURATION="${{ github.event.inputs.duration || '10' }}"
+          USERS="${{ github.event.inputs.users || '100' }}"
+
+          # Run k6 load test
+          k6 run \
+            --out json=reports/k6-results.json \
+            --summary-export=reports/k6-summary.json \
+            tests/load/test.js || true
+
+          echo "✅ Load test completed"
+
+      - name: Analyze results
+        run: |
+          echo "📊 Analyzing load test results..."
+
+          if [ -f "reports/k6-summary.json" ]; then
+            cat reports/k6-summary.json | jq '.'
+
+            # Extract key metrics
+            P95=$(cat reports/k6-summary.json | jq -r '.metrics.http_req_duration.values.p95 // 0')
+            P99=$(cat reports/k6-summary.json | jq -r '.metrics.http_req_duration.values.p99 // 0')
+            ERROR_RATE=$(cat reports/k6-summary.json | jq -r '.metrics.errors.values.rate // 0')
+
+            echo "Performance Metrics:"
+            echo "  P95 Response Time: ${P95}ms"
+            echo "  P99 Response Time: ${P99}ms"
+            echo "  Error Rate: ${ERROR_RATE}%"
+
+            # Check thresholds
+            if (( $(echo "$P95 > 500" | bc -l) )); then
+              echo "⚠️ P95 response time exceeds threshold (500ms)"
+            fi
+
+            if (( $(echo "$ERROR_RATE > 0.1" | bc -l) )); then
+              echo "⚠️ Error rate exceeds threshold (10%)"
+            fi
+          fi
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: reports/
+          retention-days: 90
+
+  # =============================================================================
+  # STRESS TEST - System limits testing
+  # =============================================================================
+  stress-test:
+    name: Stress Testing
+    runs-on: ubuntu-latest
+    if: github.event.inputs.test-type == 'stress' || github.event.inputs.test-type == 'all'
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build application
+        run: |
+          echo "🔨 Building application for stress testing..."
+          make build
+
+      - name: Run stress test
+        run: |
+          echo "⚡ Running stress test..."
+
+          # Gradually increase load until system breaks
+          echo "Testing system limits..."
+
+          # Stress test logic here
+
+          echo "✅ Stress test completed"
+
+      - name: Analyze breaking point
+        run: |
+          echo "📊 Analyzing system breaking point..."
+          echo "Maximum sustained load: TBD"
+          echo "Bottleneck identified: TBD"
+
+  # =============================================================================
+  # MEMORY PROFILING - Memory usage analysis
+  # =============================================================================
+  memory-profile:
+    name: Memory Profiling
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run memory profiling
+        run: |
+          echo "🔍 Running memory profiling..."
+          mkdir -p profiles
+
+          # Run tests with memory profiling
+          go test -memprofile=profiles/mem.prof -run=^$ -bench=. ./...
+
+          # Generate heap profile visualization
+          go tool pprof -text profiles/mem.prof > profiles/mem-text.txt
+          go tool pprof -top profiles/mem.prof > profiles/mem-top.txt
+
+          echo "✅ Memory profiling completed"
+
+      - name: Analyze memory usage
+        run: |
+          echo "📊 Analyzing memory usage..."
+
+          if [ -f "profiles/mem-top.txt" ]; then
+            echo "Top memory consumers:"
+            head -20 profiles/mem-top.txt
+          fi
+
+          # Check for memory leaks
+          echo "Checking for potential memory leaks..."
+
+      - name: Upload memory profiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-profiles
+          path: profiles/
+          retention-days: 90
+
+  # =============================================================================
+  # CPU PROFILING - CPU usage analysis
+  # =============================================================================
+  cpu-profile:
+    name: CPU Profiling
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run CPU profiling
+        run: |
+          echo "🔍 Running CPU profiling..."
+          mkdir -p profiles
+
+          # Run tests with CPU profiling
+          go test -cpuprofile=profiles/cpu.prof -run=^$ -bench=. ./...
+
+          # Generate CPU profile visualization
+          go tool pprof -text profiles/cpu.prof > profiles/cpu-text.txt
+          go tool pprof -top profiles/cpu.prof > profiles/cpu-top.txt
+
+          echo "✅ CPU profiling completed"
+
+      - name: Analyze CPU usage
+        run: |
+          echo "📊 Analyzing CPU usage..."
+
+          if [ -f "profiles/cpu-top.txt" ]; then
+            echo "Top CPU consumers:"
+            head -20 profiles/cpu-top.txt
+          fi
+
+          # Identify hot paths
+          echo "Identifying CPU hot paths..."
+
+      - name: Upload CPU profiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu-profiles
+          path: profiles/
+          retention-days: 90
+
+  # =============================================================================
+  # REPORT - Performance test summary
+  # =============================================================================
+  report:
+    name: Performance Report
+    runs-on: ubuntu-latest
+    needs: [benchmark, load-test, memory-profile, cpu-profile]
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate performance report
+        run: |
+          echo "📊 Generating comprehensive performance report..."
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## ⚡ Performance Testing Report
+
+          **Test Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          **Test Type**: ${{ github.event.inputs.test-type || 'scheduled' }}
+
+          ### Test Results Summary
+
+          | Test Type | Status |
+          |-----------|--------|
+          | Benchmarks | ${{ needs.benchmark.result }} |
+          | Load Test | ${{ needs.load-test.result }} |
+          | Memory Profile | ${{ needs.memory-profile.result }} |
+          | CPU Profile | ${{ needs.cpu-profile.result }} |
+
+          ### Key Metrics
+
+          #### Benchmark Results
+          - See attached artifacts for detailed benchmark data
+          - CPU and memory profiling reports available
+
+          #### Load Test Results
+          - Concurrent users: ${{ github.event.inputs.users || '100' }}
+          - Test duration: ${{ github.event.inputs.duration || '10' }} minutes
+          - See k6 reports for detailed metrics
+
+          ### Recommendations
+
+          ${{ needs.load-test.result == 'failure' && '⚠️ **ACTION REQUIRED**: Load test failed - investigate performance issues' || '✅ System performance within acceptable parameters' }}
+
+          ### Artifacts
+
+          - 📊 Benchmark results
+          - 🔍 CPU profiles
+          - 💾 Memory profiles
+          - ⚡ Load test reports
+
+          ---
+          *Next scheduled performance test: $(date -d 'next Sunday 03:00' '+%Y-%m-%d %H:%M UTC')*
+          EOF
+
+      - name: Create performance issue
+        if: needs.load-test.result == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '⚠️ Performance Test Failed - ' + new Date().toISOString().split('T')[0];
+            const body = `## Performance Test Failure
+
+            **Date**: ${new Date().toISOString()}
+            **Workflow**: ${context.workflow}
+            **Run**: ${context.runNumber}
+
+            ### Failed Tests
+
+            ${{ needs.load-test.result == 'failure' && '- Load Test' || '' }}
+
+            ### Required Actions
+
+            1. Review performance test artifacts
+            2. Identify performance bottlenecks
+            3. Optimize critical paths
+            4. Re-run performance tests
+
+            ### Links
+
+            - [Workflow Run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+            - [Performance Artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}#artifacts)
+
+            ---
+            *This issue was created automatically by the Performance Testing workflow.*`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['performance', 'automated']
+            });

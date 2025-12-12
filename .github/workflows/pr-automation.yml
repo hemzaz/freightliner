@@ -1,0 +1,471 @@
+name: PR Automation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+  statuses: write
+
+env:
+  GO_VERSION: '1.25.4'
+
+jobs:
+  # =============================================================================
+  # VALIDATE - PR validation checks
+  # =============================================================================
+  validate-pr:
+    name: Validate PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          scopes: |
+            core
+            api
+            cli
+            registry
+            security
+            ci
+            deps
+          requireScope: false
+
+      - name: Check PR size
+        id: check-size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const additions = pr.additions;
+            const deletions = pr.deletions;
+            const changes = additions + deletions;
+
+            let size = 'small';
+            let label = 'size/S';
+            let emoji = '🟢';
+
+            if (changes > 1000) {
+              size = 'extra-large';
+              label = 'size/XL';
+              emoji = '🔴';
+            } else if (changes > 500) {
+              size = 'large';
+              label = 'size/L';
+              emoji = '🟠';
+            } else if (changes > 100) {
+              size = 'medium';
+              label = 'size/M';
+              emoji = '🟡';
+            }
+
+            console.log(`PR size: ${size} (${changes} changes)`);
+            core.setOutput('size', size);
+            core.setOutput('label', label);
+            core.setOutput('changes', changes);
+
+            // Add size label
+            const labels = pr.labels.map(l => l.name);
+            const sizeLabels = ['size/XS', 'size/S', 'size/M', 'size/L', 'size/XL'];
+
+            // Remove old size labels
+            for (const oldLabel of sizeLabels) {
+              if (labels.includes(oldLabel) && oldLabel !== label) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  name: oldLabel
+                });
+              }
+            }
+
+            // Add new size label
+            if (!labels.includes(label)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: [label]
+              });
+            }
+
+            // Warn about large PRs
+            if (size === 'extra-large' || size === 'large') {
+              core.warning(`${emoji} This PR is ${size} (${changes} changes). Consider breaking it into smaller PRs.`);
+            }
+
+      - name: Check for breaking changes
+        id: breaking
+        run: |
+          echo "🔍 Checking for breaking changes..."
+
+          # Check PR title and body for breaking change indicators
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+
+          HAS_BREAKING="false"
+
+          if echo "$PR_TITLE" | grep -qi "breaking\|BREAKING CHANGE"; then
+            HAS_BREAKING="true"
+          fi
+
+          if echo "$PR_BODY" | grep -qi "BREAKING CHANGE"; then
+            HAS_BREAKING="true"
+          fi
+
+          echo "has-breaking=$HAS_BREAKING" >> $GITHUB_OUTPUT
+
+          if [ "$HAS_BREAKING" = "true" ]; then
+            echo "⚠️ Breaking change detected in PR"
+          fi
+
+      - name: Label breaking changes
+        if: steps.breaking.outputs.has-breaking == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: ['breaking-change']
+            });
+
+  # =============================================================================
+  # AUTO-LABEL - Automatic labeling based on changes
+  # =============================================================================
+  auto-label:
+    name: Auto Label PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Label based on files changed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            // Get files changed in PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            const labels = new Set();
+
+            for (const file of files) {
+              const path = file.filename;
+
+              // Documentation changes
+              if (path.match(/\.(md|txt)$/i) || path.startsWith('docs/')) {
+                labels.add('documentation');
+              }
+
+              // CI/CD changes
+              if (path.startsWith('.github/')) {
+                labels.add('ci/cd');
+              }
+
+              // Security changes
+              if (path.includes('security') || path.includes('auth')) {
+                labels.add('security');
+              }
+
+              // Infrastructure changes
+              if (path.includes('terraform') || path.includes('kubernetes') || path.includes('docker')) {
+                labels.add('infrastructure');
+              }
+
+              // Test changes
+              if (path.includes('_test.go') || path.startsWith('tests/')) {
+                labels.add('tests');
+              }
+
+              // Go code changes
+              if (path.endsWith('.go') && !path.includes('_test.go')) {
+                labels.add('go');
+              }
+
+              // Dependencies
+              if (path === 'go.mod' || path === 'go.sum') {
+                labels.add('dependencies');
+              }
+            }
+
+            // Add labels
+            if (labels.size > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: Array.from(labels)
+              });
+
+              console.log(`Added labels: ${Array.from(labels).join(', ')}`);
+            }
+
+  # =============================================================================
+  # CODE REVIEW - Automated code review suggestions
+  # =============================================================================
+  code-review:
+    name: Automated Code Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Check for common issues
+        id: review
+        run: |
+          echo "🔍 Running automated code review..."
+
+          ISSUES_FOUND=0
+
+          # Check for TODO comments
+          TODO_COUNT=$(grep -r "TODO" --include="*.go" . | wc -l)
+          if [ $TODO_COUNT -gt 0 ]; then
+            echo "Found $TODO_COUNT TODO comments"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+
+          # Check for panic usage
+          PANIC_COUNT=$(grep -r "panic(" --include="*.go" pkg/ cmd/ | wc -l)
+          if [ $PANIC_COUNT -gt 0 ]; then
+            echo "Found $PANIC_COUNT panic statements"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+
+          # Check for fmt.Println usage (should use logger)
+          PRINTLN_COUNT=$(grep -r "fmt.Println" --include="*.go" pkg/ cmd/ | wc -l)
+          if [ $PRINTLN_COUNT -gt 0 ]; then
+            echo "Found $PRINTLN_COUNT fmt.Println statements (use logger instead)"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+
+          echo "issues-found=$ISSUES_FOUND" >> $GITHUB_OUTPUT
+          echo "todo-count=$TODO_COUNT" >> $GITHUB_OUTPUT
+          echo "panic-count=$PANIC_COUNT" >> $GITHUB_OUTPUT
+          echo "println-count=$PRINTLN_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Comment review findings
+        if: steps.review.outputs.issues-found != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const todoCount = '${{ steps.review.outputs.todo-count }}';
+            const panicCount = '${{ steps.review.outputs.panic-count }}';
+            const printlnCount = '${{ steps.review.outputs.println-count }}';
+
+            let suggestions = [];
+
+            if (todoCount > 0) {
+              suggestions.push(`- 📝 Found ${todoCount} TODO comments - consider creating issues for them`);
+            }
+
+            if (panicCount > 0) {
+              suggestions.push(`- ⚠️ Found ${panicCount} panic statements - consider using error returns instead`);
+            }
+
+            if (printlnCount > 0) {
+              suggestions.push(`- 🔍 Found ${printlnCount} fmt.Println statements - use structured logger instead`);
+            }
+
+            if (suggestions.length > 0) {
+              const body = `## 🤖 Automated Code Review
+
+            I found some suggestions for improvement:
+
+            ${suggestions.join('\n')}
+
+            These are automated suggestions and may not all be applicable. Please review them at your discretion.
+
+            <sub>Automated by PR Automation workflow</sub>`;
+
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: body
+              });
+            }
+
+  # =============================================================================
+  # DEPENDENCIES - Check for dependency updates
+  # =============================================================================
+  check-dependencies:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Check for dependency updates in PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+
+            const goModChanged = files.some(f => f.filename === 'go.mod');
+            const goSumChanged = files.some(f => f.filename === 'go.sum');
+
+            if (goModChanged || goSumChanged) {
+              console.log('Dependencies were updated in this PR');
+
+              // Add dependency label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels: ['dependencies']
+              });
+            }
+
+  # =============================================================================
+  # CHANGELOG - Auto-generate changelog entry
+  # =============================================================================
+  changelog:
+    name: Generate Changelog Entry
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog entry
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const title = pr.title;
+            const author = pr.user.login;
+            const prNumber = pr.number;
+
+            // Determine category from PR title
+            let category = 'Changed';
+            if (title.startsWith('feat:')) category = 'Added';
+            if (title.startsWith('fix:')) category = 'Fixed';
+            if (title.startsWith('docs:')) category = 'Documentation';
+            if (title.startsWith('perf:')) category = 'Performance';
+            if (title.startsWith('security:')) category = 'Security';
+
+            const entry = `- ${title} by @${author} in #${prNumber}`;
+
+            console.log(`Changelog entry (${category}): ${entry}`);
+
+            // In production, append to CHANGELOG.md
+            // or use a changelog tool like conventional-changelog
+
+  # =============================================================================
+  # SUMMARY - PR summary and checklist
+  # =============================================================================
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [validate-pr, auto-label, code-review]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Generate PR summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            const summary = `## 📋 PR Automation Summary
+
+            **PR**: #${pr.number} - ${pr.title}
+            **Author**: @${pr.user.login}
+            **Status**: ${pr.draft ? '📝 Draft' : '✅ Ready for Review'}
+
+            ### Automated Checks
+
+            | Check | Status |
+            |-------|--------|
+            | PR Validation | ${{ needs.validate-pr.result == 'success' && '✅' || '❌' }} |
+            | Auto Labeling | ${{ needs.auto-label.result == 'success' && '✅' || '❌' }} |
+            | Code Review | ${{ needs.code-review.result == 'success' && '✅' || '❌' }} |
+
+            ### Labels Applied
+
+            ${pr.labels.map(l => `- \`${l.name}\``).join('\n') || '- No labels'}
+
+            ### Review Checklist
+
+            - [ ] Code follows project style guidelines
+            - [ ] Tests added/updated for changes
+            - [ ] Documentation updated if needed
+            - [ ] No breaking changes (or documented if present)
+            - [ ] Changelog entry added/generated
+
+            ---
+            <sub>Automated by PR Automation workflow - Run #${context.runNumber}</sub>`;
+
+            // Update PR body with summary if it doesn't exist
+            if (!pr.body.includes('PR Automation Summary')) {
+              const updatedBody = pr.body + '\n\n' + summary;
+
+              // Comment instead of updating body to avoid conflicts
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: summary
+              });
+            }
